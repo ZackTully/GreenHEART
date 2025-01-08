@@ -1672,22 +1672,23 @@ def post_process_simulation(
         savedir = output_dir + "figures/production/"
         if not os.path.exists(savedir):
             os.makedirs(savedir)
-        plot_tools.plot_generation_profile(
-            hopp_results["hybrid_plant"],
-            start_day=0,
-            n_days=10,
-            plot_filename=os.path.abspath(savedir + "generation_profile.pdf"),
-            font_size=14,
-            power_scale=1 / 1000,
-            solar_color="r",
-            wind_color="b",
-            # wave_color="g",
-            discharge_color="b",
-            charge_color="r",
-            gen_color="g",
-            price_color="r",
-            # show_price=False,
-        )
+        if show_plots or save_plots: 
+            plot_tools.plot_generation_profile(
+                hopp_results["hybrid_plant"],
+                start_day=0,
+                n_days=10,
+                plot_filename=os.path.abspath(savedir + "generation_profile.pdf"),
+                font_size=14,
+                power_scale=1 / 1000,
+                solar_color="r",
+                wind_color="b",
+                # wave_color="g",
+                discharge_color="b",
+                charge_color="r",
+                gen_color="g",
+                price_color="r",
+                # show_price=False,
+            )
     else:
         print(
             "generation profile not plotted because HoppInterface does not have a "
