@@ -2995,19 +2995,19 @@ def post_process_simulation(
         )
 
     ##################################################################################
-    if save_plots:
-        if (
-            hasattr(hopp_results["hybrid_plant"], "dispatch_builder")
-            and hopp_results["hybrid_plant"].battery
-        ):
-            savedir = output_dir / "figures/production/"
-            if not savedir.exists():
-                savedir.mkdir(parents=True)
+    if (
+        hasattr(hopp_results["hybrid_plant"], "dispatch_builder")
+        and hopp_results["hybrid_plant"].battery
+    ):
+        savedir = output_dir + "figures/production/"
+        if not os.path.exists(savedir):
+            os.makedirs(savedir)
+        if show_plots or save_plots: 
             plot_tools.plot_generation_profile(
                 hopp_results["hybrid_plant"],
                 start_day=0,
                 n_days=10,
-                plot_filename=(savedir / "generation_profile.pdf"),
+                plot_filename=os.path.abspath(savedir + "generation_profile.pdf"),
                 font_size=14,
                 power_scale=1 / 1000,
                 solar_color="r",
@@ -3019,11 +3019,11 @@ def post_process_simulation(
                 price_color="r",
                 # show_price=False,
             )
-        else:
-            print(
-                "generation profile not plotted because HoppInterface does not have a "
-                "'dispatch_builder'"
-            )
+    else:
+        print(
+            "generation profile not plotted because HoppInterface does not have a "
+            "'dispatch_builder'"
+        )
 
     # save production information
     hourly_energy_breakdown = save_energy_flows(

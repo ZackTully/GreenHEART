@@ -175,7 +175,7 @@ def run_hopp(hi, project_lifetime, verbose=False):
     hi.simulate(project_life=project_lifetime)
 
     # store results for later use
-    hopp_results = {
+    hopp_results = hopp_result({
         "hopp_interface": hi,
         "hybrid_plant": hi.system,
         "combined_hybrid_power_production_hopp": hi.system.grid._system_model.Outputs.system_pre_interconnect_kwac[  # noqa: E501
@@ -188,7 +188,7 @@ def run_hopp(hi, project_lifetime, verbose=False):
         "npvs": hi.system.net_present_values,
         "lcoe": hi.system.lcoe_real,
         "lcoe_nom": hi.system.lcoe_nom,
-    }
+    })
     if verbose:
         print("\nHOPP Results")
         print(f"Hybrid Annual Energy: {hopp_results['annual_energies']}")
@@ -196,3 +196,10 @@ def run_hopp(hi, project_lifetime, verbose=False):
         print(f"Real LCOE from HOPP: {hi.system.lcoe_real}")
 
     return hopp_results
+
+class hopp_result(dict):
+    """
+    Class to overwrite the native python dict __repr__ method for faster debugging in vscode
+    """
+    def __repr__(self):
+        return str(list(self.keys()))
