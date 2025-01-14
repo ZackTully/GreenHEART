@@ -25,6 +25,14 @@ from greenheart.simulation.technologies.steel.steel import (
     SteelCapacityModelOutputs,
 )
 
+from greenheart.simulation.technologies.dispatch.dispatch import (
+    GreenheartDispatchConfig,
+    GreenheartDispatchOutput,
+    GreenheartDispatch
+)
+
+from greenheart.simulation.realtime_simulation import RealTimeSimulation
+
 # visualization imports
 import matplotlib.pyplot as plt
 
@@ -524,12 +532,30 @@ def setup_greenheart_simulation(config: GreenHeartSimulationConfig):
         save_plots=config.save_plots,
     )
 
-    return config, hi, wind_cost_results
+
+    # ZCT - initalize real time simulation here
+    simulator = RealTimeSimulation(config, hi)
+
+
+    # ZCT - initialize controller here
+    # controller = GH_controller(config, hi)
+
+    dispatcher = GreenheartDispatch(hi, config, dispatch_config=None)
+
+    hi.hopp.system.dispatch_builder.dispatcher = dispatcher
+
+
+
+    # ZCT - setup controller control model and controller simulation model here
+
+    # ZCT - attribute GH_controller to HOPP somehow
+
+    return config, hi, wind_cost_results, simulator, dispatcher
 
 
 def run_simulation(config: GreenHeartSimulationConfig):
 
-    config, hi, wind_cost_results = setup_greenheart_simulation(config=config)
+    config, hi, wind_cost_results, simulator, dispatcher = setup_greenheart_simulation(config=config)
 
     # run HOPP model
     # hopp_results = he_hopp.run_hopp(hopp_site, hopp_technologies, hopp_scenario, hopp_h2_args, verbose=verbose)
@@ -540,6 +566,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
         ],
         verbose=config.verbose,
     )
+
+    simulator.simulate(dispatcher, hopp_results)
 
     if config.design_scenario["wind_location"] == "onshore":
         wind_config = he_fin.WindCostConfig(
@@ -599,6 +627,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
         hopp_results_internal["combined_hybrid_power_production_hopp"] = tuple(
             remaining_power_profile_in
         )
+
+        # ZCT - Extract electrolyzer timeseries from controller and apply here
 
         # run electrolyzer physics model
         electrolyzer_physics_results = he_elec.run_electrolyzer_physics(
@@ -667,6 +697,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
                 "total capital cost [$]": [0 * 5433290.0184895478],
                 "annual operating cost [$]": [0.0],
             }
+
+        # ZCT - extract h2 storage timeseries from controller and apply here
 
         # pressure vessel storage
         pipe_storage, h2_storage_results = he_h2.run_h2_storage(
@@ -975,6 +1007,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
             "Life: Annual H2 production [kg/year]"
         ]
 
+        # ZCT - extract steel of ammonia timeseries from controller and apply here
+
         if "steel" in config.greenheart_config:
             steel_config = copy.deepcopy(config.greenheart_config)
             if config.verbose:
@@ -1145,7 +1179,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
                 None if "ammonia" not in config.greenheart_config else ammonia_finance
             ),
             platform_results=platform_results,
-        )
+        ), simulator
 
 
 def run_sweeps(
