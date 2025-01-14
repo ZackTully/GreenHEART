@@ -132,7 +132,7 @@ class RealTimeSimulation:
 
         self.system_graph = G
 
-        []
+
 
 
         # Print or log the control input format
@@ -212,7 +212,10 @@ class RealTimeSimulation:
             # Gather inputs from edge list - All inputs to node should already be in simulated_IO
  
             node_output = self.system_graph.nodes[node]["model"].step(this_node_input)
-            
+
+            # TODO if dispatch says less than node_output then throw some away
+            # else if dispatch says more than node_output, then send it all downstream
+
             # distribute the node outputs into the simulated graph as close to the dispatch graph as possibl
             # put node_output in simulated_IO as close to dispatch_IO as possible
 
