@@ -601,7 +601,9 @@ def run_simulation(config: GreenHeartSimulationConfig):
         breakdown=False,
     ):
 
-        hopp_results_internal = dict(hopp_results)
+        # hopp_results_internal = dict(hopp_results)
+        hopp_results_internal = copy.copy(hopp_results)
+
 
         # set energy input profile
         ### subtract peripheral power from supply to get what is left for electrolyzer

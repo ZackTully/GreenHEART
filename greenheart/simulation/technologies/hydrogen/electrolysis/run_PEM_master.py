@@ -6,6 +6,7 @@ sys.path.append("")
 import pandas as pd
 
 from greenheart.simulation.technologies.hydrogen.electrolysis.PEM_H2_LT_electrolyzer_Clusters import PEM_H2_Clusters as PEMClusters
+from greenheart.simulation.technologies.hydrogen.electrolysis.PEM_H2_LT_electrolyzer_Clusters_STEP import PEM_H2_Clusters_Step
 # from PEM_H2_LT_electrolyzer_Clusters import (
 #     PEM_H2_Clusters as PEMClusters,
 # )
@@ -63,7 +64,8 @@ class run_PEM_clusters:
         electrolyzer_direct_cost_kw,
         useful_life,
         user_defined_electrolyzer_params,
-        verbose=True
+        verbose=True,
+        step_model=False
     ):
         # nomen
         self.cluster_cap_mw = np.round(system_size_mw / num_clusters)
@@ -89,12 +91,21 @@ class run_PEM_clusters:
         self.switching_cost = (electrolyzer_direct_cost_kw*0.15*self.cluster_cap_mw * 1000)*(1.48e-4)/(0.26586)
         self.verbose=verbose
 
+        self.use_step_model = step_model
+
     def run_grid_connected_pem(self,system_size_mw,hydrogen_production_capacity_required_kgphr):
-        pem=PEMClusters(
-                    system_size_mw,
-                    self.plant_life_yrs,
-                    **self.user_params,
-                )
+        if self.use_step_model:
+            pem=PEM_H2_Clusters_Step(
+                        system_size_mw, 
+                        self.plant_life_yrs, 
+                        **self.user_params,
+                    )
+        else:
+            pem=PEMClusters(
+                        system_size_mw,
+                        self.plant_life_yrs,
+                        **self.user_params,
+                    )
 
         power_timeseries,stack_current=pem.grid_connected_func(hydrogen_production_capacity_required_kgphr)
         h2_ts, h2_tot =pem.run_grid_connected_workaround(power_timeseries,stack_current)
@@ -274,13 +285,22 @@ class run_PEM_clusters:
         # in_dict={'dt':3600}
         for i in range(self.num_clusters):
             # stacks.append(PEMClusters(cluster_size_mw = self.cluster_cap_mw))
-            stacks.append(
-                PEMClusters(
-                    self.cluster_cap_mw,
-                    self.plant_life_yrs,
-                    **self.user_params,
+            if self.use_step_model:
+                stacks.append(
+                    PEM_H2_Clusters_Step(
+                        self.cluster_cap_mw,
+                        self.plant_life_yrs,
+                        **self.user_params,
+                    )
                 )
-            )
+            else:
+                stacks.append(
+                    PEMClusters(
+                        self.cluster_cap_mw,
+                        self.plant_life_yrs,
+                        **self.user_params,
+                    )
+                )
         end = time.perf_counter()
         if self.verbose:
             print("Took {} sec to run the create clusters".format(round(end - start, 3)))

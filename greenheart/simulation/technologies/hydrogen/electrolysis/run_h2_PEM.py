@@ -47,10 +47,11 @@ def run_h2_PEM(electrical_generation_timeseries,
                grid_connection_scenario,
                hydrogen_production_capacity_required_kgphr,
                debug_mode = False,
-               verbose=True):
+               verbose=True,
+               step_model=False):
    #last modified by Elenya Grant on 9/21/2023
    
-   pem=run_PEM_clusters(electrical_generation_timeseries,electrolyzer_size,n_pem_clusters,electrolyzer_direct_cost_kw,useful_life,user_defined_pem_param_dictionary,verbose=verbose)
+   pem=run_PEM_clusters(electrical_generation_timeseries,electrolyzer_size,n_pem_clusters,electrolyzer_direct_cost_kw,useful_life,user_defined_pem_param_dictionary,verbose=verbose, step_model=step_model)
 
    if grid_connection_scenario!='off-grid':
       h2_ts,h2_tot=pem.run_grid_connected_pem(electrolyzer_size,hydrogen_production_capacity_required_kgphr)

@@ -206,3 +206,5 @@ class hopp_result(dict):
     """
     def __repr__(self):
         return str(list(self.keys()))
+
+    # TODO: allow the repr to look like the first few levels of the dict instead of just a blank dict

@@ -88,6 +88,12 @@ def run_electrolyzer_physics(
     if "time_between_replacement" in greenheart_config['electrolyzer']:
         warnings.warn("`time_between_replacement` as an input is deprecated. It is now calculated internally and is output in electrolyzer_physics_results['H2_Results']['Time Until Replacement [hrs]'].")
 
+    if "use_step_model" in greenheart_config["electrolyzer"].keys():
+        step_model = greenheart_config["electrolyzer"]["use_step_model"]
+    else:
+        step_model = False
+
+
     H2_Results, h2_ts, h2_tot, power_to_electrolyzer_kw = run_h2_PEM(
         electrical_generation_timeseries=energy_to_electrolyzer_kw,
         electrolyzer_size=electrolyzer_size_mw,
@@ -102,6 +108,7 @@ def run_electrolyzer_physics(
         hydrogen_production_capacity_required_kgphr=hydrogen_production_capacity_required_kgphr,
         debug_mode=False,
         verbose=verbose,
+        step_model = step_model
     )
 
     # calculate mass and foorprint of system
