@@ -13,7 +13,7 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.cluster_status = 0
+        self.cluster_status = 1
 
         # Initialize attributes that need to be saved after each step
 
@@ -37,6 +37,7 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
         self.store_h2_kg_hr_system = np.zeros(sim_duration)
         self.store_deg_signal = np.zeros(sim_duration)
         self.store_power_per_stack = np.zeros(sim_duration)
+        self.n_stacks_op = np.zeros(sim_duration)
 
     def run(self, power_to_cluster):
         # replaces the run method in the non-step PEM_cluster class
@@ -65,9 +66,9 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
 
         # dont forget to count cluster cycles
 
-        self.n_stacks_op = self.max_stacks * self.cluster_status
-        if self.n_stacks_op > 0:
-            power_per_stack = input_power_kw / self.n_stacks_op
+        self.current_n_stacks_op = self.max_stacks * self.cluster_status
+        if self.current_n_stacks_op > 0:
+            power_per_stack = input_power_kw / self.current_n_stacks_op
         else:
             power_per_stack = 0
 
@@ -102,8 +103,8 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
             V_cell = V_init
 
         stack_power_consumed = (stack_current * V_cell * self.N_cells) / 1000
-        system_power_consumed = self.n_stacks_op * stack_power_consumed
-        h2_kg_hr_system_init = self.h2_production_rate(stack_current, self.n_stacks_op)
+        system_power_consumed = self.current_n_stacks_op * stack_power_consumed
+        h2_kg_hr_system_init = self.h2_production_rate(stack_current, self.current_n_stacks_op)
         h2_kg_hr_system = h2_kg_hr_system_init * h2_multiplier
 
         # Water used?
@@ -122,6 +123,7 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
             h2_kg_hr_system,
             deg_signal,
             power_per_stack,
+            self.current_n_stacks_op
         )
 
         return h2_kg_hr_system_init
@@ -141,6 +143,7 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
         h2_kg_hr_system,
         deg_signal,
         power_per_stack,
+        current_n_stacks_op
     ):
         self.store_input_external_power_kw[step_index] = input_external_power_kw
         self.store_input_power_kw[step_index] = input_power_kw
@@ -154,6 +157,7 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
         self.store_h2_kg_hr_system[step_index] = h2_kg_hr_system
         self.store_deg_signal[step_index] = deg_signal
         self.store_power_per_stack[step_index] = power_per_stack
+        self.n_stacks_op[step_index] = current_n_stacks_op
 
     def update_degradation(self, step_index):
 
