@@ -8,7 +8,7 @@ class HydrogenStorage:
         self.storage_state = 0
 
 
-    def step(self, charge_power_in):
+    def step(self, charge_power_in, step_index):
         charge_power_out = charge_power_in
         return charge_power_out
 

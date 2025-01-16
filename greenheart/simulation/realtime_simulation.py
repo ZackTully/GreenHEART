@@ -18,10 +18,17 @@ from greenheart.simulation.technologies.heat.heat_storage.thermal_energy_storage
 from greenheart.simulation.technologies.hydrogen.electrolysis.electrolyzer import (
     Electrolyzer,
 )
+
+from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master_STEP import (
+    run_PEM_clusters_step,
+)
+
 from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage import (
     HydrogenStorage,
 )
 from greenheart.simulation.technologies.steel.steel_dynamic_model import Steel
+
+from greenheart.tools.eco.utilities import ceildiv
 
 
 # Utilty imports
@@ -60,7 +67,7 @@ class RealTimeSimulation:
             "joule_heater",
             "thermal_energy_storage",
             "heat_exchanger",
-            "steel"
+            "steel",
         ]
 
         GH_techs = []
@@ -76,21 +83,80 @@ class RealTimeSimulation:
             if GH_tech == "ammonia":
                 pass
             if GH_tech == "electrolyzer":
-                RT_techs.update({"electrolyzer": Electrolyzer()})
+                # ==================================
+                # =                                =
+                # =    electrolyzer configuraion   =
+                # =                                =
+                # ==================================
+
+                electrical_generation_timeseries = np.zeros(8760)
+                electrolyzer_size_mw = config.greenheart_config["electrolyzer"][
+                    "rating"
+                ]
+                n_pem_clusters = int(
+                    ceildiv(
+                        electrolyzer_size_mw,
+                        config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
+                    )
+                )
+                electrolyzer_capex_kw = config.greenheart_config["electrolyzer"][
+                    "electrolyzer_capex"
+                ]
+                electrolyzer_direct_cost_kw = electrolyzer_capex_kw
+                useful_life = config.greenheart_config["project_parameters"][
+                    "project_lifetime"
+                ]
+
+                pem_param_dict = {
+                    "eol_eff_percent_loss": config.greenheart_config["electrolyzer"][
+                        "eol_eff_percent_loss"
+                    ],
+                    "uptime_hours_until_eol": config.greenheart_config["electrolyzer"][
+                        "uptime_hours_until_eol"
+                    ],
+                    "include_degradation_penalty": config.greenheart_config[
+                        "electrolyzer"
+                    ]["include_degradation_penalty"],
+                    "turndown_ratio": config.greenheart_config["electrolyzer"][
+                        "turndown_ratio"
+                    ],
+                }
+                user_defined_pem_param_dictionary = pem_param_dict
+                verbose = False
+
+                if "use_step_model" in config.greenheart_config["electrolyzer"].keys():
+                    step_model = config.greenheart_config["electrolyzer"][
+                        "use_step_model"
+                    ]
+                else:
+                    step_model = False
+
+                electrolyzer_model = run_PEM_clusters_step(
+                    electrical_generation_timeseries,
+                    electrolyzer_size_mw,
+                    n_pem_clusters,
+                    electrolyzer_direct_cost_kw,
+                    useful_life,
+                    user_defined_pem_param_dictionary,
+                    verbose=verbose,
+                    step_model=step_model,
+                )
+
+                # RT_techs.update({"electrolyzer": Electrolyzer()})
+                RT_techs.update({"electrolyzer": electrolyzer_model})
             if GH_tech == "h2_storage":
                 RT_techs.update({"hydrogen_storage": HydrogenStorage()})
             if GH_tech == "joule_heater":
-                RT_techs.update({"joule_heater":JouleHeater()})
+                RT_techs.update({"joule_heater": JouleHeater()})
             if GH_tech == "thermal_energy_storage":
                 RT_techs.update({"thermal_energy_storage": ThermalEnergyStorage()})
             if GH_tech == "heat_exchanger":
-                RT_techs.update({"heat_exchanger":HeatExchanger()})
+                RT_techs.update({"heat_exchanger": HeatExchanger()})
             if GH_tech == "steel":
-                RT_techs.update({"steel":Steel()})
-
+                RT_techs.update({"steel": Steel()})
 
         # Build the connections with a graph network
-                
+
         graph_config_fpath = config.greenheart_config["system"]["system_graph_config"]
         graph_config = load_yaml(graph_config_fpath)
         network_config = graph_config["network"]
@@ -123,7 +189,7 @@ class RealTimeSimulation:
             if node == "steel":
                 model = RT_techs["steel"]
 
-            G.nodes[node].update({"model":model})
+            G.nodes[node].update({"model": model})
 
         # nx.draw_networkx(G, with_labels=True)
 
@@ -132,22 +198,17 @@ class RealTimeSimulation:
 
         self.system_graph = G
 
-
-
-
         # Print or log the control input format
 
-    def step_system_state_function(self, inputs, generation_available):
-        
-        # TODO: will need a way to deal with cycles 
+    def step_system_state_function(self, inputs, generation_available, step_index):
+
+        # TODO: will need a way to deal with cycles
 
         # NOTE: maybe there will be multiple graph objects with the same edges and nodes
         # 1. system model
         # 2. node status (has it been run yet)
         # 3. controller storage of inputs (stored in the edges)
 
-        
-        
         # Either here or in the controller
         # Pre-process and dont allow any cycles. Break the cycle at a logical place
 
@@ -157,8 +218,13 @@ class RealTimeSimulation:
         downstream = [edge[1] for edge in traversal]
 
         # Hard code for now but need to come back to make this general
-        node_order = ["generation", "curtail", "electrolyzer", "hydrogen_storage", "steel"]
-
+        node_order = [
+            "generation",
+            "curtail",
+            "electrolyzer",
+            "hydrogen_storage",
+            "steel",
+        ]
 
         # Make standin dispatch_io and simulated io
         G_dispatch = self.system_graph.copy()
@@ -166,11 +232,10 @@ class RealTimeSimulation:
         dispatch_edges = list(G_dispatch.edges)
         dispatch_IO = {}
         for edge in dispatch_edges:
-            dispatch_IO.update({edge: {"value":2}})
+            dispatch_IO.update({edge: {"value": 2}})
             # dispatch_edge_dict.update({edge: [2]})
-        
-        nx.set_edge_attributes(G_dispatch, dispatch_IO)
 
+        nx.set_edge_attributes(G_dispatch, dispatch_IO)
 
         G_simulated = self.system_graph.copy()
 
@@ -178,18 +243,13 @@ class RealTimeSimulation:
         simulated_IO = {}
         for edge in simulated_edges:
             simulated_IO.update({edge: {"value": None}})
-        
+
         nx.set_edge_attributes(G_simulated, simulated_IO)
-
-
-
-
 
         for node in node_order:
 
             dispatch_IO_edges = G_dispatch.edges(node)
             simulated_IO_edges = G_simulated.edges(node)
-
 
             # Get the input to the node from the simulated graph
             # These are only the edges coming into node node
@@ -204,14 +264,13 @@ class RealTimeSimulation:
 
                 this_node_input += edge_data
 
-
             if node == "generation":
                 this_node_input = generation_available
                 self.system_graph.nodes[node]["model"].set_output(generation_available)
 
             # Gather inputs from edge list - All inputs to node should already be in simulated_IO
- 
-            node_output = self.system_graph.nodes[node]["model"].step(this_node_input)
+
+            node_output = self.system_graph.nodes[node]["model"].step(this_node_input, step_index)
 
             # TODO if dispatch says less than node_output then throw some away
             # else if dispatch says more than node_output, then send it all downstream
@@ -223,15 +282,18 @@ class RealTimeSimulation:
             dispatch_out_edges = G_dispatch.out_edges(node)
 
             dispatch_values = nx.get_edge_attributes(G_dispatch, "value")
-            node_dispatch_values = {key: dispatch_values[key] for key in list(sim_out_edges)}
+            node_dispatch_values = {
+                key: dispatch_values[key] for key in list(sim_out_edges)
+            }
 
             dispatch_out_total = np.sum(list(node_dispatch_values.values()))
-
 
             # record the node output in the simulated graph and update the edge data accordingly
 
             for out_edge in list(sim_out_edges):
-                simulated_IO[out_edge]["value"] = node_output * (node_dispatch_values[out_edge]  / dispatch_out_total)
+                simulated_IO[out_edge]["value"] = node_output * (
+                    node_dispatch_values[out_edge] / dispatch_out_total
+                )
 
             nx.set_edge_attributes(G_simulated, simulated_IO)
 
@@ -240,14 +302,12 @@ class RealTimeSimulation:
 
             []
 
-        # Traverse the system graph 
+        # Traverse the system graph
         # Call the component input/output
         # check whether anything is violated
         # See how close you can get to the control decision
-            
 
         return G_simulated
-
 
     def simulate(self, dispatcher, hopp_results):
         # Get generation signals
@@ -273,14 +333,15 @@ class RealTimeSimulation:
         for i in range(len(hybrid_profile)):
             # dispatch_IO = dispatcher.step()
             control_input = 0
-            simulated_IO = self.step_system_state_function(control_input, hybrid_profile[i])
+            simulated_IO = self.step_system_state_function(
+                control_input, hybrid_profile[i], i
+            )
 
             self.record_states(i, simulated_IO)
 
-
+        # TODO: For all components, run consolidate sim outcome
 
         []
-
 
     def setup_record_keeping(self):
         duration = 8760
@@ -292,20 +353,15 @@ class RealTimeSimulation:
         self.index_dict = index_dict
         self.system_states = np.zeros((len(self.system_graph.edges), duration))
 
-
         []
 
-    def record_states(self, time_step,  simulated_IO):
+    def record_states(self, time_step, simulated_IO):
 
         values = nx.get_edge_attributes(simulated_IO, "value")
         for key in values.keys():
             self.system_states[self.index_dict[key], time_step] = values[key]
 
-
-
         []
-
-
 
     # Flag in greenheart config for whether or not to construct real-time model
     # read in the greenheart config file
@@ -349,5 +405,5 @@ class StandinNode:
     def set_output(self, output):
         self.output = output
 
-    def step(self, input):
+    def step(self, input, step_index):
         return self.output
