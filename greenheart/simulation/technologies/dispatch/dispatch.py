@@ -1,3 +1,5 @@
+import numpy as np
+import networkx as nx
 
 
 class GreenheartDispatchConfig:
@@ -86,14 +88,59 @@ class GreenheartDispatch:
         control_actions_for_hopp = []
 
         return control_actions_for_hopp
-    
 
-
-    def step_simulation_model(self):
-        # Either this lives in the controller or is attributed to the controller. 
-        pass
     
     def get(self, data_name):
         
         return getattr(self, data_name)
         
+
+    def step(self, G_dispatch, available_power):
+
+        G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
+        return G_dispatch
+
+
+    def example_control_elec_storage_steel(self, G_dispatch, available_power):
+        electrolyzer_eta = 1 / 55 # kg/kWh
+        average_generation = 0.3 * (10 * 6000) + 0.3 * 100000 # wind + solar rated * 0.3 capacity factor
+
+        # average_generation = 50000
+
+        # Always send all of the power through the electrolyzer
+        # If available is greater than average, charge the storage by the difference
+        # If available is less than average, discharge the storage by the difference
+
+        available_more_than_average_difference = np.max([0, available_power - average_generation])
+        available_less_than_average_difference = np.max([0, average_generation - available_power])
+
+        generation_to_curtail = 0
+        generation_to_electrolyzer = available_power
+        electrolyzer_to_storage = electrolyzer_eta * available_more_than_average_difference
+        # electrolyzer_to_storage = electrolyzer_eta * (available_power - average_generation)
+
+        electrolyzer_to_steel = electrolyzer_eta * average_generation
+        storage_to_steel = electrolyzer_eta * available_less_than_average_difference
+        
+        
+
+        assert not np.isnan(storage_to_steel)
+
+        dispatch_edges = list(G_dispatch.edges)
+        dispatch_IO = {
+            ('generation', 'curtail'): {"value": generation_to_curtail}, 
+            ('generation', 'electrolyzer'): {"value": generation_to_electrolyzer}, 
+            ('electrolyzer', 'hydrogen_storage'): {"value": electrolyzer_to_storage}, 
+            ('electrolyzer', 'steel'): {"value": electrolyzer_to_steel}, 
+            ('hydrogen_storage', 'steel'): {"value": storage_to_steel}
+        }
+
+        nx.set_edge_attributes(G_dispatch, dispatch_IO)
+
+        if False:
+            layout = nx.random_layout(G_dispatch)
+            nx.draw_networkx(G_dispatch, pos = layout, with_labels=True)
+            nx.draw_networkx_edge_labels(G_dispatch, pos = layout, edge_labels=dispatch_IO)
+
+
+        return G_dispatch

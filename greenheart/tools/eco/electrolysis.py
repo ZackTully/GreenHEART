@@ -41,6 +41,7 @@ def run_electrolyzer_physics(
     save_plots=False,
     output_dir="./output/",
     verbose=False,
+    simulator=None
 ):
 
     electrolyzer_size_mw = greenheart_config["electrolyzer"]["rating"]
@@ -108,7 +109,8 @@ def run_electrolyzer_physics(
         hydrogen_production_capacity_required_kgphr=hydrogen_production_capacity_required_kgphr,
         debug_mode=False,
         verbose=verbose,
-        step_model = step_model
+        step_model = step_model,
+        simulator=simulator
     )
 
     # calculate mass and foorprint of system

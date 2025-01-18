@@ -71,11 +71,11 @@ class run_PEM_clusters_step(run_PEM_clusters):
 
         return h2_df_ts, h2_df_tot
 
-    def step(self, input_power, step_index):
+    def step(self, input_power, dispatch, step_index):
 
         # if called from run, then input power should be an array of len = n_clusters
-        # if called from real-time simulation then input power should be a float
-        if isinstance(input_power, float):
+        # if called from real-time simulation then input power should be a float or int
+        if isinstance(input_power, float) or isinstance(input_power, int):
             input_power = self.even_split_power_step(input_power)
 
 
@@ -96,34 +96,11 @@ class run_PEM_clusters_step(run_PEM_clusters):
 
         num_clusters_on = int(num_clusters_on)
 
-        # num_clusters_on = np.where(
-        #     num_clusters_on > self.num_clusters, self.num_clusters, num_clusters_on
-        # )
-            
-
-        power_per_cluster = input_power / num_clusters_on
-
-        # power_per_cluster = [
-        #     self.input_power_kw[ti] / num_clusters_on[ti]
-        #     if num_clusters_on[ti] > 0
-        #     else 0
-        #     for ti, pwr in enumerate(self.input_power_kw)
-        # ]
-
-        # power_per_to_active_clusters = np.array(power_per_cluster)
         power_to_clusters = np.zeros( self.num_clusters)
-        
-        power_to_clusters[0:num_clusters_on] = power_per_cluster
-        
-        # for i, cluster_power in enumerate(
-        #     power_per_to_active_clusters
-        # ):  # np.arange(0,self.n_stacks,1):
-        #     clusters_off = self.num_clusters - int(num_clusters_on[i])
-        #     no_power = np.zeros(clusters_off)
-        #     with_power = cluster_power * np.ones(int(num_clusters_on[i]))
-        #     tot_power = np.concatenate((with_power, no_power))
-        #     power_to_clusters[i] = tot_power
 
-        # return np.transpose(power_to_clusters)
+        if num_clusters_on > 0:
+            power_per_cluster = input_power / num_clusters_on
+            power_to_clusters[0:num_clusters_on] = power_per_cluster
+
 
         return power_to_clusters

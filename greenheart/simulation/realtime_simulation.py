@@ -198,9 +198,11 @@ class RealTimeSimulation:
 
         self.system_graph = G
 
+        self.technologies = RT_techs
+
         # Print or log the control input format
 
-    def step_system_state_function(self, inputs, generation_available, step_index):
+    def step_system_state_function(self, G_dispatch, generation_available, step_index):
 
         # TODO: will need a way to deal with cycles
 
@@ -226,18 +228,20 @@ class RealTimeSimulation:
             "steel",
         ]
 
-        # Make standin dispatch_io and simulated io
-        G_dispatch = self.system_graph.copy()
+        # # Make standin dispatch_io and simulated io
+        # G_dispatch = self.system_graph.copy()
 
-        dispatch_edges = list(G_dispatch.edges)
-        dispatch_IO = {}
-        for edge in dispatch_edges:
-            dispatch_IO.update({edge: {"value": 2}})
-            # dispatch_edge_dict.update({edge: [2]})
+        # dispatch_edges = list(G_dispatch.edges)
+        # dispatch_IO = {}
+        # for edge in dispatch_edges:
+        #     dispatch_IO.update({edge: {"value": 2}})
+        #     # dispatch_edge_dict.update({edge: [2]})
 
-        nx.set_edge_attributes(G_dispatch, dispatch_IO)
-
+        # nx.set_edge_attributes(G_dispatch, dispatch_IO)
         G_simulated = self.system_graph.copy()
+
+        for node in list(G_simulated.nodes):
+            G_simulated.nodes[node].update({"wasted_output": 0})
 
         simulated_edges = list(G_simulated.edges)
         simulated_IO = {}
@@ -251,6 +255,10 @@ class RealTimeSimulation:
             dispatch_IO_edges = G_dispatch.edges(node)
             simulated_IO_edges = G_simulated.edges(node)
 
+            if node == "generation":
+                this_node_input = generation_available
+                self.system_graph.nodes[node]["model"].set_output(generation_available)
+
             # Get the input to the node from the simulated graph
             # These are only the edges coming into node node
             sim_in_edges = G_simulated.in_edges(node)
@@ -261,16 +269,35 @@ class RealTimeSimulation:
                 # Check that upstream values have been simulated
                 edge_data = G_simulated.get_edge_data(in_edge[0], in_edge[1])["value"]
                 assert edge_data is not None, "edge data is none, needs to be run first"
+                assert not np.isnan(edge_data)
 
                 this_node_input += edge_data
 
-            if node == "generation":
-                this_node_input = generation_available
-                self.system_graph.nodes[node]["model"].set_output(generation_available)
-
             # Gather inputs from edge list - All inputs to node should already be in simulated_IO
+                
 
-            node_output = self.system_graph.nodes[node]["model"].step(this_node_input, step_index)
+            # Gather outputs from dispatch list
+                
+            dispatch_out_edges = G_dispatch.out_edges(node)
+
+            dispatch_values = nx.get_edge_attributes(G_dispatch, "value")
+            node_dispatch_values = {
+                key: dispatch_values[key] for key in list(dispatch_out_edges)
+            }
+
+            dispatch_out_total = np.sum(list(node_dispatch_values.values()))
+
+
+
+            # Include the dispatch signal to the simulation model 
+            # If it is an input-output model then the dispatch signal is ignored
+            # If it is a controllable model then the low-level controller tries to match the dispatch signal of output
+            # dispatch input can be the sum of all dispatch outputs? worry about tracking within the model, worry about splitting it in this forloop
+            node_output = self.system_graph.nodes[node]["model"].step(
+                this_node_input, dispatch_out_total, step_index
+            )
+
+            assert not np.isnan(node_output)
 
             # TODO if dispatch says less than node_output then throw some away
             # else if dispatch says more than node_output, then send it all downstream
@@ -279,21 +306,30 @@ class RealTimeSimulation:
             # put node_output in simulated_IO as close to dispatch_IO as possible
 
             sim_out_edges = G_simulated.out_edges(node)
-            dispatch_out_edges = G_dispatch.out_edges(node)
 
-            dispatch_values = nx.get_edge_attributes(G_dispatch, "value")
-            node_dispatch_values = {
-                key: dispatch_values[key] for key in list(sim_out_edges)
-            }
 
-            dispatch_out_total = np.sum(list(node_dispatch_values.values()))
+            # If the node makes more output than the dispatcher planned for
+            if node_output > dispatch_out_total:
+                # TODO: dont forget to come back and track this
+                wasted_output = node_output - dispatch_out_total
+                node_output = dispatch_out_total - wasted_output
+            else:
+                wasted_output = 0
+
+            G_simulated.nodes[node].update({"wasted_output": wasted_output})
 
             # record the node output in the simulated graph and update the edge data accordingly
-
             for out_edge in list(sim_out_edges):
-                simulated_IO[out_edge]["value"] = node_output * (
+
+                # Split the node output to downstream edges proportionally to the dispatch signal so under-production is shared evenly.
+                scaled_output = node_output * (
                     node_dispatch_values[out_edge] / dispatch_out_total
                 )
+
+                if dispatch_out_total == 0:
+                    scaled_output = 0
+
+                simulated_IO[out_edge]["value"] = scaled_output
 
             nx.set_edge_attributes(G_simulated, simulated_IO)
 
@@ -330,16 +366,25 @@ class RealTimeSimulation:
 
         # Loop for everything downstream of generation
 
+        G_dispatch = self.system_graph.copy()
+
         for i in range(len(hybrid_profile)):
             # dispatch_IO = dispatcher.step()
-            control_input = 0
+
+            G_dispatch = dispatcher.step(G_dispatch, hybrid_profile[i])
             simulated_IO = self.step_system_state_function(
-                control_input, hybrid_profile[i], i
+                G_dispatch, hybrid_profile[i], i
             )
 
             self.record_states(i, simulated_IO)
 
         # TODO: For all components, run consolidate sim outcome
+
+        for node in self.system_graph.nodes:
+            if hasattr(
+                self.system_graph.nodes[node]["model"], "consolidate_sim_outcome"
+            ):
+                self.system_graph.nodes[node]["model"].consolidate_sim_outcome()
 
         []
 
@@ -352,6 +397,7 @@ class RealTimeSimulation:
 
         self.index_dict = index_dict
         self.system_states = np.zeros((len(self.system_graph.edges), duration))
+        self.node_waste = np.zeros((len(self.system_graph.nodes), duration))
 
         []
 
@@ -360,6 +406,9 @@ class RealTimeSimulation:
         values = nx.get_edge_attributes(simulated_IO, "value")
         for key in values.keys():
             self.system_states[self.index_dict[key], time_step] = values[key]
+
+        for i, node in enumerate(list(simulated_IO.nodes)):
+            self.node_waste[i, time_step] = simulated_IO.nodes[node]["wasted_output"]
 
         []
 
@@ -405,5 +454,5 @@ class StandinNode:
     def set_output(self, output):
         self.output = output
 
-    def step(self, input, step_index):
+    def step(self, input, dispatch=None, step_index=None):
         return self.output

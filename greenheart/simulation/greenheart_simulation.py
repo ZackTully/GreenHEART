@@ -599,6 +599,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
         solver=True,
         power_for_peripherals_kw_in=0.0,
         breakdown=False,
+        simulator=simulator
     ):
 
         # hopp_results_internal = dict(hopp_results)
@@ -632,6 +633,11 @@ def run_simulation(config: GreenHeartSimulationConfig):
 
         # ZCT - Extract electrolyzer timeseries from controller and apply here
 
+        # TODO come back and make this a more reliable cases test
+        if not config.greenheart_config["electrolyzer"]["use_step_model"]:
+            simulator = None
+
+
         # run electrolyzer physics model
         electrolyzer_physics_results = he_elec.run_electrolyzer_physics(
             hopp_results_internal,
@@ -642,6 +648,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
             save_plots=save_plots,
             output_dir=output_dir,
             verbose=verbose,
+            simulator=simulator
         )
 
         # run electrolyzer cost model
@@ -833,7 +840,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
 
         return power_residual
 
-    def simple_solver(initial_guess=0.0):
+    def simple_solver(initial_guess=0.0, simulator=None):
 
         # get results for current design
         (
@@ -849,6 +856,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
             solver=True,
             verbose=False,
             breakdown=True,
+            simulator=simulator
         )
 
         return (
@@ -862,7 +870,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
 
     #################### solving for energy needed for non-electrolyzer components ####################################
     # this approach either exactly over over-estimates the energy needed for non-electrolyzer components
-    solver_results = simple_solver(0)
+    solver_results = simple_solver(0, simulator=simulator)
     solver_result = solver_results[0]
 
     # # this is a check on the simple solver
