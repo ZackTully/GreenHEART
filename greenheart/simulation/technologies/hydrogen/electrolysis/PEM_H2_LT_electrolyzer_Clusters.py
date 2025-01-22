@@ -275,6 +275,8 @@ class PEM_H2_Clusters:
         
         #fraction of life that has been "spent" during simulation
         frac_of_life_used = d_sim/self.d_eol_curve[-1]
+        if frac_of_life_used == 0:
+            frac_of_life_used = 0.001 # to avoid divide by zero error later on
         #number of hours simulated
         sim_time_dt = len(deg_signal) 
         #number of hours operating

@@ -2,6 +2,8 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 
+from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
+
 # Greenheart imports
 
 from greenheart.simulation.technologies.ammonia.ammonia import (
@@ -28,6 +30,9 @@ from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage imp
     HydrogenStorage,
 )
 from greenheart.simulation.technologies.steel.steel_dynamic_model import Steel
+
+from greenheart.simulation.technologies.electricity.battery import Battery
+
 
 from greenheart.tools.eco.utilities import ceildiv
 
@@ -62,13 +67,15 @@ class RealTimeSimulation:
         hopp_techs = config.hopp_config["technologies"].keys()
 
         GH_tech_options = [
-            "ammonia",
+            # "generation",
+            # "curtail",
+            "battery",
             "electrolyzer",
-            "h2_storage",
             "joule_heater",
-            "thermal_energy_storage",
+            "hydrogen_storage",
             "heat_exchanger",
-            "steel",
+            "thermal_energy_storage",
+            # "output"
         ]
 
         GH_techs = []
@@ -83,7 +90,10 @@ class RealTimeSimulation:
         for GH_tech in GH_techs:
             if GH_tech == "ammonia":
                 pass
+            if GH_tech == "battery":
+                RT_techs.update({"battery": Battery()})
             if GH_tech == "electrolyzer":
+
                 # ==================================
                 # =                                =
                 # =    electrolyzer configuraion   =
@@ -145,10 +155,10 @@ class RealTimeSimulation:
 
                 # RT_techs.update({"electrolyzer": Electrolyzer()})
                 RT_techs.update({"electrolyzer": electrolyzer_model})
-            if GH_tech == "h2_storage":
-                RT_techs.update({"hydrogen_storage": HydrogenStorage()})
             if GH_tech == "joule_heater":
                 RT_techs.update({"joule_heater": JouleHeater()})
+            if GH_tech == "hydrogen_storage":
+                RT_techs.update({"hydrogen_storage": HydrogenStorage()})
             if GH_tech == "thermal_energy_storage":
                 RT_techs.update({"thermal_energy_storage": ThermalEnergyStorage()})
             if GH_tech == "heat_exchanger":
@@ -175,7 +185,7 @@ class RealTimeSimulation:
 
         for node in G.nodes:
             model = None
-            if (node == "generation") or (node == "curtail"):
+            if (node == "generation") or (node == "curtail") or (node == "output"):
                 model = StandinNode()
             if node == "electrolyzer":
                 model = RT_techs["electrolyzer"]
@@ -189,6 +199,8 @@ class RealTimeSimulation:
                 model = RT_techs["heat_exchanger"]
             if node == "steel":
                 model = RT_techs["steel"]
+            if node == "battery": 
+                model = RT_techs["battery"]
 
             G.nodes[node].update({"model": model})
 
@@ -199,13 +211,13 @@ class RealTimeSimulation:
 
         self.system_graph = G
 
+        for node in list(self.system_graph.nodes):
+            assert not self.system_graph.nodes[node]["model"] == None, f"no model for node: {node}"
 
-        self.plot_system_graph()
+        # self.plot_system_graph()
 
         self.technologies = RT_techs
-
         # Print or log the control input format
-
 
     def plot_system_graph(self):
 
@@ -214,18 +226,16 @@ class RealTimeSimulation:
         ax.set_axis_off()
 
         G = self.system_graph
-        layout = nx.bfs_layout(G, start="generation")
+        # layout = nx.bfs_layout(G, start="generation")
+        # layout = nx.arf_layout(G)
+        layout = nx.planar_layout(G)
         nodes = nx.draw_networkx_nodes(G, pos=layout, ax=ax)
         nodes.set_edgecolor("white")
         nodes.set_facecolor("white")
         labels = nx.draw_networkx_labels(G, pos=layout, ax=ax)
         edges = nx.draw_networkx_edges(G, pos=layout, ax=ax)
 
-        latex_graph = nx.to_latex(G, pos=nx.rescale_layout_dict(layout, scale = 3))
-
-
-        pass
-
+        latex_graph = nx.to_latex(G, pos=nx.rescale_layout_dict(layout, scale=3))
 
     def step_system_state_function(self, G_dispatch, generation_available, step_index):
 
@@ -245,12 +255,25 @@ class RealTimeSimulation:
         downstream = [edge[1] for edge in traversal]
 
         # Hard code for now but need to come back to make this general
+        # node_order = [
+        #     "generation",
+        #     "curtail",
+        #     "electrolyzer",
+        #     "hydrogen_storage",
+        #     "steel",
+        # ]
+
+        # Hard code for heat example
         node_order = [
             "generation",
             "curtail",
+            "battery",
             "electrolyzer",
             "hydrogen_storage",
-            "steel",
+            "joule_heater",
+            "thermal_energy_storage",
+            "heat_exchanger",
+            "output",
         ]
 
         # # Make standin dispatch_io and simulated io
@@ -299,10 +322,9 @@ class RealTimeSimulation:
                 this_node_input += edge_data
 
             # Gather inputs from edge list - All inputs to node should already be in simulated_IO
-                
 
             # Gather outputs from dispatch list
-                
+
             dispatch_out_edges = G_dispatch.out_edges(node)
 
             dispatch_values = nx.get_edge_attributes(G_dispatch, "value")
@@ -312,9 +334,7 @@ class RealTimeSimulation:
 
             dispatch_out_total = np.sum(list(node_dispatch_values.values()))
 
-
-
-            # Include the dispatch signal to the simulation model 
+            # Include the dispatch signal to the simulation model
             # If it is an input-output model then the dispatch signal is ignored
             # If it is a controllable model then the low-level controller tries to match the dispatch signal of output
             # dispatch input can be the sum of all dispatch outputs? worry about tracking within the model, worry about splitting it in this forloop
@@ -332,12 +352,11 @@ class RealTimeSimulation:
 
             sim_out_edges = G_simulated.out_edges(node)
 
-
             # If the node makes more output than the dispatcher planned for
             if node_output > dispatch_out_total:
                 # TODO: dont forget to come back and track this
                 wasted_output = node_output - dispatch_out_total
-                node_output = dispatch_out_total - wasted_output
+                node_output -= wasted_output
             else:
                 wasted_output = 0
 
@@ -370,7 +389,7 @@ class RealTimeSimulation:
 
         return G_simulated
 
-    def simulate(self, dispatcher, hopp_results):
+    def simulate(self, dispatcher:GreenheartDispatch, hopp_results):
         # Get generation signals
 
         gen_profiles = {}

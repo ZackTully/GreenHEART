@@ -1,5 +1,7 @@
 # naive model - just use heat capacity time mass
 
+import numpy as np
+
 from attrs import define, field
 from typing import Optional
 from hopp.type_dec import FromDictMixin
@@ -42,25 +44,23 @@ class HeatExchanger:
     ):
         # mdot in kg / s
 
-
         assert T_h2_out < T_particle_in, "heat wont transfer to hydrogen otherwise"
 
-
         # Assume no heat is lost in the heat exchange
-
         Qdot_to_hydrogen = self.hydrogen_properties.Cp * mdot_h2 * (T_h2_out - T_h2_in)
-
         Qdot_from_particle = -Qdot_to_hydrogen
-
         T_particle_out = (
             Qdot_from_particle / (self.particle_properties.Cp * mdot_particle)
             + T_particle_in
         )
 
-
         assert T_particle_out > -273 , "can be below absolute zero"
 
         return Qdot_to_hydrogen, T_particle_out
+
+
+    def step(self, input, desired_output, step_index):
+        return np.mean([input, desired_output])
 
 
 if __name__ == "__main__":

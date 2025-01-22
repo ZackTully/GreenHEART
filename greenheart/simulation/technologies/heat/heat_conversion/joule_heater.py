@@ -26,3 +26,8 @@ class JouleHeater:
     
     def store(self, t, u, d, x, y):
         pass
+
+    def input_output(self, power):
+
+        heat_flow = self.eta * power
+        return heat_flow

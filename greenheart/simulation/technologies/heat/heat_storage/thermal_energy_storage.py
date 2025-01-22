@@ -3,7 +3,81 @@ import numpy as np
 
 class ThermalEnergyStorage:
     def __init__(self):
-        pass
+        self.particle_cp = 1155 # J kg^-1 K^-1
+
+        self.dt = 3600 # [s]
+        self.T_tank = 1200 # [C] temperature of the particles in the storage tank
+        self.T_ambient = 15 # [C]
+
+        self.m_tank = 10000 # [kg] mass of particles in storage tank
+
+        # Low-level controller parameters
+        self.T_max = 1710 # [C] maximum tank temperature, particle melting temperature
+        self.T_min = 1000 # [C]
+
+
+        # How to define max charge rate? heat flow rate, delta temp., particle mass flow
+        self.Q_in_max = 50 # [kW]
+        self.Q_out_max = 50 # [kW]
+
+
+    def step(self, Qdot_in_available, Qdot_desired, step_index):
+        Qdot_controller = self.control(Qdot_in_available, Qdot_desired)
+        self.step_particle_tank(Qdot_controller)
+
+        return Qdot_controller
+
+
+    def control(self, Qdot_in_available, Qdot_desired):
+        # Qdot_in_avaible: [kW s^-1] should be > 0
+        # Qdot_desired: [kW s^-1] can be positive or negative
+
+        assert Qdot_in_available >= 0, "Cannot have negative available heat"
+
+        # state constraint
+        upper1 = (self.T_max - self.T_tank) * self.m_tank * self.particle_cp
+        lower1 = (self.T_min - self.T_tank) * self.m_tank * self.particle_cp
+
+        # rate constraint
+        upper2 = self.Q_in_max
+        lower2 = -self.Q_out_max
+
+        # available constraint
+        upper3 = Qdot_in_available
+
+        upper = np.min([upper1, upper2, upper3])
+        lower = np.max([lower1, lower2])
+
+        if Qdot_desired >= upper:
+            Qdot_out = upper
+        elif Qdot_desired <= lower:
+            Qdot_out = lower
+        else:
+            Qdot_out = Qdot_desired
+
+        return Qdot_out
+
+
+
+    def heat_exchanger(self, Qdot_io, mdot_particle, T_in_particle):
+        # Qdot_io: [kW/s] heatflow positive or negative 
+        T_out_particle = T_in_particle + Qdot_io / (mdot_particle * self.particle_cp)
+
+        assert T_out_particle > -273, "output needs to be hotter than absolute zero"
+        return mdot_particle, T_out_particle
+
+
+    def step_particle_tank(self, Qdot_io, mdot_particle=100):
+
+        # TODO include heat loss to ambient
+
+        mdot_out = mdot_particle
+        T_out = self.T_tank
+        mdot_in, T_in = self.heat_exchanger(Qdot_io, mdot_out, T_out)
+        T_tank_delta_dot = (mdot_in / self.m_tank) * (T_in - self.T_tank)
+        self.T_tank += T_tank_delta_dot * self.dt
+        
+        
 
 
 class HighTempTES:

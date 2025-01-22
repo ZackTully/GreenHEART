@@ -97,9 +97,20 @@ class GreenheartDispatch:
 
     def step(self, G_dispatch, available_power):
 
-        G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
+        # G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
+        G_dispatch = self.example_control_hydrogen_heat(G_dispatch, available_power)
         return G_dispatch
 
+
+
+    def example_control_hydrogen_heat(self, G_dispatch, available_power):
+
+        for edge in list(G_dispatch.edges):
+            G_dispatch.edges[edge].update({"value":available_power / 3})
+
+        return G_dispatch
+
+     
 
     def example_control_elec_storage_steel(self, G_dispatch, available_power):
         electrolyzer_eta = 1 / 55 # kg/kWh
