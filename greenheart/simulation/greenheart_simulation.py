@@ -567,7 +567,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
         verbose=config.verbose,
     )
 
-    simulator.simulate(dispatcher, hopp_results)
+    if config.greenheart_config["electrolyzer"]["use_step_model"]:
+        simulator.simulate(dispatcher, hopp_results)
 
     if config.design_scenario["wind_location"] == "onshore":
         wind_config = he_fin.WindCostConfig(

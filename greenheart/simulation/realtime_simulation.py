@@ -1,5 +1,6 @@
 import numpy as np
 import networkx as nx
+import matplotlib.pyplot as plt
 
 # Greenheart imports
 
@@ -198,9 +199,33 @@ class RealTimeSimulation:
 
         self.system_graph = G
 
+
+        self.plot_system_graph()
+
         self.technologies = RT_techs
 
         # Print or log the control input format
+
+
+    def plot_system_graph(self):
+
+        fig, ax = plt.subplots(1, 1, layout="constrained")
+
+        ax.set_axis_off()
+
+        G = self.system_graph
+        layout = nx.bfs_layout(G, start="generation")
+        nodes = nx.draw_networkx_nodes(G, pos=layout, ax=ax)
+        nodes.set_edgecolor("white")
+        nodes.set_facecolor("white")
+        labels = nx.draw_networkx_labels(G, pos=layout, ax=ax)
+        edges = nx.draw_networkx_edges(G, pos=layout, ax=ax)
+
+        latex_graph = nx.to_latex(G, pos=nx.rescale_layout_dict(layout, scale = 3))
+
+
+        pass
+
 
     def step_system_state_function(self, G_dispatch, generation_available, step_index):
 
