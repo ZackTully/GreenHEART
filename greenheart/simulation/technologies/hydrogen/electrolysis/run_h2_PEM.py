@@ -57,7 +57,7 @@ def run_h2_PEM(electrical_generation_timeseries,
 
    if simulator is not None:
 
-      h2_ts, h2_tot = simulator.technologies["electrolyzer"].consolidate_sim_outcome()
+      h2_ts, h2_tot = simulator.technologies["electrolyzer"]["model"].consolidate_sim_outcome()
 
    else:
 

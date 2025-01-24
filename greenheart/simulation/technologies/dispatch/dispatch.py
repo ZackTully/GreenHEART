@@ -97,10 +97,33 @@ class GreenheartDispatch:
 
     def step(self, G_dispatch, available_power):
 
-        G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
+        # G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
         # G_dispatch = self.example_control_hydrogen_heat(G_dispatch, available_power)
+        G_dispatch = self.example_control_elec_heat_exchanger(G_dispatch, available_power)
         return G_dispatch
 
+
+    def example_control_elec_heat_exchanger(self, G_dispatch, available_power):
+
+
+        gen_to_el = [available_power / 2, 0, 0, 0]
+        el_to_hx = [0, 0, (1 / 55 ) * gen_to_el[0], 80]
+        gen_to_hx = [available_power / 2, 0, 0, 0]
+
+
+        nx.set_edge_attributes(G_dispatch, {
+            ("generation", "electrolyzer"): {"value": gen_to_el},
+            ("electrolyzer", "heat_exchanger"): {"value": el_to_hx},
+            ("generation", "heat_exchanger"): {"value": gen_to_hx}
+        })
+
+
+
+
+
+        return G_dispatch
+
+        
 
 
     def example_control_hydrogen_heat(self, G_dispatch, available_power):

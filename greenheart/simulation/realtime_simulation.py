@@ -67,16 +67,16 @@ class RealTimeSimulation:
         hopp_techs = config.hopp_config["technologies"].keys()
 
         GH_tech_options = [
-            # "generation",
-            # "curtail",
+            "generation",
+            "curtail",
             "battery",
             "electrolyzer",
             "joule_heater",
             "hydrogen_storage",
             "heat_exchanger",
             "thermal_energy_storage",
-            "steel"
-            # "output"
+            "steel",
+            "output",
         ]
 
         GH_techs = []
@@ -89,10 +89,48 @@ class RealTimeSimulation:
         RT_techs = {}
 
         for GH_tech in GH_techs:
-            if GH_tech == "ammonia":
-                pass
+
+            if GH_tech == "generation":
+                RT_techs.update(
+                    {
+                        "generation": {
+                            "model": StandinNode(),
+                            "model_inputs": {
+                                "power": False,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                            "model_outputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                        }
+                    }
+                )
+
             if GH_tech == "battery":
-                RT_techs.update({"battery": Battery()})
+                RT_techs.update(
+                    {
+                        "battery": {
+                            "model": Battery(),
+                            "model_inputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                            "model_outputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                        }
+                    }
+                )
             if GH_tech == "electrolyzer":
 
                 # ==================================
@@ -155,17 +193,131 @@ class RealTimeSimulation:
                 )
 
                 # RT_techs.update({"electrolyzer": Electrolyzer()})
-                RT_techs.update({"electrolyzer": electrolyzer_model})
+                RT_techs.update(
+                    {
+                        "electrolyzer": {
+                            "model": electrolyzer_model,
+                            "model_inputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                            "model_outputs": {
+                                "power": False,
+                                "Qdot": False,
+                                "mdot": True,
+                                "T": True,
+                            },
+                        }
+                    }
+                )
             if GH_tech == "joule_heater":
-                RT_techs.update({"joule_heater": JouleHeater()})
+                # RT_techs.update({"joule_heater": JouleHeater()})
+                RT_techs.update(
+                    {
+                        "joule_heater": {
+                            "model": JouleHeater(),
+                            "model_inputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                            "model_outputs": {
+                                "power": False,
+                                "Qdot": True,
+                                "mdot": False,
+                                "T": False,
+                            },
+                        }
+                    }
+                )
+
             if GH_tech == "hydrogen_storage":
-                RT_techs.update({"hydrogen_storage": HydrogenStorage()})
+                # RT_techs.update({"hydrogen_storage": HydrogenStorage()})
+                RT_techs.update(
+                    {
+                        "hydrogen_storage": {
+                            "model": HydrogenStorage(),
+                            "model_inputs": {
+                                "power": False,
+                                "Qdot": False,
+                                "mdot": True,
+                                "T": True,
+                            },
+                            "model_outputs": {
+                                "power": False,
+                                "Qdot": False,
+                                "mdot": True,
+                                "T": True,
+                            },
+                        }
+                    }
+                )
             if GH_tech == "thermal_energy_storage":
-                RT_techs.update({"thermal_energy_storage": ThermalEnergyStorage()})
+                # RT_techs.update({"thermal_energy_storage": ThermalEnergyStorage()})
+                RT_techs.update(
+                    {
+                        "thermal_energy_storage": {
+                            "model": ThermalEnergyStorage(),
+                            "model_inputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                            "model_outputs": {
+                                "power": False,
+                                "Qdot": True,
+                                "mdot": False,
+                                "T": False,
+                            },
+                        }
+                    }
+                )
             if GH_tech == "heat_exchanger":
-                RT_techs.update({"heat_exchanger": HeatExchanger()})
+                # RT_techs.update({"heat_exchanger": HeatExchanger()})
+                RT_techs.update(
+                    {
+                        "heat_exchanger": {
+                            "model": HeatExchanger(),
+                            "model_inputs": {
+                                "power": True,
+                                "Qdot": True,
+                                "mdot": True,
+                                "T": True,
+                            },
+                            "model_outputs": {
+                                "power": False,
+                                "Qdot": False,
+                                "mdot": True,
+                                "T": True,
+                            },
+                        }
+                    }
+                )
             if GH_tech == "steel":
-                RT_techs.update({"steel": Steel()})
+                # RT_techs.update({"steel": Steel()})
+                RT_techs.update(
+                    {
+                        "steel": {
+                            "model": Steel(),
+                            "model_inputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                            "model_outputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                        }
+                    }
+                )
 
         # Build the connections with a graph network
 
@@ -186,24 +338,45 @@ class RealTimeSimulation:
 
         for node in G.nodes:
             model = None
-            if (node == "generation") or (node == "curtail") or (node == "output"):
-                model = StandinNode()
-            if node == "electrolyzer":
-                model = RT_techs["electrolyzer"]
-            if node == "hydrogen_storage":
-                model = RT_techs["hydrogen_storage"]
-            if node == "joule_heater":
-                model = RT_techs["joule_heater"]
-            if node == "thermal_energy_storage":
-                model = RT_techs["thermal_energy_storage"]
-            if node == "heat_exchanger":
-                model = RT_techs["heat_exchanger"]
-            if node == "steel":
-                model = RT_techs["steel"]
-            if node == "battery": 
-                model = RT_techs["battery"]
+            # if (node == "generation") or (node == "curtail") or (node == "output"):
+            #     model = StandinNode()
+            # else:
+            #     ionode = IONode(
+            #         name=node,
+            #         model=RT_techs[node]["model"],
+            #         expected_inputs=RT_techs[node]["model_inputs"],
+            #         expected_outputs=RT_techs[node]["model_outputs"],
+            #     )
+            #     model = RT_techs[node]
 
-            G.nodes[node].update({"model": model})
+            ionode = IONode(
+                name=node,
+                model=RT_techs[node]["model"],
+                expected_inputs=RT_techs[node]["model_inputs"],
+                expected_outputs=RT_techs[node]["model_outputs"],
+            )
+
+            # if node == "electrolyzer":
+
+            #     ionode = IONode(name= node, model=RT_techs[node]["model"], expected_inputs=RT_techs[node]["model_inputs"], expected_outputs=RT_techs[node]["model_outputs"])
+
+            #     model = RT_techs["electrolyzer"]
+            # if node == "hydrogen_storage":
+            #     model = RT_techs["hydrogen_storage"]
+            # if node == "joule_heater":
+            #     model = RT_techs["joule_heater"]
+            # if node == "thermal_energy_storage":
+            #     model = RT_techs["thermal_energy_storage"]
+            # if node == "heat_exchanger":
+            #     model = RT_techs["heat_exchanger"]
+            # if node == "steel":
+            #     model = RT_techs["steel"]
+            # if node == "battery":
+            #     model = RT_techs["battery"]
+
+            # G.nodes[node].update({"model": model})
+            G.nodes[node].update({"ionode": ionode})
+
 
         # nx.draw_networkx(G, with_labels=True)
 
@@ -213,7 +386,13 @@ class RealTimeSimulation:
         self.system_graph = G
 
         for node in list(self.system_graph.nodes):
-            assert not self.system_graph.nodes[node]["model"] == None, f"no model for node: {node}"
+            # assert (
+            #     not self.system_graph.nodes[node]["model"] == None
+            # ), f"no model for node: {node}"
+
+            assert (
+                not self.system_graph.nodes[node]["ionode"].model == None
+            ), f"no model for node: {node}"
 
         # self.plot_system_graph()
 
@@ -277,6 +456,8 @@ class RealTimeSimulation:
         #     "output",
         # ]
 
+        node_order = ["generation", "electrolyzer", "heat_exchanger"]
+
         # # Make standin dispatch_io and simulated io
         # G_dispatch = self.system_graph.copy()
 
@@ -306,21 +487,30 @@ class RealTimeSimulation:
 
             if node == "generation":
                 this_node_input = generation_available
-                self.system_graph.nodes[node]["model"].set_output(generation_available)
+                # self.system_graph.nodes[node]["model"].set_output(generation_available)
+                self.system_graph.nodes[node]["ionode"].model.set_output(generation_available)
 
             # Get the input to the node from the simulated graph
             # These are only the edges coming into node node
             sim_in_edges = G_simulated.in_edges(node)
 
-            this_node_input = 0
+            # this_node_input = 0
+            this_node_input = []
 
             for in_edge in sim_in_edges:
                 # Check that upstream values have been simulated
                 edge_data = G_simulated.get_edge_data(in_edge[0], in_edge[1])["value"]
-                assert edge_data is not None, "edge data is none, needs to be run first"
-                assert not np.isnan(edge_data)
+                # assert edge_data is not None, "edge data is none, needs to be run first"
+                # assert not np.isnan(edge_data)
 
-                this_node_input += edge_data
+                # this_node_input += edge_data
+                this_node_input.append(edge_data)
+
+            if len(this_node_input) > 0:
+                # this_node_input = np.atleast_2d(np.stack(this_node_input))
+                this_node_input = np.concatenate(this_node_input, axis=0)
+            else:
+                this_node_input = np.zeros((1, 4))
 
             # Gather inputs from edge list - All inputs to node should already be in simulated_IO
 
@@ -333,17 +523,25 @@ class RealTimeSimulation:
                 key: dispatch_values[key] for key in list(dispatch_out_edges)
             }
 
-            dispatch_out_total = np.sum(list(node_dispatch_values.values()))
+            # dispatch_out_total = np.sum(list(node_dispatch_values.values()))
+            if len(node_dispatch_values) > 0:
+                dispatch_out_total = np.atleast_2d(np.sum(np.stack(list(node_dispatch_values.values())), axis=0))
+            else:
+                dispatch_out_total = np.zeros((1, 4))
 
             # Include the dispatch signal to the simulation model
             # If it is an input-output model then the dispatch signal is ignored
             # If it is a controllable model then the low-level controller tries to match the dispatch signal of output
             # dispatch input can be the sum of all dispatch outputs? worry about tracking within the model, worry about splitting it in this forloop
-            node_output = self.system_graph.nodes[node]["model"].step(
+
+            # node_output = self.system_graph.nodes[node]["model"].step(
+            #     this_node_input, dispatch_out_total, step_index
+            # )
+            node_output = self.system_graph.nodes[node]["ionode"].step(
                 this_node_input, dispatch_out_total, step_index
             )
 
-            assert not np.isnan(node_output)
+            # assert not np.isnan(node_output)
 
             # TODO if dispatch says less than node_output then throw some away
             # else if dispatch says more than node_output, then send it all downstream
@@ -354,26 +552,35 @@ class RealTimeSimulation:
             sim_out_edges = G_simulated.out_edges(node)
 
             # If the node makes more output than the dispatcher planned for
-            if node_output > dispatch_out_total:
-                # TODO: dont forget to come back and track this
-                wasted_output = node_output - dispatch_out_total
-                node_output -= wasted_output
-            else:
-                wasted_output = 0
+            # if node_output > dispatch_out_total:
+            #     # TODO: dont forget to come back and track this
+            #     wasted_output = node_output - dispatch_out_total
+            #     node_output -= wasted_output
+            # else:
+            #     wasted_output = 0
+
+
+            wasted_output = np.zeros_like(node_output)
+            # for j in range(len(node_output)):
+                
 
             G_simulated.nodes[node].update({"wasted_output": wasted_output})
 
             # record the node output in the simulated graph and update the edge data accordingly
+            # for out_edge in list(sim_out_edges):
+
+            #     # Split the node output to downstream edges proportionally to the dispatch signal so under-production is shared evenly.
+            #     scaled_output = node_output * (
+            #         node_dispatch_values[out_edge] / dispatch_out_total
+            #     )
+
+            #     if dispatch_out_total == 0:
+            #         scaled_output = 0
+
+            #     simulated_IO[out_edge]["value"] = scaled_output
+
             for out_edge in list(sim_out_edges):
-
-                # Split the node output to downstream edges proportionally to the dispatch signal so under-production is shared evenly.
-                scaled_output = node_output * (
-                    node_dispatch_values[out_edge] / dispatch_out_total
-                )
-
-                if dispatch_out_total == 0:
-                    scaled_output = 0
-
+                scaled_output = node_output * np.nan_to_num(node_dispatch_values[out_edge] / dispatch_out_total)
                 simulated_IO[out_edge]["value"] = scaled_output
 
             nx.set_edge_attributes(G_simulated, simulated_IO)
@@ -390,7 +597,7 @@ class RealTimeSimulation:
 
         return G_simulated
 
-    def simulate(self, dispatcher:GreenheartDispatch, hopp_results):
+    def simulate(self, dispatcher: GreenheartDispatch, hopp_results):
         # Get generation signals
 
         gen_profiles = {}
@@ -425,13 +632,21 @@ class RealTimeSimulation:
 
         # TODO: For all components, run consolidate sim outcome
 
+        # for node in self.system_graph.nodes:
+        #     if hasattr(
+        #         self.system_graph.nodes[node]["model"], "consolidate_sim_outcome"
+        #     ):
+        #         self.system_graph.nodes[node]["model"].consolidate_sim_outcome()
         for node in self.system_graph.nodes:
             if hasattr(
-                self.system_graph.nodes[node]["model"], "consolidate_sim_outcome"
+                self.system_graph.nodes[node]["ionode"].model, "consolidate_sim_outcome"
             ):
-                self.system_graph.nodes[node]["model"].consolidate_sim_outcome()
+                self.system_graph.nodes[node]["ionode"].model.consolidate_sim_outcome()
+              
 
+  
         []
+
 
     def setup_record_keeping(self):
         duration = 8760
@@ -441,19 +656,19 @@ class RealTimeSimulation:
             index_dict.update({edge: i})
 
         self.index_dict = index_dict
-        self.system_states = np.zeros((len(self.system_graph.edges), duration))
-        self.node_waste = np.zeros((len(self.system_graph.nodes), duration))
+        self.system_states = np.zeros((len(self.system_graph.edges), duration, 4))
+        self.node_waste = np.zeros((len(self.system_graph.nodes), duration, 4))
 
-        []
+      
 
     def record_states(self, time_step, simulated_IO):
 
         values = nx.get_edge_attributes(simulated_IO, "value")
         for key in values.keys():
-            self.system_states[self.index_dict[key], time_step] = values[key]
+            self.system_states[self.index_dict[key], time_step, :] = values[key]
 
         for i, node in enumerate(list(simulated_IO.nodes)):
-            self.node_waste[i, time_step] = simulated_IO.nodes[node]["wasted_output"]
+            self.node_waste[i, time_step, :] = simulated_IO.nodes[node]["wasted_output"]
 
         []
 
@@ -501,3 +716,77 @@ class StandinNode:
 
     def step(self, input, dispatch=None, step_index=None):
         return self.output
+
+
+class IONode:
+    def __init__(self, name, model, expected_inputs, expected_outputs):
+        self.inputs = expected_inputs
+        self.outputs = expected_outputs
+
+        self.name = name
+
+        self.model = model
+
+    def step(self, graph_input, graph_dispatch, step_index):
+
+        model_dispatch = self.consolidate_inputs(graph_dispatch)
+        model_input = self.consolidate_inputs(graph_input)
+        model_output = self.model.step(model_input, model_dispatch, step_index)
+
+        if self.name == "electrolyzer":
+            model_output = (model_output, 80)
+        elif self.name == "hydrogen_storage":
+            model_output = (model_output, 20)
+        # elif self.name == "heat_exchanger":
+        #     model_output = (model_output, 900)
+
+        graph_output = self.consolidate_output(model_output)
+
+        return graph_output
+
+    def consolidate_inputs(self, graph_input):
+        if (graph_input.size == 0):
+            return 0
+
+
+        graph_input = np.array(graph_input)
+        Pin = np.sum(graph_input[:, 0])
+        Qin = np.sum(graph_input[:, 1])
+        mdotin = np.sum(graph_input[:, 2])
+        if mdotin == 0:
+            Tin = 0
+        else:
+            Tin = np.dot(graph_input[:, 2], graph_input[:, 3]) / np.sum(graph_input[:, 2])
+
+        if self.inputs["power"] and (not self.inputs["Qdot"]) and (not self.inputs["mdot"]):
+            model_input = Pin
+        elif self.inputs["Qdot"] and (not self.inputs["power"]) and (not self.inputs["mdot"]):
+            model_input = Qin
+        elif self.inputs["mdot"]:
+            if self.inputs["power"] & self.inputs["Qdot"] :
+                model_input = (Pin, Qin, mdotin, Tin)
+            else:
+                model_input = (mdotin, Tin)
+        
+        else:
+            model_input = 0
+
+        return model_input
+
+    def consolidate_output(self, model_output):
+        
+        graph_output = np.array([0, 0, 0, 0], dtype=float)
+
+        if self.outputs["power"]:
+            graph_output[0] = model_output
+        
+        if self.outputs["Qdot"]:
+            graph_output[1] = model_output
+
+        if self.outputs["mdot"]:
+            graph_output[2] = model_output[0]
+            graph_output[3] = model_output[1]
+
+
+
+        return graph_output
