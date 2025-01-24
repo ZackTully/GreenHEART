@@ -75,6 +75,7 @@ class RealTimeSimulation:
             "hydrogen_storage",
             "heat_exchanger",
             "thermal_energy_storage",
+            "steel"
             # "output"
         ]
 
@@ -255,26 +256,26 @@ class RealTimeSimulation:
         downstream = [edge[1] for edge in traversal]
 
         # Hard code for now but need to come back to make this general
-        # node_order = [
-        #     "generation",
-        #     "curtail",
-        #     "electrolyzer",
-        #     "hydrogen_storage",
-        #     "steel",
-        # ]
-
-        # Hard code for heat example
         node_order = [
             "generation",
             "curtail",
-            "battery",
             "electrolyzer",
             "hydrogen_storage",
-            "joule_heater",
-            "thermal_energy_storage",
-            "heat_exchanger",
-            "output",
+            "steel",
         ]
+
+        # Hard code for heat example
+        # node_order = [
+        #     "generation",
+        #     "curtail",
+        #     "battery",
+        #     "electrolyzer",
+        #     "hydrogen_storage",
+        #     "joule_heater",
+        #     "thermal_energy_storage",
+        #     "heat_exchanger",
+        #     "output",
+        # ]
 
         # # Make standin dispatch_io and simulated io
         # G_dispatch = self.system_graph.copy()

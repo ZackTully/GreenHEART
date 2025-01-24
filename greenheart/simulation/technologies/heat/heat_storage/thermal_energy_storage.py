@@ -3,13 +3,13 @@ import numpy as np
 
 class ThermalEnergyStorage:
     def __init__(self):
-        self.particle_cp = 1155 # J kg^-1 K^-1
+        self.particle_cp = 1.155 # kJ kg^-1 K^-1
 
         self.dt = 3600 # [s]
         self.T_tank = 1200 # [C] temperature of the particles in the storage tank
         self.T_ambient = 15 # [C]
 
-        self.m_tank = 10000 # [kg] mass of particles in storage tank
+        self.m_tank = 1000 # [kg] mass of particles in storage tank
 
         # Low-level controller parameters
         self.T_max = 1710 # [C] maximum tank temperature, particle melting temperature
@@ -19,6 +19,8 @@ class ThermalEnergyStorage:
         # How to define max charge rate? heat flow rate, delta temp., particle mass flow
         self.Q_in_max = 50 # [kW]
         self.Q_out_max = 50 # [kW]
+
+        
 
 
     def step(self, Qdot_in_available, Qdot_desired, step_index):
@@ -35,8 +37,8 @@ class ThermalEnergyStorage:
         assert Qdot_in_available >= 0, "Cannot have negative available heat"
 
         # state constraint
-        upper1 = (self.T_max - self.T_tank) * self.m_tank * self.particle_cp
-        lower1 = (self.T_min - self.T_tank) * self.m_tank * self.particle_cp
+        upper1 = (self.T_max - self.T_tank) * self.m_tank * self.particle_cp / self.dt
+        lower1 = (self.T_min - self.T_tank) * self.m_tank * self.particle_cp /self.dt
 
         # rate constraint
         upper2 = self.Q_in_max
@@ -189,4 +191,8 @@ if __name__ == "__main__":
     #52 percent efficient
     #
     tes = HighTempTES(**config)
+    
+
+    TES = ThermalEnergyStorage()
+
     []

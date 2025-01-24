@@ -97,8 +97,8 @@ class GreenheartDispatch:
 
     def step(self, G_dispatch, available_power):
 
-        # G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
-        G_dispatch = self.example_control_hydrogen_heat(G_dispatch, available_power)
+        G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
+        # G_dispatch = self.example_control_hydrogen_heat(G_dispatch, available_power)
         return G_dispatch
 
 
