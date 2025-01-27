@@ -181,11 +181,15 @@ class HeatExchanger:
         self.eta_HX = 1
         self.Tout_desired = 900  # [C]
         self.Tout = self.Tout_desired
-        self.cp = 14304  # [J kg^-1 K^-1]
+        self.cp = 14.304  # [J kg^-1 K^-1]
 
         self.output_variable = "Tout"
         self.output_variable = "mdot"
         self.output_variable = "Qdot"
+
+        duration = 8760
+        self.output_store = np.zeros((4, duration))
+        self.wasted_store = np.zeros((4, duration))
 
     # def inputs(self, inputs):
 
@@ -290,6 +294,8 @@ class HeatExchanger:
     def step(self, inputs, dispatch, step_index):
         Qdotin, mdotin, Tin = self.inputs(inputs)
 
+        Qdotin = Qdotin * 3600
+
         out_mdot, waste_mdot = self.calc_mdot(Qdotin, mdotin, Tin, self.Tout_desired)
         out_Qdot, waste_Qdot = self.calc_Qdot(Qdotin, mdotin, Tin, self.Tout_desired)
 
@@ -298,11 +304,11 @@ class HeatExchanger:
             output = out_Qdot
             wasted = waste_Qdot
 
-        if waste_Qdot[1] < 0: # Too much mdot
+        elif waste_Qdot[1] < 0: # Too much mdot
             output = out_mdot
             wasted = waste_mdot
 
-        if (waste_Qdot[1] == 0) and (waste_mdot[2] == 0): # perfect
+        elif (waste_Qdot[1] == 0) and (waste_mdot[2] == 0): # perfect
             # Both calculations should give the same
             output = out_mdot
             wasted = waste_mdot
@@ -310,9 +316,14 @@ class HeatExchanger:
         self.output = output
         self.wasted = wasted
 
+        self.store_step(output, wasted, step_index)
+
         # return output, wasted
         return (output[2], output[3])
 
+    def store_step(self, output, wasted, step_index):
+        self.output_store[:, step_index] = output
+        self.wasted_store[:, step_index] = wasted
 
 
 if __name__ == "__main__":

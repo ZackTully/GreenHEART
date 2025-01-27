@@ -111,6 +111,27 @@ class RealTimeSimulation:
                     }
                 )
 
+            if GH_tech == "curtail":
+                RT_techs.update(
+                    {
+                        "curtail": {
+                            "model": StandinNode(),
+                            "model_inputs": {
+                                "power": True,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                            "model_outputs": {
+                                "power": False,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                        }
+                    }
+                )
+
             if GH_tech == "battery":
                 RT_techs.update(
                     {
@@ -456,7 +477,7 @@ class RealTimeSimulation:
         #     "output",
         # ]
 
-        node_order = ["generation", "electrolyzer", "heat_exchanger"]
+        node_order = ["generation", "curtail", "electrolyzer", "heat_exchanger"]
 
         # # Make standin dispatch_io and simulated io
         # G_dispatch = self.system_graph.copy()
@@ -507,8 +528,8 @@ class RealTimeSimulation:
                 this_node_input.append(edge_data)
 
             if len(this_node_input) > 0:
-                # this_node_input = np.atleast_2d(np.stack(this_node_input))
-                this_node_input = np.concatenate(this_node_input, axis=0)
+                this_node_input = np.stack(this_node_input)
+                # this_node_input = np.concatenate(this_node_input, axis=1)
             else:
                 this_node_input = np.zeros((1, 4))
 
@@ -525,9 +546,9 @@ class RealTimeSimulation:
 
             # dispatch_out_total = np.sum(list(node_dispatch_values.values()))
             if len(node_dispatch_values) > 0:
-                dispatch_out_total = np.atleast_2d(np.sum(np.stack(list(node_dispatch_values.values())), axis=0))
+                dispatch_out_total = np.sum(np.stack(list(node_dispatch_values.values())), axis=0)
             else:
-                dispatch_out_total = np.zeros((1, 4))
+                dispatch_out_total = np.zeros( 4)
 
             # Include the dispatch signal to the simulation model
             # If it is an input-output model then the dispatch signal is ignored
@@ -562,7 +583,9 @@ class RealTimeSimulation:
 
             wasted_output = np.zeros_like(node_output)
             # for j in range(len(node_output)):
-                
+            wasted_output = np.where(node_output > dispatch_out_total, (node_output - dispatch_out_total), 0)
+            node_output -= wasted_output    
+
 
             G_simulated.nodes[node].update({"wasted_output": wasted_output})
 
@@ -734,9 +757,9 @@ class IONode:
         model_output = self.model.step(model_input, model_dispatch, step_index)
 
         if self.name == "electrolyzer":
-            model_output = (model_output, 80)
+            model_output = [model_output, 80]
         elif self.name == "hydrogen_storage":
-            model_output = (model_output, 20)
+            model_output = [model_output, 20]
         # elif self.name == "heat_exchanger":
         #     model_output = (model_output, 900)
 
@@ -748,44 +771,72 @@ class IONode:
         if (graph_input.size == 0):
             return 0
 
-
-        graph_input = np.array(graph_input)
+        graph_input = np.atleast_2d(np.array(graph_input))
         Pin = np.sum(graph_input[:, 0])
         Qin = np.sum(graph_input[:, 1])
         mdotin = np.sum(graph_input[:, 2])
-        if mdotin == 0:
-            Tin = 0
-        else:
-            Tin = np.dot(graph_input[:, 2], graph_input[:, 3]) / np.sum(graph_input[:, 2])
+        Tin = np.nan_to_num(np.dot(graph_input[:, 2], graph_input[:, 3]) / np.sum(graph_input[:, 2]))
 
-        if self.inputs["power"] and (not self.inputs["Qdot"]) and (not self.inputs["mdot"]):
-            model_input = Pin
-        elif self.inputs["Qdot"] and (not self.inputs["power"]) and (not self.inputs["mdot"]):
-            model_input = Qin
-        elif self.inputs["mdot"]:
-            if self.inputs["power"] & self.inputs["Qdot"] :
-                model_input = (Pin, Qin, mdotin, Tin)
-            else:
-                model_input = (mdotin, Tin)
-        
-        else:
-            model_input = 0
+        inputs_dict = {"power": Pin, "Qdot": Qin, "mdot": mdotin, "T": Tin}
+
+
+        model_input = []
+        for key in self.inputs.keys():
+            if self.inputs[key]:
+                model_input.append(inputs_dict[key])
+
+        if len(model_input) == 1:
+            model_input = model_input[0]
 
         return model_input
+    
+    def consolidate_dispatch(self, graph_dispatch):
+        if (graph_dispatch.size == 0):
+            return 0
+
+        graph_dispatch = np.atleast_2d(np.array(graph_dispatch))
+        Pin = np.sum(graph_dispatch[:, 0])
+        Qin = np.sum(graph_dispatch[:, 1])
+        mdotin = np.sum(graph_dispatch[:, 2])
+        Tin = np.nan_to_num(np.dot(graph_dispatch[:, 2], graph_dispatch[:, 3]) / np.sum(graph_dispatch[:, 2]))
+
+        dispatch_dict = {"power": Pin, "Qdot": Qin, "mdot": mdotin, "T": Tin}
+
+
+        model_dispatch = []
+        for key in self.outputs.keys():
+            if self.outputs[key]:
+                model_dispatch.append(dispatch_dict[key])
+
+        if len(model_dispatch) == 1:
+            model_dispatch = model_dispatch[0]
+
+        return model_dispatch
 
     def consolidate_output(self, model_output):
         
         graph_output = np.array([0, 0, 0, 0], dtype=float)
 
-        if self.outputs["power"]:
-            graph_output[0] = model_output
-        
-        if self.outputs["Qdot"]:
-            graph_output[1] = model_output
+        count = 0
+        for i, key in enumerate(self.outputs.keys()):
+            if self.outputs[key]:
+                if isinstance(model_output, float):
+                    graph_output[i] = model_output
+                else:    
+                    graph_output[i] = model_output[count]
+                count += 1
 
-        if self.outputs["mdot"]:
-            graph_output[2] = model_output[0]
-            graph_output[3] = model_output[1]
+
+
+        # if self.outputs["power"]:
+        #     graph_output[0] = model_output
+        
+        # if self.outputs["Qdot"]:
+        #     graph_output[1] = model_output
+
+        # if self.outputs["mdot"]:
+        #     graph_output[2] = model_output[0]
+        #     graph_output[3] = model_output[1]
 
 
 

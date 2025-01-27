@@ -24,15 +24,15 @@ class GreenheartDispatch:
         pass
 
         # extract the timeseries- and feedback-capabale component simulation models from hopp
-        hopp_simulation_models = hopp_interface.hopp.system.technologies
+        # hopp_simulation_models = hopp_interface.hopp.system.technologies
 
-        # extract or initialze the timeseries- and feedback-capabale component simulation models from greenheart
-        GH_simulation_model_names = ["X", "Y", "Z"]
-        GH_simulation_models = []
-        for GH_model in GH_simulation_model_names:
-            GH_simulation_models.append(GH_model)
+        # # extract or initialze the timeseries- and feedback-capabale component simulation models from greenheart
+        # GH_simulation_model_names = ["X", "Y", "Z"]
+        # GH_simulation_models = []
+        # for GH_model in GH_simulation_model_names:
+        #     GH_simulation_models.append(GH_model)
         
-        self.setup_simulation_model(hopp_simulation_models, GH_simulation_models)
+        # self.setup_simulation_model(hopp_simulation_models, GH_simulation_models)
         
 
     def setup_time_parameters(self, hopp_interface, GHconfig, dispatch_config):
@@ -105,21 +105,19 @@ class GreenheartDispatch:
 
     def example_control_elec_heat_exchanger(self, G_dispatch, available_power):
 
-
-        gen_to_el = [available_power / 2, 0, 0, 0]
+        gen_to_curtail = [np.max([available_power - 50000 , 0]), 0, 0, 0 ]
+        gen_to_el = [50000 * 0.95, 0, 0, 0]
         el_to_hx = [0, 0, (1 / 55 ) * gen_to_el[0], 80]
-        gen_to_hx = [available_power / 2, 0, 0, 0]
-
+        # el_to_hx = [0, 0, 500, 80]
+        # gen_to_hx = [available_power / 2, 0, 0, 0]
+        gen_to_hx = [50000 * 0.05, 0, 0, 0]
 
         nx.set_edge_attributes(G_dispatch, {
+            ("generation", "curtail"):{"value": gen_to_curtail},
             ("generation", "electrolyzer"): {"value": gen_to_el},
             ("electrolyzer", "heat_exchanger"): {"value": el_to_hx},
             ("generation", "heat_exchanger"): {"value": gen_to_hx}
         })
-
-
-
-
 
         return G_dispatch
 
