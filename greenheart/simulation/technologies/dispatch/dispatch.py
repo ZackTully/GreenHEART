@@ -103,7 +103,7 @@ class GreenheartDispatch:
         G_dispatch = self.example_control_BES_TES_heat_exchanger(G_dispatch, available_power, feedback_error)
         return G_dispatch
 
-    def example_control_BES_TES_heat_exchanger(self, G_dispatch, available_power, feedback_error=None):
+    def example_control_BES_TES_heat_exchanger(self, G, available_power, feedback_error=None):
 
         # Plan for CF = 0.3, 150 MW average generation
 
@@ -136,19 +136,19 @@ class GreenheartDispatch:
         HX_to_output = mean_to_hydrogen / 55
 
         dispatch_IO = {
-            ('generation', 'electrolyzer'): {"value": [gen_to_EL, 0, 0, 0]},
-            ('generation', 'battery'): {"value": [gen_to_BES, 0, 0, 0]},
-            ('battery', 'electrolyzer'): {"value": [BES_to_EL, 0, 0, 0]},
-            ('electrolyzer', 'heat_exchanger'): {"value": [0, 0, EL_to_HX, 80]},
-            ('generation', 'thermal_energy_storage'): {"value": [gen_to_TES, 0, 0, 0]},
-            ('generation', 'heat_exchanger'): {"value": [gen_to_HX, 0, 0, 0]},
-            ('thermal_energy_storage', 'heat_exchanger'): {"value": [0, TES_to_HX,0, 0]},
-            ('heat_exchanger', 'output'): {"value": [0, 0, HX_to_output, 900]}
+            ('generation', 'electrolyzer'): {"dispatch": [gen_to_EL, 0, 0, 0]},
+            ('generation', 'battery'): {"dispatch": [gen_to_BES, 0, 0, 0]},
+            ('battery', 'electrolyzer'): {"dispatch": [BES_to_EL, 0, 0, 0]},
+            ('electrolyzer', 'heat_exchanger'): {"dispatch": [0, 0, EL_to_HX, 80]},
+            ('generation', 'thermal_energy_storage'): {"dispatch": [gen_to_TES, 0, 0, 0]},
+            ('generation', 'heat_exchanger'): {"dispatch": [gen_to_HX, 0, 0, 0]},
+            ('thermal_energy_storage', 'heat_exchanger'): {"dispatch": [0, TES_to_HX,0, 0]},
+            ('heat_exchanger', 'output'): {"dispatch": [0, 0, HX_to_output, 900]}
         }
 
 
 
-
+        # TODO Update to get the error signal from G not from feedback_error
         if feedback_error is not None:
             error_IO = nx.get_edge_attributes(feedback_error, "error")
 
@@ -162,11 +162,11 @@ class GreenheartDispatch:
 
 
 
-        nx.set_edge_attributes(G_dispatch, dispatch_IO)
+        nx.set_edge_attributes(G, dispatch_IO)
 
         # pprint.pprint(nx.get_edge_attributes(G_dispatch, "value"))
 
-        return G_dispatch
+        return G
     
 
 

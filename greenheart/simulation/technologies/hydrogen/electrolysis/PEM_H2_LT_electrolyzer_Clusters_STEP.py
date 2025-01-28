@@ -19,7 +19,7 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
 
 
         # degradation update period = 250 
-        self.degradation_update_period = 250 #[hrs]
+        self.degradation_update_period = 1000 #[hrs]
         self.update_degradation_index = 5
 
 
