@@ -8,10 +8,10 @@ class Battery(Battery_hopp):
         
 
         self.roundtrip_efficiency = 1
-        self.max_capacity_kWh = 3e5 # kg
+        self.max_capacity_kWh = 5e6 # kWh
         self.min_capacity_kWh = 0
         
-        self.max_charge_rate_kW = 750
+        self.max_charge_rate_kW = 50000
         self.max_discharge_rate_kW = self.max_charge_rate_kW
 
         self.dt = 1 # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
@@ -92,13 +92,19 @@ class Battery(Battery_hopp):
 
         if (input > 0) & (dispatch == 0): # Charge
             desired_power = input
-        if dispatch > 0:
+        elif dispatch > 0:
             desired_power = -dispatch # positive means charging negative means discharging
         else:
             desired_power = 0 # TODO this might come back around to bite
 
         output = self.input_output(available_power, desired_power)
         self.store_step(step_index)
+
+        if output <= 0:
+            output = -output
+        else:
+            output = 0.0
+
 
         return output
 

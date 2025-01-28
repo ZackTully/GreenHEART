@@ -84,6 +84,23 @@ class RealTimeSimulation:
             if key in GH_tech_options:
                 GH_techs.append(key)
 
+        graph_config_fpath = config.greenheart_config["system"]["system_graph_config"]
+        graph_config = load_yaml(graph_config_fpath)
+        network_config = graph_config["network"]
+
+        edges = network_config
+        nodes = []
+        for edge in network_config:
+            for node in edge:
+                if node not in nodes:
+                    nodes.append(node)       
+
+        GH_techs = nodes 
+
+
+        if "traversal_order" in graph_config.keys():
+            self.node_order = graph_config["traversal_order"]
+
         # Instantiate the individual steppable models of each technology
 
         RT_techs = {}
@@ -121,6 +138,27 @@ class RealTimeSimulation:
                                 "Qdot": False,
                                 "mdot": False,
                                 "T": False,
+                            },
+                            "model_outputs": {
+                                "power": False,
+                                "Qdot": False,
+                                "mdot": False,
+                                "T": False,
+                            },
+                        }
+                    }
+                )
+
+            if GH_tech == "output":
+                RT_techs.update(
+                    {
+                        "output": {
+                            "model": StandinNode(),
+                            "model_inputs": {
+                                "power": True,
+                                "Qdot": True,
+                                "mdot": True,
+                                "T": True,
                             },
                             "model_outputs": {
                                 "power": False,
@@ -342,16 +380,7 @@ class RealTimeSimulation:
 
         # Build the connections with a graph network
 
-        graph_config_fpath = config.greenheart_config["system"]["system_graph_config"]
-        graph_config = load_yaml(graph_config_fpath)
-        network_config = graph_config["network"]
 
-        edges = network_config
-        nodes = []
-        for edge in network_config:
-            for node in edge:
-                if node not in nodes:
-                    nodes.append(node)
 
         G = nx.DiGraph()
         G.add_nodes_from(nodes)
@@ -359,16 +388,6 @@ class RealTimeSimulation:
 
         for node in G.nodes:
             model = None
-            # if (node == "generation") or (node == "curtail") or (node == "output"):
-            #     model = StandinNode()
-            # else:
-            #     ionode = IONode(
-            #         name=node,
-            #         model=RT_techs[node]["model"],
-            #         expected_inputs=RT_techs[node]["model_inputs"],
-            #         expected_outputs=RT_techs[node]["model_outputs"],
-            #     )
-            #     model = RT_techs[node]
 
             ionode = IONode(
                 name=node,
@@ -377,25 +396,6 @@ class RealTimeSimulation:
                 expected_outputs=RT_techs[node]["model_outputs"],
             )
 
-            # if node == "electrolyzer":
-
-            #     ionode = IONode(name= node, model=RT_techs[node]["model"], expected_inputs=RT_techs[node]["model_inputs"], expected_outputs=RT_techs[node]["model_outputs"])
-
-            #     model = RT_techs["electrolyzer"]
-            # if node == "hydrogen_storage":
-            #     model = RT_techs["hydrogen_storage"]
-            # if node == "joule_heater":
-            #     model = RT_techs["joule_heater"]
-            # if node == "thermal_energy_storage":
-            #     model = RT_techs["thermal_energy_storage"]
-            # if node == "heat_exchanger":
-            #     model = RT_techs["heat_exchanger"]
-            # if node == "steel":
-            #     model = RT_techs["steel"]
-            # if node == "battery":
-            #     model = RT_techs["battery"]
-
-            # G.nodes[node].update({"model": model})
             G.nodes[node].update({"ionode": ionode})
 
 
@@ -427,9 +427,46 @@ class RealTimeSimulation:
         ax.set_axis_off()
 
         G = self.system_graph
-        # layout = nx.bfs_layout(G, start="generation")
-        # layout = nx.arf_layout(G)
-        layout = nx.planar_layout(G)
+
+        # Make multipartite layout for plotting
+        indeg = G.in_degree
+        root_node = [node for node in indeg if node[1] == 0]
+        node_layers = []
+
+        node_layers.append([])
+        if len(root_node) > 1:
+            shortest_path_list = []
+            for rn in root_node:
+                node_layers[0].append(rn[0])
+                shortest_path_list.append(nx.single_source_shortest_path(G, source=rn[0]))
+        else:
+            node_layers[0].append(root_node[0][0])
+
+            shortest_paths = nx.single_source_shortest_path(G, source=root_node[0][0])
+            shortest_path_list = [shortest_paths]
+
+        for spl in shortest_path_list:
+            for key in spl.keys():
+                path_length = len(spl[key])
+                if len(node_layers) <= path_length:
+                    node_layers.append([])
+
+                node_layers[path_length].append(key)
+        G_comp = nx.DiGraph()
+        for i in range(len(node_layers)):
+            G_comp.add_nodes_from(node_layers[i], layer=i)
+
+        G_comp.add_edges_from(G.edges)
+        layout=nx.multipartite_layout(G_comp, subset_key="layer", align="vertical", scale=1)
+
+
+        for key in layout.keys():
+            coords = layout[key]
+            coords[0] += np.random.randn(1) * .05
+            layout[key] = coords
+
+
+
         nodes = nx.draw_networkx_nodes(G, pos=layout, ax=ax)
         nodes.set_edgecolor("white")
         nodes.set_facecolor("white")
@@ -455,40 +492,35 @@ class RealTimeSimulation:
         upstream = [edge[0] for edge in traversal]
         downstream = [edge[1] for edge in traversal]
 
-        # Hard code for now but need to come back to make this general
-        node_order = [
-            "generation",
-            "curtail",
-            "electrolyzer",
-            "hydrogen_storage",
-            "steel",
-        ]
 
-        # Hard code for heat example
-        # node_order = [
-        #     "generation",
-        #     "curtail",
-        #     "battery",
-        #     "electrolyzer",
-        #     "hydrogen_storage",
-        #     "joule_heater",
-        #     "thermal_energy_storage",
-        #     "heat_exchanger",
-        #     "output",
-        # ]
+        if hasattr(self, "node_order"):
+            node_order = self.node_order
+        else:
 
-        node_order = ["generation", "curtail", "electrolyzer", "heat_exchanger"]
+            # Hard code for now but need to come back to make this general
+            node_order = [
+                "generation",
+                "curtail",
+                "electrolyzer",
+                "hydrogen_storage",
+                "steel",
+            ]
 
-        # # Make standin dispatch_io and simulated io
-        # G_dispatch = self.system_graph.copy()
+            # Hard code for heat example
+            # node_order = [
+            #     "generation",
+            #     "curtail",
+            #     "battery",
+            #     "electrolyzer",
+            #     "hydrogen_storage",
+            #     "joule_heater",
+            #     "thermal_energy_storage",
+            #     "heat_exchanger",
+            #     "output",
+            # ]
 
-        # dispatch_edges = list(G_dispatch.edges)
-        # dispatch_IO = {}
-        # for edge in dispatch_edges:
-        #     dispatch_IO.update({edge: {"value": 2}})
-        #     # dispatch_edge_dict.update({edge: [2]})
+            node_order = ["generation", "curtail", "electrolyzer", "heat_exchanger"]
 
-        # nx.set_edge_attributes(G_dispatch, dispatch_IO)
         G_simulated = self.system_graph.copy()
 
         for node in list(G_simulated.nodes):
@@ -534,11 +566,9 @@ class RealTimeSimulation:
                 this_node_input = np.zeros((1, 4))
 
             # Gather inputs from edge list - All inputs to node should already be in simulated_IO
-
             # Gather outputs from dispatch list
 
             dispatch_out_edges = G_dispatch.out_edges(node)
-
             dispatch_values = nx.get_edge_attributes(G_dispatch, "value")
             node_dispatch_values = {
                 key: dispatch_values[key] for key in list(dispatch_out_edges)
@@ -550,36 +580,11 @@ class RealTimeSimulation:
             else:
                 dispatch_out_total = np.zeros( 4)
 
-            # Include the dispatch signal to the simulation model
-            # If it is an input-output model then the dispatch signal is ignored
-            # If it is a controllable model then the low-level controller tries to match the dispatch signal of output
-            # dispatch input can be the sum of all dispatch outputs? worry about tracking within the model, worry about splitting it in this forloop
-
-            # node_output = self.system_graph.nodes[node]["model"].step(
-            #     this_node_input, dispatch_out_total, step_index
-            # )
             node_output = self.system_graph.nodes[node]["ionode"].step(
                 this_node_input, dispatch_out_total, step_index
             )
 
-            # assert not np.isnan(node_output)
-
-            # TODO if dispatch says less than node_output then throw some away
-            # else if dispatch says more than node_output, then send it all downstream
-
-            # distribute the node outputs into the simulated graph as close to the dispatch graph as possibl
-            # put node_output in simulated_IO as close to dispatch_IO as possible
-
             sim_out_edges = G_simulated.out_edges(node)
-
-            # If the node makes more output than the dispatcher planned for
-            # if node_output > dispatch_out_total:
-            #     # TODO: dont forget to come back and track this
-            #     wasted_output = node_output - dispatch_out_total
-            #     node_output -= wasted_output
-            # else:
-            #     wasted_output = 0
-
 
             wasted_output = np.zeros_like(node_output)
             # for j in range(len(node_output)):
@@ -589,19 +594,6 @@ class RealTimeSimulation:
 
             G_simulated.nodes[node].update({"wasted_output": wasted_output})
 
-            # record the node output in the simulated graph and update the edge data accordingly
-            # for out_edge in list(sim_out_edges):
-
-            #     # Split the node output to downstream edges proportionally to the dispatch signal so under-production is shared evenly.
-            #     scaled_output = node_output * (
-            #         node_dispatch_values[out_edge] / dispatch_out_total
-            #     )
-
-            #     if dispatch_out_total == 0:
-            #         scaled_output = 0
-
-            #     simulated_IO[out_edge]["value"] = scaled_output
-
             for out_edge in list(sim_out_edges):
                 scaled_output = node_output * np.nan_to_num(node_dispatch_values[out_edge] / dispatch_out_total)
                 simulated_IO[out_edge]["value"] = scaled_output
@@ -610,13 +602,6 @@ class RealTimeSimulation:
 
             # To check that the edge attributes are being updated
             # nx.get_edge_attributes(G_simulated, "value")
-
-            []
-
-        # Traverse the system graph
-        # Call the component input/output
-        # check whether anything is violated
-        # See how close you can get to the control decision
 
         return G_simulated
 
@@ -640,36 +625,54 @@ class RealTimeSimulation:
         hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
 
         # Loop for everything downstream of generation
+        error_feedback = False
 
         G_dispatch = self.system_graph.copy()
 
         for i in range(len(hybrid_profile)):
-            # dispatch_IO = dispatcher.step()
 
             G_dispatch = dispatcher.step(G_dispatch, hybrid_profile[i])
-            simulated_IO = self.step_system_state_function(
+            G_simulated = self.step_system_state_function(
                 G_dispatch, hybrid_profile[i], i
             )
 
-            self.record_states(i, simulated_IO)
 
-        # TODO: For all components, run consolidate sim outcome
+            if error_feedback:
+        
+                safety_count = 0
+                max_error = 1e6
+                allowable_error = 1e1
 
-        # for node in self.system_graph.nodes:
-        #     if hasattr(
-        #         self.system_graph.nodes[node]["model"], "consolidate_sim_outcome"
-        #     ):
-        #         self.system_graph.nodes[node]["model"].consolidate_sim_outcome()
+                while (max_error > allowable_error) and (safety_count < 10):
+                    safety_count += 1
+
+                    max_error = 0
+                    G_error = G_simulated.copy()
+                    for edge in list(G_error.edges):
+                        error = G_dispatch.edges[edge]["value"] - G_simulated.edges[edge]["value"]
+
+                        
+
+                        max_error = np.max([max_error, np.max(np.abs(error))])
+
+                        G_error.edges[edge].update({"error": error})
+                    
+
+                    # nx.get_edge_attributes(G_error, "error")
+                    G_dispatch = dispatcher.step(G_dispatch, hybrid_profile[i], G_error)
+                    G_simulated = self.step_system_state_function(G_dispatch, hybrid_profile[i], i)
+
+                    []
+
+
+            self.record_states(i, G_simulated)
+
         for node in self.system_graph.nodes:
             if hasattr(
                 self.system_graph.nodes[node]["ionode"].model, "consolidate_sim_outcome"
             ):
                 self.system_graph.nodes[node]["ionode"].model.consolidate_sim_outcome()
               
-
-  
-        []
-
 
     def setup_record_keeping(self):
         duration = 8760
@@ -693,36 +696,8 @@ class RealTimeSimulation:
         for i, node in enumerate(list(simulated_IO.nodes)):
             self.node_waste[i, time_step, :] = simulated_IO.nodes[node]["wasted_output"]
 
-        []
+     
 
-    # Flag in greenheart config for whether or not to construct real-time model
-    # read in the greenheart config file
-    # extract technical parameters from the config file
-    # like electrolyzer sizing h2 compressor
-    # ignore generation for now but maybe need to address later, or just say it can be curtailed
-
-    """ From greenheart config
-        electrolyzer sizing, rating, type
-        h2 storage type
-        h2 storage capacity maybe
-    """
-
-    """ From hopp config
-        wind n_turbs, rating
-        pv capacity
-        battery rating and charge rate
-    """
-
-    """
-    Run HOPP - Take the generation profile from HOPP
-
-    Run real-time simulation 
-
-    give the outputs of real-time simulation back to HOPP
-
-    Use the other outputs of real-time simulation with other parts of the analysis in GreenHEART
-    
-    """
 
 
 class RealTimeSimulationOutput:
@@ -752,7 +727,7 @@ class IONode:
 
     def step(self, graph_input, graph_dispatch, step_index):
 
-        model_dispatch = self.consolidate_inputs(graph_dispatch)
+        model_dispatch = self.consolidate_dispatch(graph_dispatch)
         model_input = self.consolidate_inputs(graph_input)
         model_output = self.model.step(model_input, model_dispatch, step_index)
 
@@ -825,19 +800,5 @@ class IONode:
                 else:    
                     graph_output[i] = model_output[count]
                 count += 1
-
-
-
-        # if self.outputs["power"]:
-        #     graph_output[0] = model_output
-        
-        # if self.outputs["Qdot"]:
-        #     graph_output[1] = model_output
-
-        # if self.outputs["mdot"]:
-        #     graph_output[2] = model_output[0]
-        #     graph_output[3] = model_output[1]
-
-
 
         return graph_output

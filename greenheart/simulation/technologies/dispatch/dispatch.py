@@ -1,6 +1,6 @@
 import numpy as np
 import networkx as nx
-
+import pprint
 
 class GreenheartDispatchConfig:
     def __init__(self):
@@ -95,12 +95,79 @@ class GreenheartDispatch:
         return getattr(self, data_name)
         
 
-    def step(self, G_dispatch, available_power):
+    def step(self, G_dispatch, available_power, feedback_error = None):
 
         # G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
         # G_dispatch = self.example_control_hydrogen_heat(G_dispatch, available_power)
-        G_dispatch = self.example_control_elec_heat_exchanger(G_dispatch, available_power)
+        # G_dispatch = self.example_control_elec_heat_exchanger(G_dispatch, available_power)
+        G_dispatch = self.example_control_BES_TES_heat_exchanger(G_dispatch, available_power, feedback_error)
         return G_dispatch
+
+    def example_control_BES_TES_heat_exchanger(self, G_dispatch, available_power, feedback_error=None):
+
+        # Plan for CF = 0.3, 150 MW average generation
+
+        mean_generation = 150000 # kWh / hr
+
+        frac_electrolysis = 0.944
+        frac_heating = 0.056
+
+
+        # Hydrogen path
+        mean_to_hydrogen = frac_electrolysis * mean_generation
+
+        power_to_hydrogen = frac_electrolysis * available_power
+
+        gen_to_EL = np.min([mean_to_hydrogen, power_to_hydrogen])
+        gen_to_BES = np.max([0, power_to_hydrogen - mean_to_hydrogen]) 
+        BES_to_EL = np.max([0, mean_to_hydrogen - power_to_hydrogen])
+        EL_to_HX = 1 / 55 * (gen_to_EL + BES_to_EL )
+
+
+        # Heat path
+        mean_to_heating = frac_heating * mean_generation
+
+        power_to_heating = frac_heating * available_power
+
+        gen_to_HX = np.min([mean_to_heating, power_to_heating])
+        gen_to_TES = np.max([0, power_to_heating - mean_to_heating])
+        TES_to_HX = np.max([0, mean_to_heating - power_to_heating])
+
+        HX_to_output = mean_to_hydrogen / 55
+
+        dispatch_IO = {
+            ('generation', 'electrolyzer'): {"value": [gen_to_EL, 0, 0, 0]},
+            ('generation', 'battery'): {"value": [gen_to_BES, 0, 0, 0]},
+            ('battery', 'electrolyzer'): {"value": [BES_to_EL, 0, 0, 0]},
+            ('electrolyzer', 'heat_exchanger'): {"value": [0, 0, EL_to_HX, 80]},
+            ('generation', 'thermal_energy_storage'): {"value": [gen_to_TES, 0, 0, 0]},
+            ('generation', 'heat_exchanger'): {"value": [gen_to_HX, 0, 0, 0]},
+            ('thermal_energy_storage', 'heat_exchanger'): {"value": [0, TES_to_HX,0, 0]},
+            ('heat_exchanger', 'output'): {"value": [0, 0, HX_to_output, 900]}
+        }
+
+
+
+
+        if feedback_error is not None:
+            error_IO = nx.get_edge_attributes(feedback_error, "error")
+
+            for key in dispatch_IO.keys():
+                self.dispatch_IO[key]["value"] = dispatch_IO[key]["value"] - error_IO[key]
+                dispatch_IO = self.dispatch_IO
+        else:
+            self.dispatch_IO = dispatch_IO
+
+
+
+
+
+        nx.set_edge_attributes(G_dispatch, dispatch_IO)
+
+        # pprint.pprint(nx.get_edge_attributes(G_dispatch, "value"))
+
+        return G_dispatch
+    
 
 
     def example_control_elec_heat_exchanger(self, G_dispatch, available_power):

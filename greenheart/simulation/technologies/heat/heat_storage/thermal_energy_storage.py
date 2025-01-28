@@ -9,7 +9,7 @@ class ThermalEnergyStorage:
         self.T_tank = 1200 # [C] temperature of the particles in the storage tank
         self.T_ambient = 15 # [C]
 
-        self.m_tank = 1000 # [kg] mass of particles in storage tank
+        self.m_tank = 1000000 # [kg] mass of particles in storage tank
 
         # Low-level controller parameters
         self.T_max = 1710 # [C] maximum tank temperature, particle melting temperature
@@ -17,17 +17,38 @@ class ThermalEnergyStorage:
 
 
         # How to define max charge rate? heat flow rate, delta temp., particle mass flow
-        self.Q_in_max = 50 # [kW]
-        self.Q_out_max = 50 # [kW]
+        self.Q_in_max = 5000 # [kW]
+        self.Q_out_max = 5000 # [kW]
 
+        # state storage 
+        self.T_tank_storage = np.zeros(8760)
+
+
+
+    def step(self, Qdot_in_available, dispatch, step_index):
+
+
+        if dispatch > 0:
+            Qdot_desired = - dispatch
+        elif Qdot_in_available >= 0:
+            Qdot_desired = Qdot_in_available
         
-
-
-    def step(self, Qdot_in_available, Qdot_desired, step_index):
         Qdot_controller = self.control(Qdot_in_available, Qdot_desired)
         self.step_particle_tank(Qdot_controller)
 
-        return Qdot_controller
+        self.record(step_index)
+
+
+        if Qdot_controller <= 0:
+            Qdot_output = -Qdot_controller
+        else:
+            Qdot_output = 0.0
+
+        return Qdot_output
+
+    def record(self, step_index):
+        self.T_tank_storage[step_index] = self.T_tank
+
 
 
     def control(self, Qdot_in_available, Qdot_desired):
