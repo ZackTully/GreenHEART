@@ -27,11 +27,12 @@ class ThermalEnergyStorage:
 
     def step(self, Qdot_in_available, dispatch, step_index):
 
+        Qdot_desired = dispatch
 
-        if dispatch > 0:
-            Qdot_desired = - dispatch
-        elif Qdot_in_available >= 0:
-            Qdot_desired = Qdot_in_available
+        # if dispatch > 0:
+        #     Qdot_desired = - dispatch
+        # elif Qdot_in_available >= 0:
+        #     Qdot_desired = Qdot_in_available
         
         Qdot_controller = self.control(Qdot_in_available, Qdot_desired)
         self.step_particle_tank(Qdot_controller)

@@ -97,6 +97,8 @@ class GreenHeartSimulationConfig:
     plant_design_scenario: int = field(default=1)
     output_level: int = field(default=8)
     grid_connection: Optional[bool] = field(default=None)
+    realtime_simulation: Optional[bool] = field(default=False)
+
 
     # these are set in the __attrs_post_init__ method
     hopp_config: dict = field(init=False)
@@ -533,29 +535,19 @@ def setup_greenheart_simulation(config: GreenHeartSimulationConfig):
     )
 
 
-    # ZCT - initalize real time simulation here
-    simulator = RealTimeSimulation(config, hi)
-
-
-    # ZCT - initialize controller here
-    # controller = GH_controller(config, hi)
-
-    dispatcher = GreenheartDispatch(hi, config, dispatch_config=None)
-
-    hi.hopp.system.dispatch_builder.dispatcher = dispatcher
-
-
-
-    # ZCT - setup controller control model and controller simulation model here
-
-    # ZCT - attribute GH_controller to HOPP somehow
-
-    return config, hi, wind_cost_results, simulator, dispatcher
+    return config, hi, wind_cost_results
 
 
 def run_simulation(config: GreenHeartSimulationConfig):
 
-    config, hi, wind_cost_results, simulator, dispatcher = setup_greenheart_simulation(config=config)
+    config, hi, wind_cost_results = setup_greenheart_simulation(config=config)
+
+    if config.realtime_simulation:
+        simulator = RealTimeSimulation(config, hi)
+        dispatcher = GreenheartDispatch(hi, config, dispatch_config=None)
+        hi.hopp.system.dispatch_builder.dispatcher = dispatcher
+    else:
+        simulator = None
 
     # run HOPP model
     # hopp_results = he_hopp.run_hopp(hopp_site, hopp_technologies, hopp_scenario, hopp_h2_args, verbose=verbose)
@@ -567,7 +559,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
         verbose=config.verbose,
     )
 
-    if config.greenheart_config["electrolyzer"]["use_step_model"]:
+    if config.realtime_simulation:
         simulator.simulate(dispatcher, hopp_results)
 
     if config.design_scenario["wind_location"] == "onshore":
@@ -600,7 +592,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
         solver=True,
         power_for_peripherals_kw_in=0.0,
         breakdown=False,
-        simulator=simulator
+        simulator=None
     ):
 
         # hopp_results_internal = dict(hopp_results)
@@ -635,7 +627,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
         # ZCT - Extract electrolyzer timeseries from controller and apply here
 
         # TODO come back and make this a more reliable cases test
-        if not config.greenheart_config["electrolyzer"]["use_step_model"]:
+        if not config.realtime_simulation:
             simulator = None
 
 

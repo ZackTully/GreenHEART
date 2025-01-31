@@ -90,12 +90,14 @@ class Battery(Battery_hopp):
 
         # TODO: Better way to interpret dispatch signal
 
-        if (input > 0) & (dispatch == 0): # Charge
-            desired_power = input
-        elif dispatch > 0:
-            desired_power = -dispatch # positive means charging negative means discharging
-        else:
-            desired_power = 0 # TODO this might come back around to bite
+        # if (input > 0) & (dispatch == 0): # Charge
+        #     desired_power = input
+        # elif dispatch > 0:
+        #     desired_power = -dispatch # positive means charging negative means discharging
+        # else:
+        #     desired_power = 0 # TODO this might come back around to bite
+
+        desired_power = dispatch
 
         output = self.input_output(available_power, desired_power)
         self.store_step(step_index)

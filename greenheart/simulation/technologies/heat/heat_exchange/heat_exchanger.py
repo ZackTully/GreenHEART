@@ -293,10 +293,10 @@ class HeatExchanger:
 
     def step(self, inputs, dispatch, step_index):
 
-        if dispatch[0] > 0:
-            desired_mdotout = dispatch[0]
-        else: 
-            desired_mdotout = 0
+        # if dispatch[0] > 0:
+        #     desired_mdotout = dispatch[0]
+        # else: 
+        #     desired_mdotout = 0
 
 
 

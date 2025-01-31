@@ -130,6 +130,12 @@ class RealTimeSimulation:
         G.add_nodes_from(nodes)
         G.add_edges_from(edges)
 
+        for degree in list(G.out_degree):
+            if degree[1] > 1:
+                G.nodes[degree[0]].update({"split": True})
+            else:
+                G.nodes[degree[0]].update({"split": False})
+
         for node in G.nodes:
             model = None
 
@@ -138,6 +144,7 @@ class RealTimeSimulation:
                 model=RT_techs[node]["model"],
                 expected_inputs=RT_techs[node]["model_inputs"],
                 expected_outputs=RT_techs[node]["model_outputs"],
+                splitting_node=G.nodes[node]["split"],
             )
 
             G.nodes[node].update({"ionode": ionode})
@@ -164,12 +171,14 @@ class RealTimeSimulation:
         self.technologies = RT_techs
         # Print or log the control input format
 
+        # find which nodes are splitting nodes by which ones have out degree > 1
+
+        []
+
     def plot_system_graph(self):
 
         fig, ax = plt.subplots(1, 1, layout="constrained")
-
         ax.set_axis_off()
-
         G = self.G
 
         # Make multipartite layout for plotting
@@ -337,27 +346,40 @@ class RealTimeSimulation:
             else:
                 dispatch_out_total = np.zeros(4)
 
+            # node_output = self.G.nodes[node]["ionode"].step(
+            #     this_node_input, dispatch_out_total, step_index
+            # )
+
+            node_dispatch_split = self.G.nodes[node]["dispatch_split"]
+            node_dispatch_ctrl = self.G.nodes[node]["dispatch_ctrl"]
+
             node_output = self.G.nodes[node]["ionode"].step(
-                this_node_input, dispatch_out_total, step_index
+                this_node_input,
+                dispatch_out_total,
+                step_index,
+                node_dispatch_split,
+                node_dispatch_ctrl,
             )
 
             sim_out_edges = self.G.out_edges(node)
 
             wasted_output = np.zeros_like(node_output)
-            # for j in range(len(node_output)):
-            wasted_output = np.where(
-                node_output > dispatch_out_total, (node_output - dispatch_out_total), 0
-            )
-            node_output -= wasted_output
+            # # for j in range(len(node_output)):
+            # wasted_output = np.where(
+            #     node_output > dispatch_out_total, (node_output - dispatch_out_total), 0
+            # )
+            # node_output -= wasted_output
 
             # G_simulated.nodes[node].update({"wasted_output": wasted_output})
             self.G.nodes[node].update({"wasted_output": wasted_output})
 
-            for out_edge in list(sim_out_edges):
-                scaled_output = node_output * np.nan_to_num(
-                    node_dispatch_values[out_edge] / dispatch_out_total
-                )
-                simulated_IO[out_edge]["simulated"] = scaled_output
+            # for out_edge in list(sim_out_edges):
+            #     scaled_output = node_output * np.nan_to_num(
+            #         node_dispatch_values[out_edge] / dispatch_out_total
+            #     )
+            #     simulated_IO[out_edge]["simulated"] = scaled_output
+            for i, out_edge in enumerate(list(sim_out_edges)):
+                simulated_IO[out_edge]["simulated"] = node_output[:, i]
 
             nx.set_edge_attributes(self.G, simulated_IO)
 
@@ -449,7 +471,9 @@ class RealTimeSimulation:
             self.system_states[self.index_dict[key], time_step, :] = values[key]
 
         for i, node in enumerate(list(simulated_IO.nodes)):
-            self.node_waste[i, time_step, :] = simulated_IO.nodes[node]["wasted_output"]
+            # self.node_waste[i, time_step, :] = simulated_IO.nodes[node]["wasted_output"]
+            # TODO come back to this it is messy
+            self.node_waste[i, time_step, :] = np.sum(simulated_IO.nodes[node]["wasted_output"], axis=1)
 
     def _setup_generation_node(self):
         inputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
@@ -623,28 +647,27 @@ class RealTimeSimulation:
     #     component_dict =
 
     #     return component_dict
-        # if GH_tech == "joule_heater":
-        #     # RT_techs.update({"joule_heater": JouleHeater()})
-        #     RT_techs.update(
-        #         {
-        #             "joule_heater": {
-        #                 "model": JouleHeater(),
-        #                 "model_inputs": {
-        #                     "power": True,
-        #                     "Qdot": False,
-        #                     "mdot": False,
-        #                     "T": False,
-        #                 },
-        #                 "model_outputs": {
-        #                     "power": False,
-        #                     "Qdot": True,
-        #                     "mdot": False,
-        #                     "T": False,
-        #                 },
-        #             }
-        #         }
-        #     )
-
+    # if GH_tech == "joule_heater":
+    #     # RT_techs.update({"joule_heater": JouleHeater()})
+    #     RT_techs.update(
+    #         {
+    #             "joule_heater": {
+    #                 "model": JouleHeater(),
+    #                 "model_inputs": {
+    #                     "power": True,
+    #                     "Qdot": False,
+    #                     "mdot": False,
+    #                     "T": False,
+    #                 },
+    #                 "model_outputs": {
+    #                     "power": False,
+    #                     "Qdot": True,
+    #                     "mdot": False,
+    #                     "T": False,
+    #                 },
+    #             }
+    #         }
+    #     )
 
     # def _setup__node(self):
     #     inputs =
@@ -671,19 +694,61 @@ class StandinNode:
 
 
 class IONode:
-    def __init__(self, name, model, expected_inputs, expected_outputs):
+    # Splitting and throw away should happen here in IONODE
+
+    def __init__(self, name, model, expected_inputs, expected_outputs, splitting_node):
         self.inputs = expected_inputs
+        self.input_list = [
+            self.inputs["power"],
+            self.inputs["Qdot"],
+            self.inputs["mdot"],
+            self.inputs["T"],
+        ]
+
         self.outputs = expected_outputs
+        self.input_list = [
+            self.outputs["power"],
+            self.outputs["Qdot"],
+            self.outputs["mdot"],
+            self.outputs["T"],
+        ]
 
         self.name = name
-
         self.model = model
+        self.splitting_node = splitting_node
 
-    def step(self, graph_input, graph_dispatch, step_index):
+    def step(
+        self,
+        graph_input,
+        graph_dispatch,
+        step_index,
+        node_dispatch_split=None,
+        node_dispatch_ctrl=None,
+    ):
 
-        model_dispatch = self.consolidate_dispatch(graph_dispatch)
+        # model_dispatch = self.consolidate_dispatch(graph_dispatch)
+
         model_input = self.consolidate_inputs(graph_input)
-        model_output = self.model.step(model_input, model_dispatch, step_index)
+
+        # if self.splitting_node:
+        #     if node_dispatch is None:
+        #         assert False
+        #     else:
+        #         pass  # do the output thing
+
+        #     model_dispatch = None
+        # else:
+        #     if node_dispatch is None:
+        #         pass  # most cases
+        #         model_dispatch = None
+        #     else:  # controllable node, dispatch is node control input
+        #         model_dispatch = node_dispatch * model_input
+
+
+
+        model_dispatch_ctrl = self.model_dispatch_ctrl(model_input, node_dispatch_ctrl)
+
+        model_output = self.model.step(model_input, model_dispatch_ctrl, step_index)
 
         if self.name == "electrolyzer":
             model_output = [model_output, 80]
@@ -692,9 +757,18 @@ class IONode:
         # elif self.name == "heat_exchanger":
         #     model_output = (model_output, 900)
 
-        graph_output = self.consolidate_output(model_output)
+        graph_output = self.consolidate_output(model_output, node_dispatch_split)
 
         return graph_output
+
+    def model_dispatch_ctrl(self, model_input, node_dispatch_ctrl=None):
+        if node_dispatch_ctrl is not None:
+            # model_dispatch_ctrl = node_dispatch_ctrl * model_input
+            model_dispatch_ctrl = node_dispatch_ctrl
+        else:
+            model_dispatch_ctrl = None
+
+        return model_dispatch_ctrl
 
     def consolidate_inputs(self, graph_input):
         if graph_input.size == 0:
@@ -745,17 +819,32 @@ class IONode:
 
         return model_dispatch
 
-    def consolidate_output(self, model_output):
+    def consolidate_output(self, model_output, node_dispatch_split=None):
 
-        graph_output = np.array([0, 0, 0, 0], dtype=float)
+        if len(node_dispatch_split) == 1: 
+            graph_output = np.zeros((4, 1))
+            graph_output[np.where(self.input_list)[0],0] = node_dispatch_split * model_output
 
-        count = 0
-        for i, key in enumerate(self.outputs.keys()):
-            if self.outputs[key]:
-                if isinstance(model_output, float):
-                    graph_output[i] = model_output
-                else:
-                    graph_output[i] = model_output[count]
-                count += 1
+        elif len(node_dispatch_split) >= 1:
+        # if node_dispatch_split is not None:
+
+            # TODO check that the dimensions of model_output are compatable with node_dispatch
+
+            graph_output = np.zeros((4, len(node_dispatch_split)))
+            graph_output[np.where(self.input_list)[0], :] = node_dispatch_split * model_output
+            []
+
+        else:
+
+            graph_output = np.array([0, 0, 0, 0], dtype=float)
+
+            count = 0
+            for i, key in enumerate(self.outputs.keys()):
+                if self.outputs[key]:
+                    if isinstance(model_output, float):
+                        graph_output[i] = model_output
+                    else:
+                        graph_output[i] = model_output[count]
+                    count += 1
 
         return graph_output
