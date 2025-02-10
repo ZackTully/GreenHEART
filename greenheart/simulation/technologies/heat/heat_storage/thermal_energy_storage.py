@@ -35,6 +35,7 @@ class ThermalEnergyStorage:
         #     Qdot_desired = Qdot_in_available
         
         Qdot_controller = self.control(Qdot_in_available, Qdot_desired)
+        Qdot_controller = float(Qdot_controller)
         self.step_particle_tank(Qdot_controller)
 
         self.record(step_index)

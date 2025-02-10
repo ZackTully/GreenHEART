@@ -29,6 +29,7 @@ class Battery(Battery_hopp):
         # dispatch signal is charging/discharging massflow + or -
 
         actual_power = self.low_level_controller(available_power, desired_power)
+        actual_power = float(actual_power)
 
         self.update_storage_state(actual_power)
         return actual_power

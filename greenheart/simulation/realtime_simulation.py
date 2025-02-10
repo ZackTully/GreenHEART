@@ -29,7 +29,7 @@ from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master_STE
 from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage import (
     HydrogenStorage,
 )
-from greenheart.simulation.technologies.steel.steel_dynamic_model import Steel
+from greenheart.simulation.technologies.steel.steel import SteelModel
 
 from greenheart.simulation.technologies.electricity.battery import Battery
 
@@ -145,6 +145,8 @@ class RealTimeSimulation:
                 expected_inputs=RT_techs[node]["model_inputs"],
                 expected_outputs=RT_techs[node]["model_outputs"],
                 splitting_node=G.nodes[node]["split"],
+                in_degree=G.in_degree[node],
+                out_degree=G.out_degree[node],
             )
 
             G.nodes[node].update({"ionode": ionode})
@@ -230,21 +232,6 @@ class RealTimeSimulation:
         latex_graph = nx.to_latex(G, pos=nx.rescale_layout_dict(layout, scale=3))
 
     def step_system_state_function(self, G_dispatch, generation_available, step_index):
-
-        # TODO: will need a way to deal with cycles
-
-        # NOTE: maybe there will be multiple graph objects with the same edges and nodes
-        # 1. system model
-        # 2. node status (has it been run yet)
-        # 3. controller storage of inputs (stored in the edges)
-
-        # Either here or in the controller
-        # Pre-process and dont allow any cycles. Break the cycle at a logical place
-
-        # Need to order the nodes in a logical way so that they can be computed as close to sequentially as possible.
-        # traversal = [edge for edge in nx.edge_bfs(self.G, "generation")]
-        # upstream = [edge[0] for edge in traversal]
-        # downstream = [edge[1] for edge in traversal]
 
         if hasattr(self, "node_order"):
             node_order = self.node_order
@@ -350,8 +337,8 @@ class RealTimeSimulation:
             #     this_node_input, dispatch_out_total, step_index
             # )
 
-            node_dispatch_split = self.G.nodes[node]["dispatch_split"]
-            node_dispatch_ctrl = self.G.nodes[node]["dispatch_ctrl"]
+            node_dispatch_split = np.array(self.G.nodes[node]["dispatch_split"])
+            node_dispatch_ctrl = np.array(self.G.nodes[node]["dispatch_ctrl"])
 
             node_output = self.G.nodes[node]["ionode"].step(
                 this_node_input,
@@ -473,7 +460,9 @@ class RealTimeSimulation:
         for i, node in enumerate(list(simulated_IO.nodes)):
             # self.node_waste[i, time_step, :] = simulated_IO.nodes[node]["wasted_output"]
             # TODO come back to this it is messy
-            self.node_waste[i, time_step, :] = np.sum(simulated_IO.nodes[node]["wasted_output"], axis=1)
+            self.node_waste[i, time_step, :] = np.sum(
+                simulated_IO.nodes[node]["wasted_output"], axis=1
+            )
 
     def _setup_generation_node(self):
         inputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
@@ -562,10 +551,10 @@ class RealTimeSimulation:
         user_defined_pem_param_dictionary = pem_param_dict
         verbose = False
 
-        if "use_step_model" in self.config.greenheart_config["electrolyzer"].keys():
-            step_model = self.config.greenheart_config["electrolyzer"]["use_step_model"]
-        else:
-            step_model = False
+        # if "use_step_model" in self.config.greenheart_config["electrolyzer"].keys():
+        #     step_model = self.config.greenheart_config["electrolyzer"]["use_step_model"]
+        # else:
+        #     step_model = False
 
         electrolyzer_model = run_PEM_clusters_step(
             electrical_generation_timeseries,
@@ -575,7 +564,7 @@ class RealTimeSimulation:
             useful_life,
             user_defined_pem_param_dictionary,
             verbose=verbose,
-            step_model=step_model,
+            step_model=self.config.realtime_simulation,
         )
 
         inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
@@ -629,11 +618,15 @@ class RealTimeSimulation:
         return component_dict
 
     def _setup_steel_node(self):
-        inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-        outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+
+        config = self.config.greenheart_config["steel"]["costs"]["feedstocks"]
+
+
+        inputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
+        outputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
         component_dict = {
             "steel": {
-                "model": Steel(),
+                "model": SteelModel(self.config.greenheart_config),
                 "model_inputs": inputs,
                 "model_outputs": outputs,
             }
@@ -696,7 +689,16 @@ class StandinNode:
 class IONode:
     # Splitting and throw away should happen here in IONODE
 
-    def __init__(self, name, model, expected_inputs, expected_outputs, splitting_node):
+    def __init__(
+        self,
+        name,
+        model,
+        expected_inputs,
+        expected_outputs,
+        splitting_node,
+        in_degree=None,
+        out_degree=None,
+    ):
         self.inputs = expected_inputs
         self.input_list = [
             self.inputs["power"],
@@ -716,6 +718,17 @@ class IONode:
         self.name = name
         self.model = model
         self.splitting_node = splitting_node
+        if self.name == "generation":
+            self.in_degree = 1
+        else:
+            self.in_degree = in_degree
+
+        if (self.name == "output") or (self.name == "steel"):
+            self.out_degree = 1
+        else:
+            self.out_degree = out_degree
+
+        self.make_fake_state_space()
 
     def step(
         self,
@@ -743,8 +756,6 @@ class IONode:
         #         model_dispatch = None
         #     else:  # controllable node, dispatch is node control input
         #         model_dispatch = node_dispatch * model_input
-
-
 
         model_dispatch_ctrl = self.model_dispatch_ctrl(model_input, node_dispatch_ctrl)
 
@@ -821,22 +832,30 @@ class IONode:
 
     def consolidate_output(self, model_output, node_dispatch_split=None):
 
-        if len(node_dispatch_split) == 1: 
+        if len(node_dispatch_split) == 1:
             graph_output = np.zeros((4, 1))
-            graph_output[np.where(self.input_list)[0],0] = node_dispatch_split * model_output
+            graph_output[np.where(self.input_list)[0], 0] = (
+                node_dispatch_split * model_output
+            )
 
         elif len(node_dispatch_split) >= 1:
-        # if node_dispatch_split is not None:
+            # if node_dispatch_split is not None:
 
             # TODO check that the dimensions of model_output are compatable with node_dispatch
 
             graph_output = np.zeros((4, len(node_dispatch_split)))
-            graph_output[np.where(self.input_list)[0], :] = node_dispatch_split * model_output
-            []
+            graph_output[np.where(self.input_list)[0], :] = (
+                node_dispatch_split * model_output
+            )
+
+            # if self.outputs["T"]:
+            if self.name == "electrolyzer":
+                graph_output[3,:] = model_output[1]
+        
 
         else:
 
-            graph_output = np.array([0, 0, 0, 0], dtype=float)
+            graph_output = np.array([[0, 0, 0, 0]], dtype=float).T
 
             count = 0
             for i, key in enumerate(self.outputs.keys()):
@@ -848,3 +867,31 @@ class IONode:
                     count += 1
 
         return graph_output
+
+    def make_fake_state_space(self):
+        if self.splitting_node:
+            m = self.out_degree
+            n = 0
+            o = self.in_degree
+            p = self.out_degree
+            
+            self.A = np.zeros((n, n))
+            self.B = np.zeros((n, m))
+            self.E = np.zeros((n, o))
+            self.C = np.zeros((p, n))
+            self.D = np.zeros((p, m))
+            self.D = np.eye(p)
+            self.F = np.zeros((p, o))
+        else:
+
+            self.A = np.array([[0.39698364, -1.68707227], [0.06748289, 0.90310532]])
+            self.B = np.array([[0.06748289], [0.00387579]])
+            self.C = np.array([[0.0, 25.0]])
+            self.D = np.array([[0.0]])
+            self.E = np.array([[0.06748289], [0.00387579]])
+            self.F = np.array([[0.0]])
+
+            self.m = self.B.shape[1]
+            self.n = self.A.shape[0]
+            self.p = self.C.shape[0]
+            self.o = self.E.shape[1]

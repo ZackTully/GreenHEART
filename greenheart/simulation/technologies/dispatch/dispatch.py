@@ -2,6 +2,7 @@ import numpy as np
 import networkx as nx
 import pprint
 
+from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import DispatchModelPredictiveController
 
 class GreenheartDispatchConfig:
     def __init__(self):
@@ -14,15 +15,18 @@ class GreenheartDispatchOutput:
 
 
 class GreenheartDispatch:
-    def __init__(self, hopp_interface, GHconfig, dispatch_config=None):
+    def __init__(self, hopp_interface, GHconfig, simulator=None, dispatch_config=None):
 
-        self.setup_control_model(GHconfig)
-        self.setup_constraints(GHconfig)
+        # self.setup_control_model(GHconfig)
+        # self.setup_constraints(GHconfig)
 
-        self.setup_time_parameters(hopp_interface, GHconfig, dispatch_config)
-        self.setup_objective(hopp_interface, GHconfig, dispatch_config)
+        # self.setup_time_parameters(hopp_interface, GHconfig, dispatch_config)
+        # self.setup_objective(hopp_interface, GHconfig, dispatch_config)
 
-        pass
+        self.use_MPC = False
+
+        if self.use_MPC:
+            self.controller = DispatchModelPredictiveController(GHconfig, simulator.G)
 
         # extract the timeseries- and feedback-capabale component simulation models from hopp
         # hopp_simulation_models = hopp_interface.hopp.system.technologies
@@ -35,50 +39,50 @@ class GreenheartDispatch:
 
         # self.setup_simulation_model(hopp_simulation_models, GH_simulation_models)
 
-    def setup_time_parameters(self, hopp_interface, GHconfig, dispatch_config):
-        # Set up MPC time parameters for dispatch
-        # Make sure the GH, hopp, and dispatch config files don't contradict
-        self.dt = 1
-        self.horizon = 1
+    # def setup_time_parameters(self, hopp_interface, GHconfig, dispatch_config):
+    #     # Set up MPC time parameters for dispatch
+    #     # Make sure the GH, hopp, and dispatch config files don't contradict
+    #     self.dt = 1
+    #     self.horizon = 1
 
-    def setup_objective(self, hopp_interface, GHconfig, dispatch_config):
-        # Set up the objective function
-        self.objective = []
+    # def setup_objective(self, hopp_interface, GHconfig, dispatch_config):
+    #     # Set up the objective function
+    #     self.objective = []
 
-    def setup_control_model(self, GHconfig):
-        # set up linear control model based on the parameters in hopp_config and in GHconfig
-        hopp_config = GHconfig.hopp_config
-        self.control_model = []
+    # def setup_control_model(self, GHconfig):
+    #     # set up linear control model based on the parameters in hopp_config and in GHconfig
+    #     hopp_config = GHconfig.hopp_config
+    #     self.control_model = []
 
-    def setup_constraints(self, GHconfig):
-        # set up control model constraints based on the parameters in hopp_config and GHconfig
-        hopp_config = GHconfig.hopp_config
-        self.control_constraints = []
+    # def setup_constraints(self, GHconfig):
+    #     # set up control model constraints based on the parameters in hopp_config and GHconfig
+    #     hopp_config = GHconfig.hopp_config
+    #     self.control_constraints = []
 
-    def setup_simulation_model(self, hopp_simulation_models, GH_simulation_models):
-        # Build graph network or something
-        self.simulation_model = []
+    # def setup_simulation_model(self, hopp_simulation_models, GH_simulation_models):
+    #     # Build graph network or something
+    #     self.simulation_model = []
 
-    def optimize(self, objective):
-        optimal = []
-        return optimal
+    # def optimize(self, objective):
+    #     optimal = []
+    #     return optimal
 
-    def step_control(self):
-        # Called from within hopp hybrid_dispatch_builder_solver
-        # Optimize the system trajectory for one horizon
+    # def step_control(self):
+    #     # Called from within hopp hybrid_dispatch_builder_solver
+    #     # Optimize the system trajectory for one horizon
 
-        state_measurement = 0
+    #     state_measurement = 0
 
-        optimal_trajectory = self.optimize(self.objective)
+    #     optimal_trajectory = self.optimize(self.objective)
 
-        control_actions = optimal_trajectory
-        control_actions_for_hopp = []
+    #     control_actions = optimal_trajectory
+    #     control_actions_for_hopp = []
 
-        return control_actions_for_hopp
+    #     return control_actions_for_hopp
 
-    def get(self, data_name):
+    # def get(self, data_name):
 
-        return getattr(self, data_name)
+    #     return getattr(self, data_name)
 
     def step(self, G_dispatch, available_power, feedback_error=None):
 
@@ -86,10 +90,77 @@ class GreenheartDispatch:
         # G_dispatch = self.example_control_hydrogen_heat(G_dispatch, available_power)
         # G_dispatch = self.example_control_elec_heat_exchanger(G_dispatch, available_power)
         # G_dispatch = self.example_control_BES_TES_heat_exchanger(G_dispatch, available_power, feedback_error)
-        G_dispatch = self.splitting_controller(
-            G_dispatch, available_power, feedback_error
-        )
-        return G_dispatch
+        # G_dispatch = self.splitting_controller(
+        #     G_dispatch, available_power, feedback_error
+        # )
+
+        if self.use_MPC:
+            G = self.step_MPC(G_dispatch, available_power)
+
+            # unpack G_dispatch
+
+            # get MPC output 
+
+            # repack G_dispatch
+
+        else: 
+            G = self.step_heuristic_case3(G_dispatch, available_power)
+
+        return G
+
+    def step_heuristic_case3(self, G, available_power):
+
+        mean_generation = 150000  # kWh / hr
+
+        for edge in list(G.edges):
+            G.edges[edge].update({"dispatch": 0})
+
+
+        for node in list(G.nodes):
+
+
+            # Split control
+            if G.out_degree[node] > 1:
+                G.nodes[node].update({"dispatch_split": (available_power / G.out_degree[node]) * np.ones(G.out_degree[node])})
+            else:
+                G.nodes[node].update({"dispatch_split": []})
+
+            # Control control 
+            if node in ["battery", "thermal_energy_storage", "hydrogent_storage"]:
+                G.nodes[node].update({"dispatch_ctrl":[1 / 5 * (available_power - mean_generation)]})
+            else:
+                G.nodes[node].update({"dispatch_ctrl":[]})
+
+        return G
+
+
+    def step_MPC(self, G_dispatch, available_power):
+
+        G = G_dispatch
+
+        x0 = np.ones((1, self.controller.n))
+        forecast = np.ones(self.controller.horizon)
+
+        u_mpc = self.controller.compute_trajectory(x0, forecast)
+
+        for node in list(G.nodes):
+            # G.nodes[node].update({"dispatch_split": np.array([1])})
+            G.nodes[node].update({"dispatch_split": []})
+            G.nodes[node].update({"dispatch_ctrl": []})
+
+        for i in range(len(u_mpc)):
+            if i in self.controller.splitting_sort.keys():
+                G.nodes[self.controller.splitting_sort[i]]["dispatch_split"].append(u_mpc[i])
+            elif i in self.controller.ctrl_sort.keys():
+                G.nodes[self.controller.ctrl_sort[i]]["dispatch_ctrl"].append(u_mpc[i])
+
+        for edge in list(G_dispatch.edges):
+            G_dispatch.edges[edge].update({"dispatch": 0})
+
+        return G
+
+
+        
 
     def splitting_controller(self, G, available_power, feedback_error=None):
 

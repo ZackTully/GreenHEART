@@ -87,14 +87,15 @@ class HydrogenStorage:
         return control_massflow
 
 
-    def step(self, input, dispatch, step_index):
+    def step(self, h2_input, dispatch, step_index):
 
-        available_massflow = input
+        available_massflow = h2_input[0]
+        available_temperature = h2_input[1]
 
         # TODO: Better way to interpret dispatch signal
 
-        if (input > 0) & (dispatch == 0): # Charge
-            desired_massflow = input
+        if (available_massflow > 0) & (dispatch == 0): # Charge
+            desired_massflow = available_massflow
         if dispatch > 0:
             desired_massflow = -dispatch # positive means charging negative means discharging
         else: 

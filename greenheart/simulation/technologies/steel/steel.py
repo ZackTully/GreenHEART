@@ -230,13 +230,47 @@ class SteelCapacityModelConfig:
 
     def __attrs_post_init__(self):
         if self.hydrogen_amount_kgpy is None and self.desired_steel_mtpy is None:
-            raise ValueError("`hydrogen_amount_kgpy` or `desired_steel_mtpy` is a required input.")
+            raise ValueError(
+                "`hydrogen_amount_kgpy` or `desired_steel_mtpy` is a required input."
+            )
 
         if self.hydrogen_amount_kgpy and self.desired_steel_mtpy:
             raise ValueError(
                 "can only select one input: `hydrogen_amount_kgpy` or `desired_steel_mtpy`."
             )
 
+@define
+class SteelCapacityModelConfigFromRealtime:
+    """
+    Configuration inputs for the steel capacity sizing model, including plant capacity and
+    feedstock details.
+
+    Attributes:
+        hydrogen_amount_kgpy Optional (float): The amount of hydrogen available in kilograms
+            per year to make steel.
+        desired_steel_mtpy Optional (float): The amount of desired steel production in
+            metric tonnes per year.
+        input_capacity_factor_estimate (float): The estimated steel plant capacity factor.
+        feedstocks (Feedstocks): An instance of the `Feedstocks` class detailing the
+            costs and consumption rates of resources used in production.
+    """
+
+    input_capacity_factor_estimate: float
+    feedstocks: Feedstocks
+    realtime_steel: None
+    hydrogen_amount_kgpy: float | None = field(default=None)
+    desired_steel_mtpy: float | None = field(default=None)
+
+    def __attrs_post_init__(self):
+        if self.hydrogen_amount_kgpy is None and self.desired_steel_mtpy is None:
+            raise ValueError(
+                "`hydrogen_amount_kgpy` or `desired_steel_mtpy` is a required input."
+            )
+
+        if self.hydrogen_amount_kgpy and self.desired_steel_mtpy:
+            raise ValueError(
+                "can only select one input: `hydrogen_amount_kgpy` or `desired_steel_mtpy`."
+            )
 
 @define
 class SteelCapacityModelOutputs:
@@ -343,13 +377,22 @@ def run_steel_cost_model(config: SteelCostModelConfig) -> SteelCostModelOutputs:
     equation_year_CEPCI = 708.8  # 2021
 
     capex_eaf_casting = (
-        model_year_CEPCI / equation_year_CEPCI * 352191.5237 * config.plant_capacity_mtpy**0.456
+        model_year_CEPCI
+        / equation_year_CEPCI
+        * 352191.5237
+        * config.plant_capacity_mtpy**0.456
     )
     capex_shaft_furnace = (
-        model_year_CEPCI / equation_year_CEPCI * 489.68061 * config.plant_capacity_mtpy**0.88741
+        model_year_CEPCI
+        / equation_year_CEPCI
+        * 489.68061
+        * config.plant_capacity_mtpy**0.88741
     )
     capex_oxygen_supply = (
-        model_year_CEPCI / equation_year_CEPCI * 1715.21508 * config.plant_capacity_mtpy**0.64574
+        model_year_CEPCI
+        / equation_year_CEPCI
+        * 1715.21508
+        * config.plant_capacity_mtpy**0.64574
     )
     if config.o2_heat_integration:
         capex_h2_preheating = (
@@ -366,7 +409,10 @@ def run_steel_cost_model(config: SteelCostModelConfig) -> SteelCostModelOutputs:
         )  # Optimistic ballpark estimate of 30% reduction in cooling
     else:
         capex_h2_preheating = (
-            model_year_CEPCI / equation_year_CEPCI * 45.69123 * config.plant_capacity_mtpy**0.86564
+            model_year_CEPCI
+            / equation_year_CEPCI
+            * 45.69123
+            * config.plant_capacity_mtpy**0.86564
         )
         capex_cooling_tower = (
             model_year_CEPCI
@@ -375,16 +421,28 @@ def run_steel_cost_model(config: SteelCostModelConfig) -> SteelCostModelOutputs:
             * config.plant_capacity_mtpy**0.63325
         )
     capex_piping = (
-        model_year_CEPCI / equation_year_CEPCI * 11815.72718 * config.plant_capacity_mtpy**0.59983
+        model_year_CEPCI
+        / equation_year_CEPCI
+        * 11815.72718
+        * config.plant_capacity_mtpy**0.59983
     )
     capex_elec_instr = (
-        model_year_CEPCI / equation_year_CEPCI * 7877.15146 * config.plant_capacity_mtpy**0.59983
+        model_year_CEPCI
+        / equation_year_CEPCI
+        * 7877.15146
+        * config.plant_capacity_mtpy**0.59983
     )
     capex_buildings_storage_water = (
-        model_year_CEPCI / equation_year_CEPCI * 1097.81876 * config.plant_capacity_mtpy**0.8
+        model_year_CEPCI
+        / equation_year_CEPCI
+        * 1097.81876
+        * config.plant_capacity_mtpy**0.8
     )
     capex_misc = (
-        model_year_CEPCI / equation_year_CEPCI * 7877.1546 * config.plant_capacity_mtpy**0.59983
+        model_year_CEPCI
+        / equation_year_CEPCI
+        * 7877.1546
+        * config.plant_capacity_mtpy**0.59983
     )
 
     total_plant_cost = (
@@ -407,7 +465,9 @@ def run_steel_cost_model(config: SteelCostModelConfig) -> SteelCostModelOutputs:
         / ((1162077 / 365 * 1000) ** 0.25242)
     )
     labor_cost_maintenance = 0.00863 * total_plant_cost
-    labor_cost_admin_support = 0.25 * (labor_cost_annual_operation + labor_cost_maintenance)
+    labor_cost_admin_support = 0.25 * (
+        labor_cost_annual_operation + labor_cost_maintenance
+    )
 
     property_tax_insurance = 0.02 * total_plant_cost
 
@@ -420,7 +480,13 @@ def run_steel_cost_model(config: SteelCostModelConfig) -> SteelCostModelOutputs:
 
     # ---------------------- Owner's (Installation) Costs --------------------------
     labor_cost_fivemonth = (
-        5 / 12 * (labor_cost_annual_operation + labor_cost_maintenance + labor_cost_admin_support)
+        5
+        / 12
+        * (
+            labor_cost_annual_operation
+            + labor_cost_maintenance
+            + labor_cost_admin_support
+        )
     )
 
     maintenance_materials_onemonth = (
@@ -435,7 +501,10 @@ def run_steel_cost_model(config: SteelCostModelConfig) -> SteelCostModelOutputs:
             + feedstocks.carbon_consumption
             * (feedstocks.carbon_unitcost + feedstocks.carbon_transport_cost)
             + feedstocks.iron_ore_consumption
-            * (feedstocks.iron_ore_pellet_unitcost + feedstocks.iron_ore_pellet_transport_cost)
+            * (
+                feedstocks.iron_ore_pellet_unitcost
+                + feedstocks.iron_ore_pellet_transport_cost
+            )
         )
         / 12
     )
@@ -468,7 +537,10 @@ def run_steel_cost_model(config: SteelCostModelConfig) -> SteelCostModelOutputs:
             + feedstocks.carbon_consumption
             * (feedstocks.carbon_unitcost + feedstocks.carbon_transport_cost)
             + feedstocks.iron_ore_consumption
-            * (feedstocks.iron_ore_pellet_unitcost + feedstocks.iron_ore_pellet_transport_cost)
+            * (
+                feedstocks.iron_ore_pellet_unitcost
+                + feedstocks.iron_ore_pellet_transport_cost
+            )
         )
         / 365
         * 60
@@ -660,7 +732,9 @@ def run_steel_finance_model(
     pf.set_params("long term utilization", config.plant_capacity_factor)
     pf.set_params("credit card fees", 0)
     pf.set_params("sales tax", 0)
-    pf.set_params("license and permit", {"value": 00, "escalation": config.gen_inflation})
+    pf.set_params(
+        "license and permit", {"value": 00, "escalation": config.gen_inflation}
+    )
     pf.set_params("rent", {"value": 0, "escalation": config.gen_inflation})
     pf.set_params("property tax and insurance", 0)
     pf.set_params("admin expense", 0)
@@ -800,7 +874,10 @@ def run_steel_finance_model(
         name="Iron Ore",
         usage=feedstocks.iron_ore_consumption,
         unit="metric tonnes of iron ore per metric tonne of steel",
-        cost=(feedstocks.iron_ore_pellet_unitcost + feedstocks.iron_ore_pellet_transport_cost),
+        cost=(
+            feedstocks.iron_ore_pellet_unitcost
+            + feedstocks.iron_ore_pellet_transport_cost
+        ),
         escalation=config.gen_inflation,
     )
     pf.add_feedstock(
@@ -859,7 +936,8 @@ def run_steel_finance_model(
                 savepath.mkdir(parents=True)
 
         pf.plot_capital_expenses(
-            fileout=savepaths[0] / f"steel_capital_expense_{config.design_scenario_id}.pdf",
+            fileout=savepaths[0]
+            / f"steel_capital_expense_{config.design_scenario_id}.pdf",
             show_plot=config.show_plots,
         )
         pf.plot_cashflow(
@@ -889,6 +967,7 @@ def run_steel_full_model(
     show_plots=False,
     output_dir="./output/",
     design_scenario_id=0,
+    realtime_simulation = False
 ) -> tuple[SteelCapacityModelOutputs, SteelCostModelOutputs, SteelFinanceModelOutputs]:
     """
     Runs the full steel model, including capacity, cost, and finance models.
@@ -917,8 +996,12 @@ def run_steel_full_model(
 
     # run steel capacity model to get steel plant size
     # uses hydrogen amount from electrolyzer physics model
-    capacity_config = SteelCapacityModelConfig(feedstocks=feedstocks, **steel_capacity)
-    steel_capacity = run_size_steel_plant_capacity(capacity_config)
+    if realtime_simulation:
+        capacity_config = SteelCapacityModelConfigFromRealtime(feedstocks=feedstocks, realtime_steel = config["realtime_steel"], **steel_capacity)
+        steel_capacity = config["realtime_steel"].steel_capacity
+    else:
+        capacity_config = SteelCapacityModelConfig(feedstocks=feedstocks, **steel_capacity)
+        steel_capacity = run_size_steel_plant_capacity(capacity_config)
 
     # run steel cost model
     steel_costs["feedstocks"] = feedstocks
@@ -949,3 +1032,147 @@ def run_steel_full_model(
     steel_finance = run_steel_finance_model(steel_finance_config)
 
     return (steel_capacity, steel_costs, steel_finance)
+
+
+import numpy as np
+
+
+class SteelModel:
+    def __init__(self, config):
+        steel_costs = config["steel"]["costs"]
+        steel_capacity = config["steel"]["capacity"]
+        feedstocks = Feedstocks(**steel_costs["feedstocks"])
+
+        self.feedstocks = feedstocks
+
+        # ZCT math values
+        self.energy_ratio = 2.88  # [kWh (kg fe)^-1] DRI ratio of energy in to DRI out
+        self.fe2o3_ratio = 1.4297430387680186  # [kg fe2o3 (kg fe)^-1] mass ratio of hematite in to DRI out
+        self.h2_ratio = 0.05414665592264303  # [kg h2 (kg fe)^-1] mass ratio of hydrogen in to DRI out
+        self.h2o_ratio = (
+            0.4838920225624497  # [kg h2o (kg fe)^-1] mass ratio of water out to DRI out
+        )
+
+        self.setup_simulation_storage()
+
+    def setup_simulation_storage(self):
+        self.fe2o3_store = np.zeros(8760)
+        self.h2_store = np.zeros(8760)
+        self.iron_store = np.zeros(8760)
+        self.h2o_store = np.zeros(8760)
+
+        self.power_waste_store = np.zeros(8760)
+        self.h2_waste_store = np.zeros(8760)
+
+    def store_step(self, DRI_out, power_waste, h2_waste, step_index=0):
+        self.fe2o3_store[step_index] = self.fe2o3_ratio * DRI_out
+        self.h2_store[step_index] = self.h2_ratio * DRI_out
+        self.iron_store[step_index] = DRI_out
+        self.h2o_store[step_index] = self.h2o_ratio * DRI_out
+        self.power_waste_store[step_index] = power_waste
+        self.h2_waste_store[step_index] = h2_waste
+
+    def get_simulation_model(self):
+        pass
+
+    def get_control_model(self):
+        pass
+
+    def step(self, DRI_inputs, dispatch, step_index=0):
+
+        power_in = DRI_inputs[0]
+        h2_in = DRI_inputs[1]
+        h2_temp = DRI_inputs[2]
+
+        # The potential DRI that could be made with either input individually
+        potential_DRI = np.array([power_in / self.feedstocks.electricity_consumption, h2_in / self.feedstocks.hydrogen_consumption])
+
+        # actual DRI production 
+        DRI_produced = np.min(potential_DRI)
+
+        unused_power =  self.feedstocks.electricity_consumption * (potential_DRI[0] - DRI_produced)
+        unused_h2 = self.feedstocks.hydrogen_consumption * (potential_DRI[1] - DRI_produced)
+
+
+        # DRI_out_potential = np.array(
+        #     [power_in / self.energy_ratio, h2_in / self.h2_ratio]
+        # )
+
+        # DRI_out = np.min(DRI_out_potential)
+
+        # power_waste = self.energy_ratio * (DRI_out_potential[0] - DRI_out)
+        # h2_waste = self.h2_ratio * (DRI_out_potential[1] - DRI_out)
+
+        self.store_step(DRI_produced, unused_power, unused_h2, step_index)
+
+
+        return (unused_power, unused_h2, h2_temp)
+
+
+    def consolidate_sim_outcome(self):
+
+        steel_mtpy = np.sum(self.iron_store) / (1e3 * 1e6)
+        h2_kgpy = np.sum(self.h2_store)
+
+        self.steel_capacity = SteelCapacityModelOutputs(
+            steel_plant_capacity_mtpy=steel_mtpy, hydrogen_amount_kgpy=h2_kgpy
+        )
+
+        self.capacity_factor = np.sum(self.iron_store) / (np.max(self.iron_store * len(self.iron_store)))
+
+
+        # steel_costs["feedstocks"] = feedstocks
+        # steel_cost_config = SteelCostModelConfig(
+        #     plant_capacity_mtpy=steel_capacity.steel_plant_capacity_mtpy, **steel_costs
+        # )
+        # steel_cost_config.plant_capacity_mtpy = steel_capacity.steel_plant_capacity_mtpy
+        # steel_costs = run_steel_cost_model(steel_cost_config)
+
+
+if __name__ == "__main__":
+
+    config = {
+        "steel": {
+            "costs": {
+                "feedstocks": {
+                    "natural_gas_prices": {
+                        "2035": 3.76232,
+                        "2036": 3.776032,
+                        "2037": 3.812906,
+                        "2038": 3.9107960000000004,
+                        "2039": 3.865776,
+                        "2040": 3.9617400000000003,
+                        "2041": 4.027136,
+                        "2042": 4.017166,
+                        "2043": 3.9715339999999997,
+                        "2044": 3.924314,
+                        "2045": 3.903287,
+                        "2046": 3.878192,
+                        "2047": 3.845413,
+                        "2048": 3.813366,
+                        "2049": 3.77735,
+                        "2050": 3.766164,
+                        "2051": 3.766164,
+                        "2052": 3.766164,
+                        "2053": 3.766164,
+                        "2054": 3.766164,
+                        "2055": 3.766164,
+                        "2056": 3.766164,
+                        "2057": 3.766164,
+                        "2058": 3.766164,
+                        "2059": 3.766164,
+                        "2060": 3.766164,
+                        "2061": 3.766164,
+                        "2062": 3.766164,
+                        "2063": 3.766164,
+                        "2064": 3.766164,
+                    }
+                }
+            },
+            "capacity": {},
+        }
+    }
+
+    sm = SteelModel(config)
+
+    []
