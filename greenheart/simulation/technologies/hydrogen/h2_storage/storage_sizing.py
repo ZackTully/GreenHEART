@@ -2,7 +2,7 @@ import math
 import numpy as np
 
 
-def hydrogen_storage_capacity(H2_Results, electrolyzer_size_mw, hydrogen_demand_kgphr):
+def hydrogen_storage_capacity(H2_Results, electrolyzer_size_mw, hydrogen_demand_kgphr, realtime_flag=False, simulator=None):
     """Calculate storage capacity based on hydrogen demand and production.
 
     Args:
@@ -18,23 +18,37 @@ def hydrogen_storage_capacity(H2_Results, electrolyzer_size_mw, hydrogen_demand_
 
     hydrogen_production_kgphr = H2_Results["Hydrogen Hourly Production [kg/hr]"]
 
-    hydrogen_demand_kgphr = max(
-        hydrogen_demand_kgphr, np.mean(hydrogen_production_kgphr)
-    )  # TODO: potentially add buffer No buffer needed since we are already oversizing
 
-    # TODO: SOC is just an absolute value and is not a percentage. Ideally would calculate as shortfall in future.
-    hydrogen_storage_soc = []
-    for j in range(len(hydrogen_production_kgphr)):
-        if j == 0:
-            hydrogen_storage_soc.append(
-                hydrogen_production_kgphr[j] - hydrogen_demand_kgphr
-            )
-        else:
-            hydrogen_storage_soc.append(
-                hydrogen_storage_soc[j - 1]
-                + hydrogen_production_kgphr[j]
-                - hydrogen_demand_kgphr
-            )
+
+
+    if realtime_flag:
+        # If something ...
+        hydrogen_demand_kgphr = simulator.G.nodes["steel"]["ionode"].model.h2_store
+        # simulator.G.nodes["hydrogen_storage"]["ionode"].model.store_storage_state
+        # hydrogen_demand_kgphr = np.diff(simulator.G.nodes["hydrogen_storage"]["ionode"].model.store_storage_state, n=1)
+
+        hydrogen_storage_soc = simulator.G.nodes["hydrogen_storage"]["ionode"].model.store_storage_state
+    else:
+
+        hydrogen_demand_kgphr = max(
+            hydrogen_demand_kgphr, np.mean(hydrogen_production_kgphr)
+        )  # TODO: potentially add buffer No buffer needed since we are already oversizing
+
+        hydrogen_demand_kgphr = hydrogen_demand_kgphr * np.ones(len(hydrogen_production_kgphr))
+
+        # TODO: SOC is just an absolute value and is not a percentage. Ideally would calculate as shortfall in future.
+        hydrogen_storage_soc = []
+        for j in range(len(hydrogen_production_kgphr)):
+            if j == 0:
+                hydrogen_storage_soc.append(
+                    hydrogen_production_kgphr[j] - hydrogen_demand_kgphr[j]
+                )
+            else:
+                hydrogen_storage_soc.append(
+                    hydrogen_storage_soc[j - 1]
+                    + hydrogen_production_kgphr[j]
+                    - hydrogen_demand_kgphr[j]
+                )
 
     minimum_soc = np.min(hydrogen_storage_soc)
 

@@ -775,7 +775,14 @@ class IONode:
     def model_dispatch_ctrl(self, model_input, node_dispatch_ctrl=None):
         if node_dispatch_ctrl is not None:
             # model_dispatch_ctrl = node_dispatch_ctrl * model_input
-            model_dispatch_ctrl = node_dispatch_ctrl
+
+            if isinstance(node_dispatch_ctrl, np.ndarray):
+                if len(node_dispatch_ctrl) == 1:
+                    model_dispatch_ctrl = node_dispatch_ctrl[0]
+                else:
+                    model_dispatch_ctrl = node_dispatch_ctrl
+            else:
+                model_dispatch_ctrl = node_dispatch_ctrl
         else:
             model_dispatch_ctrl = None
 

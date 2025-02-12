@@ -11,7 +11,7 @@ class HydrogenStorage:
         self.max_capacity_kg = 3e5 # kg
         self.min_capacity_kg = 0
         
-        self.max_charge_rate_kg_hr = 750
+        self.max_charge_rate_kg_hr = 1e6
         self.max_discharge_rate_kg_hr = self.max_charge_rate_kg_hr
 
         self.dt = 1 # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
@@ -89,18 +89,21 @@ class HydrogenStorage:
 
     def step(self, h2_input, dispatch, step_index):
 
+        dispatch = dispatch
+
         available_massflow = h2_input[0]
         available_temperature = h2_input[1]
 
         # TODO: Better way to interpret dispatch signal
 
-        if (available_massflow > 0) & (dispatch == 0): # Charge
-            desired_massflow = available_massflow
-        if dispatch > 0:
-            desired_massflow = -dispatch # positive means charging negative means discharging
-        else: 
-            desired_massflow = 0 # TODO check back in on this
+        # if (available_massflow > 0) & (dispatch == 0): # Charge
+        #     desired_massflow = available_massflow
+        # if dispatch > 0:
+        #     desired_massflow = -dispatch # positive means charging negative means discharging
+        # else: 
+        #     desired_massflow = 0 # TODO check back in on this
 
+        desired_massflow = dispatch
 
         output = self.input_output(available_massflow, desired_massflow)
         

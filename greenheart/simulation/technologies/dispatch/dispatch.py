@@ -126,7 +126,7 @@ class GreenheartDispatch:
                 G.nodes[node].update({"dispatch_split": []})
 
             # Control control 
-            if node in ["battery", "thermal_energy_storage", "hydrogent_storage"]:
+            if node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
                 G.nodes[node].update({"dispatch_ctrl":[1 / 5 * (available_power - mean_generation)]})
             else:
                 G.nodes[node].update({"dispatch_ctrl":[]})

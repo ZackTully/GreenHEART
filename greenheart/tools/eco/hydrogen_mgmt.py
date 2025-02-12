@@ -250,6 +250,8 @@ def run_h2_storage(
     electrolyzer_physics_results,
     design_scenario,
     verbose=False,
+    realtime_flag=False, 
+    simulator=None
 ):
 
     if design_scenario["h2_storage_location"] == "platform":
@@ -316,6 +318,8 @@ def run_h2_storage(
             electrolyzer_physics_results["H2_Results"],
             greenheart_config["electrolyzer"]["rating"],
             hydrogen_storage_demand,
+            realtime_flag, 
+            simulator
         )
         h2_storage_capacity_kg = hydrogen_storage_capacity_kg
         h2_storage_results["hydrogen_storage_duration_hr"] = (

@@ -560,6 +560,61 @@ def run_simulation(config: GreenHeartSimulationConfig):
     if config.realtime_simulation:
         simulator.simulate(dispatcher, hopp_results)
 
+        bat_I1 = hi.system.battery.outputs.I
+        bat_P1 = hi.system.battery.outputs.P
+        bat_Q1 = hi.system.battery.outputs.Q
+
+        # Run HOPP again with battery
+        # Update hi.site_info to have the desired schedule
+        # hi.system.site.desired_schedule
+        # hi.system.site.realtime = True
+        # hi.system.dispatch_options["battery_dispatch"] = "externally_defined_heuristic"
+
+        # config.hopp_config["config"]["dispatch_options"]["battery_dispatch"] = "simple"
+        config.hopp_config["config"]["dispatch_options"]["battery_dispatch"] = "externally_defined_heuristic"
+
+        hi = he_hopp.setup_hopp(
+            config.hopp_config,
+            config.greenheart_config,
+            config.orbit_config,
+            config.turbine_config,
+            config.floris_config,
+            config.design_scenario,
+            wind_cost_results,
+            show_plots=config.show_plots,
+            save_plots=config.save_plots,
+        )
+
+        # hi.system.dispatch_builder.options.battery_dispatch = "externally_defined_heuristic"
+        # hi.system.dispatch_builder.site.battery_schedule = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
+        # hi.system.dispatch_builder.site.desired_schedule = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
+        # hi.system.dispatch_builder.options.battery_schedule = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
+
+        hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = simulator.G.nodes["battery"]["ionode"].model.store_charge_power / 1e3
+        # hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
+        # hi.system.dispatch_builder.power_sources["battery"].dispatch.user_fixed_dispatch = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
+
+
+
+        hopp_results = he_hopp.run_hopp(
+            hi,
+            project_lifetime=config.greenheart_config["project_parameters"][
+                "project_lifetime"
+            ],
+            verbose=config.verbose,
+        )
+
+        bat_I2 = hi.system.battery.outputs.I
+        bat_P2 = hi.system.battery.outputs.P
+        bat_Q2 = hi.system.battery.outputs.Q
+
+        # import matplotlib.pyplot as plt
+        # plt.plot(simulator.G.nodes["battery"]["ionode"].model.store_charge_power)
+        # plt.plot(np.array(bat_P2))
+
+
+        []
+
     if config.design_scenario["wind_location"] == "onshore":
         wind_config = he_fin.WindCostConfig(
             design_scenario=config.design_scenario,
@@ -706,6 +761,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
             electrolyzer_physics_results,
             design_scenario,
             verbose=verbose,
+            realtime_flag = config.realtime_simulation,
+            simulator = simulator
         )
 
         total_energy_available = np.sum(

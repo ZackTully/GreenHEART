@@ -23,10 +23,14 @@ def setup_hopp(
     save_plots=False,
     output_dir="./output/",
 ):
-    
-    if "battery" in hopp_config["technologies"].keys() and \
-        ("desired_schedule" not in hopp_config["site"].keys() or hopp_config["site"]["desired_schedule"] == []):
-        hopp_config["site"]["desired_schedule"] = [greenheart_config["electrolyzer"]["rating"]]*8760
+
+    if "battery" in hopp_config["technologies"].keys() and (
+        "desired_schedule" not in hopp_config["site"].keys()
+        # or hopp_config["site"]["desired_schedule"] == []
+    ):
+        hopp_config["site"]["desired_schedule"] = [
+            greenheart_config["electrolyzer"]["rating"]
+        ] * 8760
     hopp_site = SiteInfo(**hopp_config["site"])
 
     # adjust mean wind speed if desired
@@ -46,7 +50,7 @@ def setup_hopp(
         greenheart_config["site"]["mean_windspeed"] = np.average(wind_speed)
 
     ################ set up HOPP technology inputs
-    
+
     if hopp_config["site"]["wind"]:
         if hopp_config["technologies"]["wind"]["model_name"] == "floris":
             if design_scenario["wind_location"] == "offshore":
@@ -141,13 +145,13 @@ def setup_hopp(
 
     if "battery" in hopp_config_internal["technologies"].keys():
         hopp_config_internal["site"].update({"desired_schedule": hopp_site.desired_schedule})
-        
+
     hi = HoppInterface(hopp_config_internal)
     hi.system.site = hopp_site
 
     if "wave" in hi.system.technologies.keys():
         hi.system.wave.create_mhk_cost_calculator(wave_cost_dict)
-        
+
     if show_plots or save_plots:
         # plot wind resource if desired
         print("\nPlotting Wind Resource")

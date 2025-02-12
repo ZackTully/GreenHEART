@@ -5,21 +5,23 @@ from hopp.simulation.technologies.battery.battery import Battery as Battery_hopp
 
 class Battery(Battery_hopp):
     def __init__(self):
-        
+
+        # Need to get these from hopp config
 
         self.roundtrip_efficiency = 1
-        self.max_capacity_kWh = 5e6 # kWh
+    
+        self.max_capacity_kWh = 100000  # kWh
         self.min_capacity_kWh = 0
-        
-        self.max_charge_rate_kW = 50000
+
+        self.max_charge_rate_kW = 100000
         self.max_discharge_rate_kW = self.max_charge_rate_kW
 
-        self.dt = 1 # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
+        self.dt = 1  # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
 
         self.storage_state = 0
         sim_duration = 8760
         self.store_storage_state = np.zeros(8760)
-
+        self.store_charge_power = np.zeros(8760)
 
     def run(self):
         pass
@@ -33,15 +35,10 @@ class Battery(Battery_hopp):
 
         self.update_storage_state(actual_power)
         return actual_power
-        
 
     def update_storage_state(self, input_power):
         # Euler integration
         self.storage_state += input_power * self.dt
-
-
-
-
 
     def low_level_controller(self, available_power, desired_power):
         # check that the desired hydrogen massflow charging/discharging does not violate constraints or the available resource
@@ -49,8 +46,7 @@ class Battery(Battery_hopp):
         # Calculate the upper and lower limits of charge and discharge
         # TODO include losses from roundtrip efficiency
 
-
-        # charge rate 
+        # charge rate
         upper1 = self.max_charge_rate_kW
 
         # cannot charge above max capacity
@@ -62,28 +58,28 @@ class Battery(Battery_hopp):
         # find the most restrictive upper constraint
         upper = np.min([upper1, upper2, upper3])
 
-
         # discharge rate
         lower1 = -self.max_discharge_rate_kW
 
-        # cannot discharge below min capacity 
+        # cannot discharge below min capacity
         lower2 = (self.min_capacity_kWh - self.storage_state) / self.dt
 
         # find the most restrictive lower constraint
         lower = np.max([lower1, lower2])
 
-        assert lower <= upper, "Constraint logic gives a higher lower constraint than upper constraint"
+        assert (
+            lower <= upper
+        ), "Constraint logic gives a higher lower constraint than upper constraint"
 
         # Saturate desired at constraints
         control_power = desired_power
         if desired_power >= upper:
-            control_power= upper
-        
+            control_power = upper
+
         if desired_power <= lower:
             control_power = lower
 
         return control_power
-
 
     def step(self, input, dispatch, step_index):
 
@@ -101,20 +97,18 @@ class Battery(Battery_hopp):
         desired_power = dispatch
 
         output = self.input_output(available_power, desired_power)
-        self.store_step(step_index)
+        self.store_step(output, step_index)
 
         if output <= 0:
             output = -output
         else:
             output = 0.0
 
-
         return output
 
-
-    def store_step(self, step_index):
+    def store_step(self, charge_power, step_index):
         self.store_storage_state[step_index] = self.storage_state
-
+        self.store_charge_power[step_index] = charge_power
 
     def compute_hydrogen_storage_capacity(self):
         self.capacity = np.max(self.storage_state)
@@ -122,9 +116,6 @@ class Battery(Battery_hopp):
 
     def consolidate_simulation_outcome(self):
         pass
-
-
-
 
 
 []

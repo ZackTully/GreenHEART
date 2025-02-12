@@ -1093,16 +1093,6 @@ class SteelModel:
         unused_power =  self.feedstocks.electricity_consumption * (potential_DRI[0] - DRI_produced)
         unused_h2 = self.feedstocks.hydrogen_consumption * (potential_DRI[1] - DRI_produced)
 
-
-        # DRI_out_potential = np.array(
-        #     [power_in / self.energy_ratio, h2_in / self.h2_ratio]
-        # )
-
-        # DRI_out = np.min(DRI_out_potential)
-
-        # power_waste = self.energy_ratio * (DRI_out_potential[0] - DRI_out)
-        # h2_waste = self.h2_ratio * (DRI_out_potential[1] - DRI_out)
-
         self.store_step(DRI_produced, unused_power, unused_h2, step_index)
 
 
@@ -1111,7 +1101,7 @@ class SteelModel:
 
     def consolidate_sim_outcome(self):
 
-        steel_mtpy = np.sum(self.iron_store) / (1e3 * 1e6)
+        steel_mtpy = np.sum(self.iron_store) / ( 1e6)
         h2_kgpy = np.sum(self.h2_store)
 
         self.steel_capacity = SteelCapacityModelOutputs(
@@ -1121,12 +1111,6 @@ class SteelModel:
         self.capacity_factor = np.sum(self.iron_store) / (np.max(self.iron_store * len(self.iron_store)))
 
 
-        # steel_costs["feedstocks"] = feedstocks
-        # steel_cost_config = SteelCostModelConfig(
-        #     plant_capacity_mtpy=steel_capacity.steel_plant_capacity_mtpy, **steel_costs
-        # )
-        # steel_cost_config.plant_capacity_mtpy = steel_capacity.steel_plant_capacity_mtpy
-        # steel_costs = run_steel_cost_model(steel_cost_config)
 
 
 if __name__ == "__main__":
