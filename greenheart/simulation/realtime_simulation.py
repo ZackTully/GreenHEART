@@ -508,7 +508,7 @@ class RealTimeSimulation:
         outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
         component_dict = {
             "battery": {
-                "model": Battery(),
+                "model": Battery(self.config.hopp_config["technologies"]["battery"]),
                 "model_inputs": inputs,
                 "model_outputs": outputs,
             }
@@ -873,6 +873,8 @@ class IONode:
                     else:
                         graph_output[i] = model_output[count]
                     count += 1
+
+        # TODO add check here so that the splitting doesn't output more than the model output
 
         return graph_output
 

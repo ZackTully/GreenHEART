@@ -1,27 +1,50 @@
 import numpy as np
 
 from hopp.simulation.technologies.battery.battery import Battery as Battery_hopp
+from hopp.simulation.technologies.battery.battery import BatteryConfig
 
 
-class Battery(Battery_hopp):
-    def __init__(self):
+class Battery():
+# class Battery(Battery_hopp):
+    def __init__(self, battery_config):
 
         # Need to get these from hopp config
 
+        # config = BatteryConfig(*battery_config)
+
+
         self.roundtrip_efficiency = 1
     
-        self.max_capacity_kWh = 2000000  # kWh
-        self.min_capacity_kWh = 0
+        self.config = battery_config
 
-        self.max_charge_rate_kW = 100000
-        self.max_discharge_rate_kW = self.max_charge_rate_kW
+        self.system_capacity_kwh = battery_config["system_capacity_kwh"]
+        self.system_capacity_kw = battery_config["system_capacity_kw"]
+
+
+        self.min_SOC = battery_config["minimum_SOC"]
+        self.max_SOC = battery_config["maximum_SOC"]
+        self.initial_SOC = battery_config["initial_SOC"]
+
+        self.max_capacity_kWh = (self.max_SOC / 100) * self.system_capacity_kwh  # kWh
+        # self.max_capacity_kWh = 2000000  # kWh
+        self.min_capacity_kWh = (self.min_SOC / 100) * self.system_capacity_kwh
+        # self.min_capacity_kWh = 0
+
+        self.max_charge_rate_kW = self.system_capacity_kw
+        self.max_discharge_rate_kW = self.system_capacity_kw
 
         self.dt = 1  # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
 
-        self.storage_state = 0.852 * self.max_capacity_kWh
+        self.storage_state = (self.initial_SOC / 100) * self.system_capacity_kwh
+
         sim_duration = 8760
         self.store_storage_state = np.zeros(8760)
         self.store_charge_power = np.zeros(8760)
+
+        self.control_model = self.create_control_model()
+        
+    def create_control_model(self):
+        pass
 
     def run(self):
         pass

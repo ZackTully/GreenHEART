@@ -196,6 +196,7 @@ class GreenheartDispatch:
     def step_heuristic_case3(self, G, available_power):
 
         mean_generation = 150000  # kWh / hr
+        # mean_generation = 142000  # kWh / hr
 
         for edge in list(G.edges):
             G.edges[edge].update({"dispatch": 0})
@@ -206,20 +207,28 @@ class GreenheartDispatch:
             if G.out_degree[node] > 1:
                 G.nodes[node].update(
                     {
-                        "dispatch_split": (available_power / G.out_degree[node])
-                        * np.ones(G.out_degree[node])
+                        "dispatch_split": np.nan_to_num(((available_power / G.out_degree[node])
+                        * np.ones(G.out_degree[node]) ) / available_power)
                     }
                 )
             else:
                 G.nodes[node].update({"dispatch_split": []})
 
             # Control control
-            if node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
-                G.nodes[node].update(
-                    {"dispatch_ctrl": [1 / 5 * (available_power - mean_generation)]}
-                )
-            else:
-                G.nodes[node].update({"dispatch_ctrl": []})
+            # if node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
+            #     G.nodes[node].update(
+            #         {"dispatch_ctrl": [1 / 5 * (available_power - mean_generation)]}
+            #     )
+            # else:
+            #     G.nodes[node].update({"dispatch_ctrl": []})
+
+
+            G.nodes[node].update({"dispatch_ctrl": np.array([0])})
+
+        G.nodes["battery"].update({"dispatch_ctrl": np.array([available_power - mean_generation])})
+        G.nodes["hydrogen_storage"].update({"dispatch_ctrl": np.array([1/55 * (available_power - mean_generation)])})
+
+
 
         return G
 
