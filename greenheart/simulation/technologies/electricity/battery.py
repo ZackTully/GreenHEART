@@ -3,6 +3,7 @@ import numpy as np
 from hopp.simulation.technologies.battery.battery import Battery as Battery_hopp
 from hopp.simulation.technologies.battery.battery import BatteryConfig
 
+from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
 class Battery():
 # class Battery(Battery_hopp):
@@ -44,6 +45,27 @@ class Battery():
         self.control_model = self.create_control_model()
         
     def create_control_model(self):
+
+        A = np.array([[1]])
+        B = np.array([[1]])
+        C = np.array([[0]])
+        D = np.array([[-1]])
+        E = np.array([[0]])
+        F = np.array([[1]])
+
+        bounds_dict = {
+            "u_lb": np.array([-self.max_discharge_rate_kW]),
+            "u_ub": np.array([self.max_charge_rate_kW]),
+            "x_lb": np.array([self.min_capacity_kWh]),
+            "x_ub": np.array([self.max_capacity_kWh]),
+            "y_lb": np.array([None]),
+            "y_ub": np.array([None]),
+        }
+
+
+        self.control_model = ControlModel(A, B, C, D, E, F, bounds=bounds_dict, discrete=True)
+
+
         pass
 
     def run(self):
