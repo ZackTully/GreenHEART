@@ -2,7 +2,10 @@ import numpy as np
 import networkx as nx
 import pprint
 
-from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import DispatchModelPredictiveController
+from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import (
+    DispatchModelPredictiveController,
+)
+
 
 class GreenheartDispatchConfig:
     def __init__(self):
@@ -27,6 +30,10 @@ class GreenheartDispatch:
 
         if self.use_MPC:
             self.controller = DispatchModelPredictiveController(GHconfig, simulator.G)
+
+        self.validation = True
+        if self.validation:
+            self.setup_validation()
 
         # extract the timeseries- and feedback-capabale component simulation models from hopp
         # hopp_simulation_models = hopp_interface.hopp.system.technologies
@@ -84,7 +91,13 @@ class GreenheartDispatch:
 
     #     return getattr(self, data_name)
 
-    def step(self, G_dispatch, available_power, feedback_error=None):
+    def setup_validation(self):
+        validation_data = np.load(
+            "/Users/ztully/Documents/hybrids_code/GH_scripts/dispatch/comparison/data/seq_data.npz"
+        )
+        self.validation_data = validation_data
+
+    def step(self, G, available_power, feedback_error=None, step_index=None):
 
         # G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
         # G_dispatch = self.example_control_hydrogen_heat(G_dispatch, available_power)
@@ -95,16 +108,88 @@ class GreenheartDispatch:
         # )
 
         if self.use_MPC:
-            G = self.step_MPC(G_dispatch, available_power)
+            G = self.step_MPC(G, available_power)
+        elif self.validation:
+            G = self.step_validation(G, available_power, step_index)
+        else:
+            G = self.step_heuristic_case3(G, available_power)
 
-            # unpack G_dispatch
+        return G
 
-            # get MPC output 
+    def step_validation(self, G, available_power, step_index):
 
-            # repack G_dispatch
+        # self.validation_data["generation"][step_index] - available_power
 
-        else: 
-            G = self.step_heuristic_case3(G_dispatch, available_power)
+        for node in list(G.nodes):
+            G.nodes[node].update({"dispatch_split": np.array([1])})
+            G.nodes[node].update({"dispatch_ctrl": np.array([0])})
+
+        G.nodes["generation"].update(
+            {
+                "dispatch_split": np.nan_to_num(
+                    np.array(
+                        [
+                            self.validation_data["gen2bes"][step_index],
+                            self.validation_data["gen2el"][step_index],
+                        ]
+                    )
+                    / np.sum(
+                        [
+                            self.validation_data["gen2bes"][step_index],
+                            self.validation_data["gen2el"][step_index],
+                        ]
+                    )
+                )
+            }
+        )
+
+        G.nodes["electrolyzer"].update(
+            {
+                "dispatch_split": np.nan_to_num(
+                    np.array(
+                        [
+                            self.validation_data["h2s_charge"][step_index],
+                            self.validation_data["EL_h2_gen"][step_index]
+                            - self.validation_data["h2s_charge"][step_index],
+                        ]
+                    )
+                    / np.sum(
+                        [
+                            self.validation_data["h2s_charge"][step_index],
+                            self.validation_data["EL_h2_gen"][step_index]
+                            - self.validation_data["h2s_charge"][step_index],
+                        ]
+                    )
+                )
+            }
+        )
+
+        G.nodes["battery"].update(
+            {
+                "dispatch_ctrl": np.array(
+                    [
+                        self.validation_data["bes_charge"][step_index] - self.validation_data["bes_discharge"][step_index]
+                    ]
+                )
+            }
+        )
+
+        G.nodes["hydrogen_storage"].update(
+            {
+                "dispatch_ctrl": np.array(
+                    [
+                        self.validation_data["h2s_charge"][step_index]                        - self.validation_data["h2s_discharge"][step_index]
+                    ]
+                )
+            }
+        )
+
+        for edge in list(G.edges):
+            G.edges[edge].update({"dispatch": 0})
+
+        if False:
+            nx.get_node_attributes(G, "dispatch_ctrl")
+            nx.get_node_attributes(G, "dispatch_split")
 
         return G
 
@@ -115,24 +200,28 @@ class GreenheartDispatch:
         for edge in list(G.edges):
             G.edges[edge].update({"dispatch": 0})
 
-
         for node in list(G.nodes):
-
 
             # Split control
             if G.out_degree[node] > 1:
-                G.nodes[node].update({"dispatch_split": (available_power / G.out_degree[node]) * np.ones(G.out_degree[node])})
+                G.nodes[node].update(
+                    {
+                        "dispatch_split": (available_power / G.out_degree[node])
+                        * np.ones(G.out_degree[node])
+                    }
+                )
             else:
                 G.nodes[node].update({"dispatch_split": []})
 
-            # Control control 
+            # Control control
             if node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
-                G.nodes[node].update({"dispatch_ctrl":[1 / 5 * (available_power - mean_generation)]})
+                G.nodes[node].update(
+                    {"dispatch_ctrl": [1 / 5 * (available_power - mean_generation)]}
+                )
             else:
-                G.nodes[node].update({"dispatch_ctrl":[]})
+                G.nodes[node].update({"dispatch_ctrl": []})
 
         return G
-
 
     def step_MPC(self, G_dispatch, available_power):
 
@@ -150,7 +239,9 @@ class GreenheartDispatch:
 
         for i in range(len(u_mpc)):
             if i in self.controller.splitting_sort.keys():
-                G.nodes[self.controller.splitting_sort[i]]["dispatch_split"].append(u_mpc[i])
+                G.nodes[self.controller.splitting_sort[i]]["dispatch_split"].append(
+                    u_mpc[i]
+                )
             elif i in self.controller.ctrl_sort.keys():
                 G.nodes[self.controller.ctrl_sort[i]]["dispatch_ctrl"].append(u_mpc[i])
 
@@ -158,9 +249,6 @@ class GreenheartDispatch:
             G_dispatch.edges[edge].update({"dispatch": 0})
 
         return G
-
-
-        
 
     def splitting_controller(self, G, available_power, feedback_error=None):
 
@@ -190,16 +278,13 @@ class GreenheartDispatch:
         gen_split = np.array([gen_to_EL, gen_to_BES, gen_to_HX, gen_to_TES])
         gen_split_normalized = np.nan_to_num(gen_split / np.sum(gen_split))
 
-
         # BES_charge = np.sign(gen_to_BES)
         # if gen_to_BES == 0:
         #     BES_charge = 0
 
-
         # TES_charge = np.sign(gen_to_TES)
         # if gen_to_TES == 0:
-        #     TES_charge = 0 
-
+        #     TES_charge = 0
 
         if gen_to_BES > 0:
             BES_charge = gen_to_BES
@@ -215,9 +300,6 @@ class GreenheartDispatch:
         else:
             TES_charge = 0
 
-        
-        
-
         for node in list(G.nodes):
             G.nodes[node].update({"dispatch_split": np.array([1])})
             G.nodes[node].update({"dispatch_ctrl": None})
@@ -225,7 +307,6 @@ class GreenheartDispatch:
         G.nodes["generation"].update({"dispatch_split": gen_split_normalized})
         G.nodes["battery"].update({"dispatch_ctrl": BES_charge})
         G.nodes["thermal_energy_storage"].update({"dispatch_ctrl": TES_charge})
-
 
         dispatch_IO = {
             ("generation", "electrolyzer"): {"dispatch": [gen_to_EL, 0, 0, 0]},
@@ -243,9 +324,6 @@ class GreenheartDispatch:
         }
 
         nx.set_edge_attributes(G, dispatch_IO)
-
-
-
 
         return G
 

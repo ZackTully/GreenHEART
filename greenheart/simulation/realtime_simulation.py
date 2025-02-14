@@ -401,7 +401,7 @@ class RealTimeSimulation:
 
         for i in range(len(hybrid_profile)):
 
-            self.G = dispatcher.step(self.G, hybrid_profile[i])
+            self.G = dispatcher.step(self.G, hybrid_profile[i], step_index=i)
             self.G = self.step_system_state_function(self.G, hybrid_profile[i], i)
 
             # TODO update to use self.G not G_error
@@ -852,7 +852,8 @@ class IONode:
 
             graph_output = np.zeros((4, len(node_dispatch_split)))
             graph_output[np.where(self.input_list)[0], :] = (
-                node_dispatch_split * model_output
+                np.array([model_output]).T @ np.array([node_dispatch_split])
+                # node_dispatch_split * model_output
             )
 
             # if self.outputs["T"]:

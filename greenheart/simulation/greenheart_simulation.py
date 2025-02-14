@@ -571,6 +571,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
         # hi.system.dispatch_options["battery_dispatch"] = "externally_defined_heuristic"
 
         # config.hopp_config["config"]["dispatch_options"]["battery_dispatch"] = "simple"
+
         config.hopp_config["config"]["dispatch_options"]["battery_dispatch"] = "externally_defined_heuristic"
 
         hi = he_hopp.setup_hopp(
@@ -590,7 +591,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
         # hi.system.dispatch_builder.site.desired_schedule = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
         # hi.system.dispatch_builder.options.battery_schedule = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
 
-        hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = simulator.G.nodes["battery"]["ionode"].model.store_charge_power / 1e3
+        hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = -simulator.G.nodes["battery"]["ionode"].model.store_charge_power / 1e3
         # hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
         # hi.system.dispatch_builder.power_sources["battery"].dispatch.user_fixed_dispatch = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
 
@@ -608,9 +609,11 @@ def run_simulation(config: GreenHeartSimulationConfig):
         bat_P2 = hi.system.battery.outputs.P
         bat_Q2 = hi.system.battery.outputs.Q
 
-        # import matplotlib.pyplot as plt
-        # plt.plot(simulator.G.nodes["battery"]["ionode"].model.store_charge_power)
-        # plt.plot(np.array(bat_P2))
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(1, 1, layout="constrained")
+        ax.plot(simulator.G.nodes["battery"]["ionode"].model.store_charge_power)
+        ax.plot(np.array(bat_P2))
+        ax.plot(np.array(bat_P1))
 
 
         []

@@ -10,7 +10,7 @@ class Battery(Battery_hopp):
 
         self.roundtrip_efficiency = 1
     
-        self.max_capacity_kWh = 100000  # kWh
+        self.max_capacity_kWh = 2000000  # kWh
         self.min_capacity_kWh = 0
 
         self.max_charge_rate_kW = 100000
@@ -18,7 +18,7 @@ class Battery(Battery_hopp):
 
         self.dt = 1  # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
 
-        self.storage_state = 0
+        self.storage_state = 0.852 * self.max_capacity_kWh
         sim_duration = 8760
         self.store_storage_state = np.zeros(8760)
         self.store_charge_power = np.zeros(8760)

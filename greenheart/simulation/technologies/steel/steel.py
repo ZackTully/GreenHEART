@@ -998,7 +998,7 @@ def run_steel_full_model(
     # uses hydrogen amount from electrolyzer physics model
     if realtime_simulation:
         capacity_config = SteelCapacityModelConfigFromRealtime(feedstocks=feedstocks, realtime_steel = config["realtime_steel"], **steel_capacity)
-        steel_capacity = config["realtime_steel"].steel_capacity
+        steel_capacity = config["realtime_steel"].steel_capacity 
     else:
         capacity_config = SteelCapacityModelConfig(feedstocks=feedstocks, **steel_capacity)
         steel_capacity = run_size_steel_plant_capacity(capacity_config)
@@ -1045,13 +1045,22 @@ class SteelModel:
 
         self.feedstocks = feedstocks
 
-        # ZCT math values
-        self.energy_ratio = 2.88  # [kWh (kg fe)^-1] DRI ratio of energy in to DRI out
-        self.fe2o3_ratio = 1.4297430387680186  # [kg fe2o3 (kg fe)^-1] mass ratio of hematite in to DRI out
-        self.h2_ratio = 0.05414665592264303  # [kg h2 (kg fe)^-1] mass ratio of hydrogen in to DRI out
-        self.h2o_ratio = (
-            0.4838920225624497  # [kg h2o (kg fe)^-1] mass ratio of water out to DRI out
-        )
+        # Use feedstocks values instead
+
+        self.energy_ratio = self.feedstocks.electricity_consumption
+        self.fe2o3_ratio = self.feedstocks.iron_ore_consumption
+        self.h2_ratio = self.feedstocks.hydrogen_consumption
+        self.h2o_ratio = self.feedstocks.raw_water_consumption
+
+
+
+        # # ZCT math values
+        # self.energy_ratio = 2.88  # [kWh (kg fe)^-1] DRI ratio of energy in to DRI out
+        # self.fe2o3_ratio = 1.4297430387680186  # [kg fe2o3 (kg fe)^-1] mass ratio of hematite in to DRI out
+        # self.h2_ratio = 0.05414665592264303  # [kg h2 (kg fe)^-1] mass ratio of hydrogen in to DRI out
+        # self.h2o_ratio = (
+        #     0.4838920225624497  # [kg h2o (kg fe)^-1] mass ratio of water out to DRI out
+        # )
 
         self.setup_simulation_storage()
 
@@ -1088,7 +1097,8 @@ class SteelModel:
         potential_DRI = np.array([power_in / self.feedstocks.electricity_consumption, h2_in / self.feedstocks.hydrogen_consumption])
 
         # actual DRI production 
-        DRI_produced = np.min(potential_DRI)
+        # DRI_produced = np.min(potential_DRI)
+        DRI_produced = potential_DRI[1]
 
         unused_power =  self.feedstocks.electricity_consumption * (potential_DRI[0] - DRI_produced)
         unused_h2 = self.feedstocks.hydrogen_consumption * (potential_DRI[1] - DRI_produced)
@@ -1101,7 +1111,9 @@ class SteelModel:
 
     def consolidate_sim_outcome(self):
 
-        steel_mtpy = np.sum(self.iron_store) / ( 1e6)
+        self.input_capacity_factor_estimate = 0.9
+
+        steel_mtpy = np.sum(self.iron_store) / ( 1e3) 
         h2_kgpy = np.sum(self.h2_store)
 
         self.steel_capacity = SteelCapacityModelOutputs(
@@ -1110,6 +1122,8 @@ class SteelModel:
 
         self.capacity_factor = np.sum(self.iron_store) / (np.max(self.iron_store * len(self.iron_store)))
 
+
+        []
 
 
 

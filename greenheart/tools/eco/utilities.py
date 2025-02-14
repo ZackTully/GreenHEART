@@ -1417,9 +1417,9 @@ def save_energy_flows(
         )
         output.update({"wave generation [kW]": wave_plant_power})
     if hybrid_plant.battery:
-        battery_power_out_mw = hybrid_plant.battery.outputs.P 
-        output.update({"battery discharge [kW]": [(int(p>0))*p*1E3 for p in battery_power_out_mw]}) # convert from MW to kW and extract only discharging
-        output.update({"battery charge [kW]": [-(int(p<0))*p*1E3 for p in battery_power_out_mw]}) # convert from MW to kW and extract only charging
+        battery_power_out_mw = hybrid_plant.battery.outputs.P
+        output.update({"battery discharge [kW]": [(int(p>0))*p for p in battery_power_out_mw]}) #  extract only discharging
+        output.update({"battery charge [kW]": [-(int(p<0))*p for p in battery_power_out_mw]}) #  extract only charging
         output.update({"battery state of charge [%]": hybrid_plant.battery.outputs.dispatch_SOC})
 
     output.update({"total accessory power required [kW]": solver_results[0]})

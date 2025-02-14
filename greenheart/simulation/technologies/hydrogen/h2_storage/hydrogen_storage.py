@@ -8,7 +8,8 @@ class HydrogenStorage:
 
 
         self.roundtrip_efficiency = 1
-        self.max_capacity_kg = 3e5 # kg
+        self.max_capacity_kg = 812209.38400328 # kg
+        # self.max_capacity_kg = 3e5 # kg
         self.min_capacity_kg = 0
         
         self.max_charge_rate_kg_hr = 1e6
@@ -17,7 +18,7 @@ class HydrogenStorage:
         self.dt = 1 # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
 
 
-        self.storage_state = 0
+        self.storage_state = 1.541e5
 
         sim_duration = 8760
 
