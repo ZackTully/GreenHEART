@@ -5,12 +5,45 @@ from greenheart.simulation.technologies.hydrogen.electrolysis.PEM_H2_LT_electrol
 from greenheart.simulation.technologies.hydrogen.electrolysis.PEM_H2_LT_electrolyzer_Clusters_STEP import PEM_H2_Clusters_Step
 
 from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master import run_PEM_clusters
+from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
 
 class run_PEM_clusters_step(run_PEM_clusters):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.clusters = self.create_clusters()
+
+        self.max_power_kW = self.num_clusters * self.cluster_max_power
+
+        self.create_control_model()
+
+    def create_control_model(self):
+
+        n = 0
+        m = 0
+        p = 1
+        o = 1
+
+        A = np.zeros((n, n))
+        B = np.zeros((n, m))
+        C = np.zeros((p, n))
+        D = np.zeros((p, m))
+        E = np.zeros((n, o))
+        F = np.array([[1 / 46.99]]) # kg H2 / kWh
+        # F = np.array([[1 / 55]]) # kg H2 / kWh
+
+        bounds_dict = {
+            "u_lb": np.array([]),
+            "u_ub": np.array([]),
+            "x_lb": np.array([]),
+            "x_ub": np.array([]),
+            "y_lb": np.array([0]),
+            "y_ub": np.array([1 / 55 * self.num_clusters * self.cluster_max_power]), # NOTE rough estimate, come back and fix this
+        }
+
+        
+
+        self.control_model = ControlModel(A, B, C, D, E, F)
 
 
 
@@ -73,6 +106,17 @@ class run_PEM_clusters_step(run_PEM_clusters):
 
     def step(self, input_power, dispatch, step_index):
 
+
+
+        if isinstance(input_power, (np.ndarray, list)):
+            input_power = input_power[0]
+        if isinstance(dispatch, (np.ndarray, list)):
+            dispatch = dispatch[0]
+
+
+        input_power, u_passthrough, u_curtail = self.low_level_controller(input_power)
+
+
         # if called from run, then input power should be an array of len = n_clusters
         # if called from real-time simulation then input power should be a float or int
         if isinstance(input_power, float) or isinstance(input_power, int):
@@ -84,8 +128,17 @@ class run_PEM_clusters_step(run_PEM_clusters):
             h2_kg_hr = cluster.step(input_power[ci], step_index)
             total_h2_kg_hr += h2_kg_hr
         
-        return total_h2_kg_hr
+        output = total_h2_kg_hr
 
+        return output, u_passthrough, u_curtail
+
+
+    def low_level_controller(self, input_power):
+
+        u_model = np.min([input_power, self.max_power_kW])
+        u_passthrough = 0.0
+        u_curtail = np.max([0, input_power - self.max_power_kW])
+        return u_model, u_passthrough, u_curtail
 
     def even_split_power_step(self, input_power):
         num_clusters_on = np.floor(input_power / self.cluster_min_power)

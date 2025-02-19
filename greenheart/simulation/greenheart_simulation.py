@@ -560,9 +560,9 @@ def run_simulation(config: GreenHeartSimulationConfig):
     if config.realtime_simulation:
         simulator.simulate(dispatcher, hopp_results)
 
-        bat_I1 = hi.system.battery.outputs.I
-        bat_P1 = hi.system.battery.outputs.P
-        bat_Q1 = hi.system.battery.outputs.Q
+        # bat_I1 = hi.system.battery.outputs.I
+        # bat_P1 = hi.system.battery.outputs.P
+        # bat_Q1 = hi.system.battery.outputs.Q
 
         # Run HOPP again with battery
         # Update hi.site_info to have the desired schedule
@@ -605,15 +605,15 @@ def run_simulation(config: GreenHeartSimulationConfig):
             verbose=config.verbose,
         )
 
-        bat_I2 = hi.system.battery.outputs.I
-        bat_P2 = hi.system.battery.outputs.P
-        bat_Q2 = hi.system.battery.outputs.Q
+        # bat_I2 = hi.system.battery.outputs.I
+        # bat_P2 = hi.system.battery.outputs.P
+        # bat_Q2 = hi.system.battery.outputs.Q
 
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(1, 1, layout="constrained")
-        ax.plot(simulator.G.nodes["battery"]["ionode"].model.store_charge_power)
-        ax.plot(np.array(bat_P2))
-        ax.plot(np.array(bat_P1))
+        # import matplotlib.pyplot as plt
+        # fig, ax = plt.subplots(1, 1, layout="constrained")
+        # ax.plot(simulator.G.nodes["battery"]["ionode"].model.store_charge_power)
+        # ax.plot(np.array(bat_P2))
+        # ax.plot(np.array(bat_P1))
 
 
         []
@@ -1071,11 +1071,9 @@ def run_simulation(config: GreenHeartSimulationConfig):
             "Life: Annual H2 production [kg/year]"
         ]
 
-        # ZCT - extract steel of ammonia timeseries from controller and apply here
-
         if "steel" in config.greenheart_config:
             steel_config = copy.deepcopy(config.greenheart_config)
-            if config.realtime_simulation:
+            if config.realtime_simulation and ("steel" in simulator.G.nodes):
                 steel_config.update(
                     {"realtime_steel": simulator.G.nodes["steel"]["ionode"].model}
                 )

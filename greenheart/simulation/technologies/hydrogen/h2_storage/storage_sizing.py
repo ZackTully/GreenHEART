@@ -21,7 +21,7 @@ def hydrogen_storage_capacity(H2_Results, electrolyzer_size_mw, hydrogen_demand_
 
 
 
-    if realtime_flag:
+    if realtime_flag and ("steel" in simulator.G.nodes) and ("hydrogen_storage" in simulator.G.nodes):
         # If something ...
         hydrogen_demand_kgphr = simulator.G.nodes["steel"]["ionode"].model.h2_store
         # simulator.G.nodes["hydrogen_storage"]["ionode"].model.store_storage_state

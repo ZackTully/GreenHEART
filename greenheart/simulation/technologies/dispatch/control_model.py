@@ -1,5 +1,5 @@
 import numpy as np
-
+import scipy
 
 class ControlModel:
     # linear state space with bounds model
@@ -19,6 +19,12 @@ class ControlModel:
         bounds:dict = {},
         discrete:bool = True
     ):
+
+        # Put the splitter modification to the statespace in here
+
+        # Always initialize the control model system as a single output system
+        # Then split it by duplicating rows/columns of D or F and add the appropriate constraints
+
 
         self.A = A
         self.B = B
@@ -50,6 +56,39 @@ class ControlModel:
         assert len(dict_bound) == len(self_bound), "given bounds must match the system dimensions"
         return dict_bound
     
+    def make_splitting_node(self, out_degree):
+
+        # Constraint C x + D u + F d == Cs x + Ds u + Fs d
+
+        # If these are not true then we'll have to do something fancier
+        assert self.m == 1
+        assert self.p == 1
+
+        # Maybe it should be if self.o = 1 because the thing being split is the uncontrolled input usually?
+
+        # If it is not a splitting node then it will have a relationshipt y = Fd
+        # If it is a splitting node, then we want to make a diagonal D = [[F], [F], ...] and make F = 0
+        # Then say sum(u) = d and u >= 0 for all
+
+        # Call these special constraints that the MPC can grab when it is building itself
+
+        # not splitting, not controllable
+        # not splitting, yes controllable
+        # yes splitting, not controllable
+        # yes splitting, yes controllable
+
+        # For each of these: which have 0 matrices and which have non-zero
+
+
+        self.p = out_degree * self.p
+        self.m = out_degree * self.m
+
+        self.C = np.block([self.C] * out_degree)
+        self.D = scipy.linalg.block_diag(*(self.D for i in range(out_degree)))
+        self.F = np.block([self.F] * out_degree)
+
+        pass
+
 
 
 if __name__ == "__main__":
@@ -67,6 +106,32 @@ if __name__ == "__main__":
         "x_ub": np.array([None, None]),
         "y_lb": np.array([-20]),
         "y_ub": np.array([20]),
+    }
+
+
+    CM = ControlModel(A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict)
+
+    # If splitting node
+
+    n = 0
+    m = 3
+    p = 3
+    o = 1
+
+    A = np.zeros((n, n))
+    B = np.zeros((n, m))
+    C = np.zeros((p, n))
+    D = np.zeros((p, m))
+    E = np.zeros((n, o))
+    F = np.zeros((p, o))
+
+    bounds_dict = {
+        "u_lb": np.array([0, 0, 0]),
+        "u_ub": np.array([None, None, None]),
+        "x_lb": np.array([]),
+        "x_ub": np.array([]),
+        "y_lb": np.array([0, 0, 0]),
+        "y_ub": np.array([None, None, None]),
     }
 
 

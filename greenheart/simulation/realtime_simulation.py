@@ -2,8 +2,11 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 
-from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
+import time
 
+from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
+from greenheart.simulation.technologies.dispatch.control_model import ControlModel
+from greenheart.simulation.realtime_node import Node
 # Greenheart imports
 
 from greenheart.simulation.technologies.ammonia.ammonia import (
@@ -18,9 +21,7 @@ from greenheart.simulation.technologies.heat.heat_exchange.heat_exchanger import
 from greenheart.simulation.technologies.heat.heat_storage.thermal_energy_storage import (
     ThermalEnergyStorage,
 )
-from greenheart.simulation.technologies.hydrogen.electrolysis.electrolyzer import (
-    Electrolyzer,
-)
+
 
 from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master_STEP import (
     run_PEM_clusters_step,
@@ -49,6 +50,8 @@ class RealTimeSimulation:
 
         self.config = config
         self.hi = hopp_interface
+
+        self.stop_index = 8760 * 30
 
         self.setup_simulation_model(config, hopp_interface)
         self.setup_record_keeping()
@@ -99,6 +102,19 @@ class RealTimeSimulation:
         if "traversal_order" in graph_config.keys():
             self.node_order = graph_config["traversal_order"]
 
+        G = nx.DiGraph()
+        G.add_nodes_from(nodes)
+        G.add_edges_from(edges)
+
+        for degree in list(G.out_degree):
+            if degree[1] > 1:
+                G.nodes[degree[0]].update({"split": True})
+            else:
+                G.nodes[degree[0]].update({"split": False})
+
+        self.G = G
+
+
         # Instantiate the individual steppable models of each technology
 
         RT_techs = {}
@@ -126,30 +142,30 @@ class RealTimeSimulation:
 
         # Build the connections with a graph network
 
-        G = nx.DiGraph()
-        G.add_nodes_from(nodes)
-        G.add_edges_from(edges)
 
-        for degree in list(G.out_degree):
-            if degree[1] > 1:
-                G.nodes[degree[0]].update({"split": True})
-            else:
-                G.nodes[degree[0]].update({"split": False})
-
-        for node in G.nodes:
+        for node in self.G.nodes:
             model = None
 
-            ionode = IONode(
+            ionode = Node(
                 name=node,
                 model=RT_techs[node]["model"],
                 expected_inputs=RT_techs[node]["model_inputs"],
                 expected_outputs=RT_techs[node]["model_outputs"],
-                splitting_node=G.nodes[node]["split"],
-                in_degree=G.in_degree[node],
-                out_degree=G.out_degree[node],
+                splitting_node=self.G.nodes[node]["split"],
+                in_degree=self.G.in_degree[node],
+                out_degree=self.G.out_degree[node],
             )
+            # ionode = IONode(
+            #     name=node,
+            #     model=RT_techs[node]["model"],
+            #     expected_inputs=RT_techs[node]["model_inputs"],
+            #     expected_outputs=RT_techs[node]["model_outputs"],
+            #     splitting_node=self.G.nodes[node]["split"],
+            #     in_degree=self.G.in_degree[node],
+            #     out_degree=self.G.out_degree[node],
+            # )
 
-            G.nodes[node].update({"ionode": ionode})
+            self.G.nodes[node].update({"ionode": ionode})
 
         # nx.draw_networkx(G, with_labels=True)
 
@@ -157,7 +173,7 @@ class RealTimeSimulation:
         # models = [G.nodes[node]["model"] for node in G.nodes]
 
         # self.G = G
-        self.G = G
+        # self.G = G
 
         for node in list(self.G.nodes):
             # assert (
@@ -342,11 +358,18 @@ class RealTimeSimulation:
 
             node_output = self.G.nodes[node]["ionode"].step(
                 this_node_input,
-                dispatch_out_total,
-                step_index,
-                node_dispatch_split,
                 node_dispatch_ctrl,
+                node_dispatch_split,
+                step_index,
             )
+
+            # node_output = self.G.nodes[node]["ionode"].step(
+            #     this_node_input,
+            #     dispatch_out_total,
+            #     step_index,
+            #     node_dispatch_split,
+            #     node_dispatch_ctrl,
+            # )
 
             sim_out_edges = self.G.out_edges(node)
 
@@ -394,15 +417,37 @@ class RealTimeSimulation:
 
         hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
 
+        self.hybrid_profile = hybrid_profile
+
         # Loop for everything downstream of generation
         error_feedback = False
 
         # G_dispatch = self.G.copy()
 
+        t0 = time.time()
+
         for i in range(len(hybrid_profile)):
 
-            self.G = dispatcher.step(self.G, hybrid_profile[i], step_index=i)
+            if i > self.stop_index:
+                print("stopping at realtime simulator stop index")
+                break
+
+            if i < (len(hybrid_profile) - dispatcher.controller.horizon):
+
+                forecast = hybrid_profile[i: i + dispatcher.controller.horizon]
+            else:
+                forecast = np.ones(dispatcher.controller.horizon) * hybrid_profile[i]
+
+            # TODO improve this: 
+            x0 = np.zeros( 2)
+            x0[0] = self.G.nodes["battery"]["ionode"].model.storage_state
+            x0[1] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
+
+            self.G = dispatcher.step(self.G, hybrid_profile[i], forecast=forecast, x_measured = x0,  step_index=i)
             self.G = self.step_system_state_function(self.G, hybrid_profile[i], i)
+
+            if not (i % 5):
+                print(f"\r {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {(1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)) :.2f} seconds longer \t\t\t\t", end="")
 
             # TODO update to use self.G not G_error
             if error_feedback:
@@ -435,7 +480,7 @@ class RealTimeSimulation:
                     []
 
             self.record_states(i, self.G)
-
+        print("")
         for node in self.G.nodes:
             if hasattr(self.G.nodes[node]["ionode"].model, "consolidate_sim_outcome"):
                 self.G.nodes[node]["ionode"].model.consolidate_sim_outcome()
@@ -468,9 +513,11 @@ class RealTimeSimulation:
         inputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
         outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
 
+        out_degree = self.G.out_degree["generation"]
+
         component_dict = {
             "generation": {
-                "model": StandinNode(),
+                "model": StandinNode(out_degree),
                 "model_inputs": inputs,
                 "model_outputs": outputs,
             }
@@ -669,6 +716,9 @@ class RealTimeSimulation:
 
     #     return component_dict
 
+    def get_component(self, component_name):
+        return self.G.nodes[component_name]["ionode"].model
+
 
 class RealTimeSimulationOutput:
     def __init__(self):
@@ -676,14 +726,48 @@ class RealTimeSimulationOutput:
 
 
 class StandinNode:
-    def __init__(self):
+    def __init__(self, out_degree = 1):
         self.output = 0
+        self.out_degree = 1
+        # self.out_degree = out_degree
+        self.create_control_model()
+
+    def create_control_model(self):
+        n = 0
+        m = 0
+        p = 1
+        # m = self.out_degree
+        # p = self.out_degree
+        o = 1
+
+        A = np.zeros((n, n))
+        B = np.zeros((n, m))
+        C = np.zeros((p, n))
+        D = np.zeros((p, m))
+        E = np.zeros((n, o))
+        # F = np.zeros((p, o))
+        F = np.array([[1]])
+
+        bounds_dict = {
+            "u_lb": np.array([0] * m),
+            "u_ub": np.array([None] * m),
+            "x_lb": np.array([]),
+            "x_ub": np.array([]),
+            "y_lb": np.array([0] * p),
+            "y_ub": np.array([None] * p),
+        }
+
+
+        self.control_model = ControlModel(A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict)
+
 
     def set_output(self, output):
         self.output = output
 
     def step(self, input, dispatch=None, step_index=None):
-        return self.output
+        u_passthrough = 0
+        u_curtail = 0
+        return self.output, u_passthrough, u_curtail
 
 
 class IONode:
@@ -728,7 +812,16 @@ class IONode:
         else:
             self.out_degree = out_degree
 
-        self.make_fake_state_space()
+        if out_degree == 0:
+            self.out_degree = 1
+
+        # NOTE Dont forget this
+        # if hasattr(self.model, "control_model") and (self.out_degree > 1):
+        #     self.model.control_model.make_splitting_node(self.out_degree)
+
+        # self.make_fake_state_space()
+            
+        
 
     def step(
         self,
@@ -742,24 +835,10 @@ class IONode:
         # model_dispatch = self.consolidate_dispatch(graph_dispatch)
 
         model_input = self.consolidate_inputs(graph_input)
-
-        # if self.splitting_node:
-        #     if node_dispatch is None:
-        #         assert False
-        #     else:
-        #         pass  # do the output thing
-
-        #     model_dispatch = None
-        # else:
-        #     if node_dispatch is None:
-        #         pass  # most cases
-        #         model_dispatch = None
-        #     else:  # controllable node, dispatch is node control input
-        #         model_dispatch = node_dispatch * model_input
-
         model_dispatch_ctrl = self.model_dispatch_ctrl(model_input, node_dispatch_ctrl)
+        model_output, u_passthrough, u_curtail = self.model.step(model_input, model_dispatch_ctrl, step_index)
 
-        model_output = self.model.step(model_input, model_dispatch_ctrl, step_index)
+        # TODO send u_passthrough downstream
 
         if self.name == "electrolyzer":
             model_output = [model_output, 80]

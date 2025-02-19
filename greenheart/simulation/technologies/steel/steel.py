@@ -239,6 +239,7 @@ class SteelCapacityModelConfig:
                 "can only select one input: `hydrogen_amount_kgpy` or `desired_steel_mtpy`."
             )
 
+
 @define
 class SteelCapacityModelConfigFromRealtime:
     """
@@ -271,6 +272,7 @@ class SteelCapacityModelConfigFromRealtime:
             raise ValueError(
                 "can only select one input: `hydrogen_amount_kgpy` or `desired_steel_mtpy`."
             )
+
 
 @define
 class SteelCapacityModelOutputs:
@@ -967,7 +969,7 @@ def run_steel_full_model(
     show_plots=False,
     output_dir="./output/",
     design_scenario_id=0,
-    realtime_simulation = False
+    realtime_simulation=False,
 ) -> tuple[SteelCapacityModelOutputs, SteelCostModelOutputs, SteelFinanceModelOutputs]:
     """
     Runs the full steel model, including capacity, cost, and finance models.
@@ -996,11 +998,17 @@ def run_steel_full_model(
 
     # run steel capacity model to get steel plant size
     # uses hydrogen amount from electrolyzer physics model
-    if realtime_simulation:
-        capacity_config = SteelCapacityModelConfigFromRealtime(feedstocks=feedstocks, realtime_steel = config["realtime_steel"], **steel_capacity)
-        steel_capacity = config["realtime_steel"].steel_capacity 
+    if realtime_simulation and ("realtime_steel" in config):
+        capacity_config = SteelCapacityModelConfigFromRealtime(
+            feedstocks=feedstocks,
+            realtime_steel=config["realtime_steel"],
+            **steel_capacity,
+        )
+        steel_capacity = config["realtime_steel"].steel_capacity
     else:
-        capacity_config = SteelCapacityModelConfig(feedstocks=feedstocks, **steel_capacity)
+        capacity_config = SteelCapacityModelConfig(
+            feedstocks=feedstocks, **steel_capacity
+        )
         steel_capacity = run_size_steel_plant_capacity(capacity_config)
 
     # run steel cost model
@@ -1035,6 +1043,7 @@ def run_steel_full_model(
 
 
 import numpy as np
+from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
 
 class SteelModel:
@@ -1052,8 +1061,6 @@ class SteelModel:
         self.h2_ratio = self.feedstocks.hydrogen_consumption
         self.h2o_ratio = self.feedstocks.raw_water_consumption
 
-
-
         # # ZCT math values
         # self.energy_ratio = 2.88  # [kWh (kg fe)^-1] DRI ratio of energy in to DRI out
         # self.fe2o3_ratio = 1.4297430387680186  # [kg fe2o3 (kg fe)^-1] mass ratio of hematite in to DRI out
@@ -1063,6 +1070,41 @@ class SteelModel:
         # )
 
         self.setup_simulation_storage()
+        self.create_control_model()
+
+    def create_control_model(self):
+
+        m = 0
+        n = 0
+        p = 1
+        o = 1
+
+        A = np.zeros((n, n))
+        B = np.zeros((n, m))
+        C = np.zeros((p, n))
+        D = np.zeros((p, m))
+        E = np.zeros((n, o))
+        F = np.array(
+            [
+                [
+                    # 1 / self.feedstocks.electricity_consumption,
+                    1 / self.feedstocks.hydrogen_consumption,
+                ]
+            ]
+        )
+
+        bounds_dict = {
+            "u_lb": np.array([]),
+            "u_ub": np.array([]),
+            "x_lb": np.array([]),
+            "x_ub": np.array([]),
+            "y_lb": np.array([0]),
+            "y_ub": np.array([None]),
+        }
+
+        self.control_model = ControlModel(
+            A, B, C, D, E, F, bounds=bounds_dict, discrete=True
+        )
 
     def setup_simulation_storage(self):
         self.fe2o3_store = np.zeros(8760)
@@ -1094,37 +1136,44 @@ class SteelModel:
         h2_temp = DRI_inputs[2]
 
         # The potential DRI that could be made with either input individually
-        potential_DRI = np.array([power_in / self.feedstocks.electricity_consumption, h2_in / self.feedstocks.hydrogen_consumption])
+        potential_DRI = np.array(
+            [
+                power_in / self.feedstocks.electricity_consumption,
+                h2_in / self.feedstocks.hydrogen_consumption,
+            ]
+        )
 
-        # actual DRI production 
+        # actual DRI production
         # DRI_produced = np.min(potential_DRI)
         DRI_produced = potential_DRI[1]
 
-        unused_power =  self.feedstocks.electricity_consumption * (potential_DRI[0] - DRI_produced)
-        unused_h2 = self.feedstocks.hydrogen_consumption * (potential_DRI[1] - DRI_produced)
+        unused_power = self.feedstocks.electricity_consumption * (
+            potential_DRI[0] - DRI_produced
+        )
+        unused_h2 = self.feedstocks.hydrogen_consumption * (
+            potential_DRI[1] - DRI_produced
+        )
 
         self.store_step(DRI_produced, unused_power, unused_h2, step_index)
 
-
         return (unused_power, unused_h2, h2_temp)
-
 
     def consolidate_sim_outcome(self):
 
         self.input_capacity_factor_estimate = 0.9
 
-        steel_mtpy = np.sum(self.iron_store) / ( 1e3) 
+        steel_mtpy = np.sum(self.iron_store) / (1e3)
         h2_kgpy = np.sum(self.h2_store)
 
         self.steel_capacity = SteelCapacityModelOutputs(
             steel_plant_capacity_mtpy=steel_mtpy, hydrogen_amount_kgpy=h2_kgpy
         )
 
-        self.capacity_factor = np.sum(self.iron_store) / (np.max(self.iron_store * len(self.iron_store)))
-
+        self.capacity_factor = np.sum(self.iron_store) / (
+            np.max(self.iron_store * len(self.iron_store))
+        )
 
         []
-
 
 
 if __name__ == "__main__":

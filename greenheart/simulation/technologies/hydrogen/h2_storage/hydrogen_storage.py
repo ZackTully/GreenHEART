@@ -1,5 +1,6 @@
 import numpy as np
 
+from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
 class HydrogenStorage:
     def __init__(self):
@@ -12,7 +13,7 @@ class HydrogenStorage:
         # self.max_capacity_kg = 3e5 # kg
         self.min_capacity_kg = 0
         
-        self.max_charge_rate_kg_hr = 1e6
+        self.max_charge_rate_kg_hr = 1e3
         self.max_discharge_rate_kg_hr = self.max_charge_rate_kg_hr
 
         self.dt = 1 # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
@@ -23,19 +24,46 @@ class HydrogenStorage:
         sim_duration = 8760
 
         self.store_storage_state = np.zeros(8760)
+        self.store_charge = np.zeros(8760)
+        self.create_control_model()
+
+
+    def create_control_model(self):
+
+        A = np.array([[1]])
+        B = np.array([[1]])
+        C = np.array([[0]])
+        D = np.array([[-1]])
+        E = np.array([[0]])
+        F = np.array([[1]])
+
+        bounds_dict = {
+            "u_lb": np.array([-self.max_discharge_rate_kg_hr]),
+            "u_ub": np.array([self.max_charge_rate_kg_hr]),
+            "x_lb": np.array([0]),
+            "x_ub": np.array([self.max_capacity_kg]),
+            "y_lb": np.array([None]),
+            "y_ub": np.array([None]),
+        }
+
+
+        self.control_model = ControlModel(A, B, C, D, E, F, bounds=bounds_dict, discrete=True)
+     
+        []
+
 
 
     def run(self):
         pass
 
-    def input_output(self, available_massflow, desired_massflow):
-        # input is charging massflow must be >= 0
-        # dispatch signal is charging/discharging massflow + or -
+    # def input_output(self, available_massflow, desired_massflow):
+    #     # input is charging massflow must be >= 0
+    #     # dispatch signal is charging/discharging massflow + or -
 
-        actual_massflow = self.low_level_controller(available_massflow, desired_massflow)
+    #     actual_massflow = self.low_level_controller(available_massflow, desired_massflow)
 
-        self.update_storage_state(actual_massflow)
-        return actual_massflow
+    #     self.update_storage_state(actual_massflow)
+    #     return actual_massflow
         
 
     def update_storage_state(self, input_massflow):
@@ -52,6 +80,9 @@ class HydrogenStorage:
         # Calculate the upper and lower limits of charge and discharge
         # TODO include losses from roundtrip efficiency
 
+
+
+        desired_setpoint = desired_massflow #+ available_massflow
 
         # charge rate 
         upper1 = self.max_charge_rate_kg_hr
@@ -78,43 +109,53 @@ class HydrogenStorage:
         assert lower <= upper, "Constraint logic gives a higher lower constraint than upper constraint"
 
         # Saturate desired at constraints
-        control_massflow = desired_massflow
-        if desired_massflow >= upper:
+        control_massflow = desired_setpoint
+        # control_massflow = desired_massflow
+        if desired_setpoint >= upper:
             control_massflow = upper
         
-        if desired_massflow <= lower:
+        if desired_setpoint <= lower:
             control_massflow = lower
 
-        return control_massflow
+
+        u_model = control_massflow
+        model_output = np.max([0, -control_massflow])
+        # u_passthrough = available_massflow - np.abs(u_model)
+        # u_passthrough = np.max([available_massflow - model_output, 0])
+        u_passthrough = available_massflow - np.max([control_massflow, 0])
+        u_curtail = 0.0
+
+        return model_output, u_model, u_passthrough, u_curtail
+        # return control_massflow
 
 
     def step(self, h2_input, dispatch, step_index):
 
-        dispatch = dispatch
+
+        if isinstance(dispatch, (np.ndarray, list)):
+            desired_massflow = dispatch[0]
+
 
         available_massflow = h2_input[0]
         available_temperature = h2_input[1]
 
-        # TODO: Better way to interpret dispatch signal
-
-        # if (available_massflow > 0) & (dispatch == 0): # Charge
-        #     desired_massflow = available_massflow
-        # if dispatch > 0:
-        #     desired_massflow = -dispatch # positive means charging negative means discharging
-        # else: 
-        #     desired_massflow = 0 # TODO check back in on this
-
-        desired_massflow = dispatch
-
-        output = self.input_output(available_massflow, desired_massflow)
-        
-        self.store_step(step_index)
-
-        return output
 
 
-    def store_step(self, step_index):
+
+        # output = self.input_output(available_massflow, desired_massflow)
+        model_output, u_model, u_passthrough, u_curtail = self.low_level_controller(available_massflow, desired_massflow)
+
+        self.update_storage_state(u_model)
+        self.store_step(step_index, u_model)
+
+    
+
+        return model_output, u_passthrough, u_curtail
+
+
+    def store_step(self, step_index, charging_massflow):
         self.store_storage_state[step_index] = self.storage_state
+        self.store_charge[step_index] = charging_massflow
 
 
     def compute_hydrogen_storage_capacity(self):

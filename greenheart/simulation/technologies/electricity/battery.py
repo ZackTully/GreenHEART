@@ -63,23 +63,23 @@ class Battery():
         }
 
 
-        self.control_model = ControlModel(A, B, C, D, E, F, bounds=bounds_dict, discrete=True)
+        control_model = ControlModel(A, B, C, D, E, F, bounds=bounds_dict, discrete=True)
+     
+        return control_model
 
-
-        pass
 
     def run(self):
         pass
 
-    def input_output(self, available_power, desired_power):
-        # input is charging massflow must be >= 0
-        # dispatch signal is charging/discharging massflow + or -
+    # def input_output(self, available_power, desired_power):
+    #     # input is charging massflow must be >= 0
+    #     # dispatch signal is charging/discharging massflow + or -
 
-        actual_power = self.low_level_controller(available_power, desired_power)
-        actual_power = float(actual_power)
+    #     u_model, u_passthrough, u_curtail = self.low_level_controller(available_power, desired_power)
+    #     u_model = float(u_model)
 
-        self.update_storage_state(actual_power)
-        return actual_power
+    #     self.update_storage_state(u_model)
+    #     return u_model
 
     def update_storage_state(self, input_power):
         # Euler integration
@@ -90,6 +90,11 @@ class Battery():
 
         # Calculate the upper and lower limits of charge and discharge
         # TODO include losses from roundtrip efficiency
+
+        desired_setpoint = desired_power # + available_power
+
+
+        # TODO catch an extra case when there would be passthrough but desired hits one of the limits
 
         # charge rate
         upper1 = self.max_charge_rate_kW
@@ -117,18 +122,81 @@ class Battery():
         ), "Constraint logic gives a higher lower constraint than upper constraint"
 
         # Saturate desired at constraints
-        control_power = desired_power
-        if desired_power >= upper:
+        control_power = desired_setpoint
+        if desired_setpoint >= upper:
             control_power = upper
 
-        if desired_power <= lower:
+        if desired_setpoint <= lower:
             control_power = lower
+        # control_power = desired_power
+        # if desired_power >= upper:
+        #     control_power = upper
 
-        return control_power
+        # if desired_power <= lower:
+        #     control_power = lower
+
+
+        # return u_model, u_passthrough, u_curtail
+
+
+        u_model = control_power
+        model_output = np.max([0, -control_power])
+        # u_passthrough = available_power - np.abs(u_model)
+        # u_passthrough = np.max([available_power - model_output, 0])
+        u_passthrough = available_power - np.max([control_power, 0])
+        u_curtail = 0.0
+
+        return model_output, u_model, u_passthrough, u_curtail
+        # return control_power
+
+
+    # def low_level_controller(self, available_power, desired_power):
+    #     # check that the desired hydrogen massflow charging/discharging does not violate constraints or the available resource
+
+    #     # Calculate the upper and lower limits of charge and discharge
+    #     # TODO include losses from roundtrip efficiency
+
+    #     # charge rate
+    #     upper1 = self.max_charge_rate_kW
+
+    #     # cannot charge above max capacity
+    #     upper2 = (self.max_capacity_kWh - self.storage_state) / self.dt
+
+    #     # cannot charge with more than is available
+    #     upper3 = available_power
+
+    #     # find the most restrictive upper constraint
+    #     upper = np.min([upper1, upper2, upper3])
+
+    #     # discharge rate
+    #     lower1 = -self.max_discharge_rate_kW
+
+    #     # cannot discharge below min capacity
+    #     lower2 = (self.min_capacity_kWh - self.storage_state) / self.dt
+
+    #     # find the most restrictive lower constraint
+    #     lower = np.max([lower1, lower2])
+
+    #     assert (
+    #         lower <= upper
+    #     ), "Constraint logic gives a higher lower constraint than upper constraint"
+
+    #     # Saturate desired at constraints
+    #     control_power = desired_power
+    #     if desired_power >= upper:
+    #         control_power = upper
+
+    #     if desired_power <= lower:
+    #         control_power = lower
+
+    #     return control_power
 
     def step(self, input, dispatch, step_index):
 
-        available_power = input
+        if isinstance(input, (np.ndarray, list)):
+            available_power = input[0]
+        else:
+            available_power = input
 
         # TODO: Better way to interpret dispatch signal
 
@@ -139,17 +207,27 @@ class Battery():
         # else:
         #     desired_power = 0 # TODO this might come back around to bite
 
-        desired_power = dispatch
-
-        output = self.input_output(available_power, desired_power)
-        self.store_step(output, step_index)
-
-        if output <= 0:
-            output = -output
+        if isinstance(dispatch, (np.ndarray, list)):
+            desired_power = dispatch[0]
         else:
-            output = 0.0
+            desired_power = dispatch
 
-        return output
+        # output = self.input_output(available_power, desired_power)
+        model_output, u_model, u_passthrough, u_curtail = self.low_level_controller(available_power, desired_power)
+        u_model = float(u_model)
+
+        self.update_storage_state(u_model)
+
+        self.store_step(u_model, step_index)
+
+        output = model_output
+
+        # if output <= 0:
+        #     output = -output
+        # else:
+        #     output = 0.0
+
+        return output, u_passthrough, u_curtail
 
     def store_step(self, charge_power, step_index):
         self.store_storage_state[step_index] = self.storage_state
@@ -163,4 +241,16 @@ class Battery():
         pass
 
 
-[]
+if __name__ == "__main__":
+    pass
+
+
+    bes = Battery()
+
+    t_start = 0
+    t_stop = 100
+
+
+    time = np.arange(t_start, t_stop)
+
+
