@@ -165,7 +165,15 @@ class RealTimeSimulation:
             #     out_degree=self.G.out_degree[node],
             # )
 
-            self.G.nodes[node].update({"ionode": ionode})
+            # Add an assertion that there is one source and one sink
+            is_source = False
+            is_sink = False
+            if graph_config["source_node"] == node:
+                is_source = True
+            if graph_config["sink_node"] == node:
+                is_sink = True
+
+            self.G.nodes[node].update({"ionode": ionode, "is_source":is_source, "is_sink":is_sink})
 
         # nx.draw_networkx(G, with_labels=True)
 

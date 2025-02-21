@@ -53,12 +53,13 @@ class DispatchModelPredictiveController:
         pzero_list = []
         o_list = []
 
-        # A_list = []
-        # B_list = []
-        # C_list = []
-        # D_list = []
-        # E_list = []
-        # F_list = []
+
+        x_list = []
+        uc_list = []
+        us_list = []
+        d_list = []
+        ys_list = []
+        yo_list = []
 
         u_lb_list = []
         u_ub_list = []
@@ -137,24 +138,71 @@ class DispatchModelPredictiveController:
             y_lb_list.append(cm.y_lb)
             y_ub_list.append(cm.y_ub)
 
-        # for node in traversal_order:
-        #     A_list.append(G.nodes[node]["ionode"].model.A)
-        #     B_list.append(G.nodes[node]["ionode"].model.B)
-        #     C_list.append(G.nodes[node]["ionode"].model.C)
-        #     D_list.append(G.nodes[node]["ionode"].model.D)
-        #     E_list.append(G.nodes[node]["ionode"].model.E)
-        #     F_list.append(G.nodes[node]["ionode"].model.F)
-        # for node in traversal_order:
-        #     A_list.append(G.nodes[node]["ionode"].A)
-        #     B_list.append(G.nodes[node]["ionode"].B)
-        #     C_list.append(G.nodes[node]["ionode"].C)
-        #     D_list.append(G.nodes[node]["ionode"].D)
-        #     E_list.append(G.nodes[node]["ionode"].E)
-        #     F_list.append(G.nodes[node]["ionode"].F)
+            # sort nodes inputs and outputs into 
+            # u_c, u_s, 
+            # d_ex, d_co, 
+            # y_ex, y_co, y_z
 
-        #     # Collect the constraints from the model
-        #     if hasattr(G.nodes[node]["ionode"], "constraints"):
-        #         constraint_dict.update({node: G.node[node]["ionode"].constraints})
+            xl = []
+            for i in range(cm.A.shape[0]):
+                xl.append(f"x {i} {node}")
+            x_list.append(xl)
+
+            ucl = []
+            for i in range(cm.B.shape[1]):
+                ucl.append(f"uc {i} {node}")
+            uc_list.append(ucl)
+
+
+            dsl = []
+            if G.nodes[node]["is_source"]: # d = d_ex 
+
+                for i in range(cm.E.shape[1] * in_degree):
+                    dsl.append("de {i} {node} (from source)")
+
+            else: # d = d_co
+
+                for i in range(in_degree):
+                    in_edges = list(G.in_edges(node))
+                    dsl.append(f"dc {i} {node} (from {in_edges[i][1]})")
+
+            d_list.append(dsl)
+
+            usl = []
+            ysl = []
+
+            if G.nodes[node]["is_sink"]: # ys = y_ex
+                
+                for i in range(out_degree):
+                    usl.append(f"us {i} {node} (to sink)")
+                    ysl.append(f"yse {i} {node} (to sink)")
+
+            else: # ys = y_co
+                
+                for i in range(out_degree):
+                    out_edges = list(G.out_edges(node))
+                    usl.append(f"us {i} {node} (to {out_edges[i][1]})")
+                    ysl.append(f"ysc {i} {node} (to {out_edges[i][1]})")
+                
+            
+            us_list.append(usl)
+            ys_list.append(ysl)
+
+    
+            yol = []            
+            for i in range(cm.C.shape[0]):
+                yol.append(f"yo {i} {node}")
+
+            yo_list.append(yol)
+
+
+        self.x_list = [x for xs in x_list for x in xs]
+        self.uc_list = [x for xs in uc_list for x in xs]
+        self.us_list = [x for xs in us_list for x in xs]
+        self.d_list = [x for xs in d_list for x in xs]
+        self.ys_list = [x for xs in ys_list for x in xs]
+        self.yo_list = [x for xs in yo_list for x in xs]
+
 
         # First row
         A = scipy.linalg.block_diag(*(mat for mat in A_list))
@@ -180,22 +228,19 @@ class DispatchModelPredictiveController:
         E = scipy.linalg.block_diag(*(e for e in E_list))
         F = scipy.linalg.block_diag(*(f for f in F_list))
 
+        self.A = A
+        self.Bc = Bc
+        self.Bs_zero = Bs_zero
+        self.Eblock = Eblock
+        self.C_zero = C_zero
+        self.Dc_zero = Dc_zero
+        self.Ds = Ds
+        self.Fblock_zero = Fblock_zero
+        self.C = C
+        self.Dc = Dc
+        self.Ds_flat = Ds_flat
+        self.Fblock = Fblock
 
-
-        self.A = A 
-        self.Bc = Bc 
-        self.Bs_zero = Bs_zero 
-        self.Eblock = Eblock 
-        self.C_zero = C_zero 
-        self.Dc_zero = Dc_zero 
-        self.Ds = Ds 
-        self.Fblock_zero = Fblock_zero 
-        self.C = C 
-        self.Dc = Dc 
-        self.Ds_flat = Ds_flat 
-        self.Fblock = Fblock 
-        
-        
         # big block
 
         self.system_row1 = np.block([[A, Bc, Bs_zero, Eblock]])
@@ -293,11 +338,9 @@ class DispatchModelPredictiveController:
         self.x_lb_list = np.concatenate(x_lb_list)
         self.x_ub_list = np.concatenate(x_ub_list)
         self.y_lb_list = np.concatenate(y_lb_list)
-        self.y_lb_list = np.where(self.y_lb_list == None,  -np.inf, self.y_lb_list)
+        self.y_lb_list = np.where(self.y_lb_list == None, -np.inf, self.y_lb_list)
         self.y_ub_list = np.concatenate(y_ub_list)
-        self.y_ub_list = np.where(self.y_ub_list == None,  np.inf, self.y_ub_list)
-
-
+        self.y_ub_list = np.where(self.y_ub_list == None, np.inf, self.y_ub_list)
 
         # assert the shapes are correct
 
@@ -365,6 +408,158 @@ class DispatchModelPredictiveController:
         P_in = np.concatenate(p_ins, axis=0)
         P_out = np.concatenate(p_outs, axis=0)
 
+        # Try a different state space combination method
+
+
+
+        # Expand E and F matrices
+
+        E_wide_args = []
+        F_wide_args = []
+
+        for i, node in enumerate(traversal_order):
+            # p_in = np.zeros((int(np.sum(M_inc_in[i, :])), M_inc.shape[1]))
+            in_inds = np.where(M_inc_in[i, :] == 1)[0]
+            for j in range(len(in_inds)):
+                E_wide_args.append(E_list[i])
+                F_wide_args.append(F_list[i])
+                # F_wide_args.append(Fblock_zero_list[i])
+
+        E_wide = scipy.linalg.block_diag(*E_wide_args)
+        F_wide = scipy.linalg.block_diag(*F_wide_args)
+
+        A_block = A
+        B_block = np.block([Bc, Bs_zero])
+        E_block = E_wide
+
+        C_block = np.block([[C_zero], [C]])
+        D_block = np.block([[Dc_zero, Ds], [Dc, -Ds_flat @ Ds]])
+        F_block = np.block([[np.zeros(Fblock.shape)], [F_wide]])
+
+        u_ctrl = np.array([[i for i in range(len(self.uc_list + self.us_list)) if (self.uc_list + self.us_list)[i].startswith("uc")]])
+        u_split = np.array([[i for i in range(len(self.uc_list + self.us_list)) if (self.uc_list + self.us_list)[i].startswith("us")]])
+
+        d_ex = np.array([[i for i in range(len(self.d_list)) if self.d_list[i].startswith("de")]])
+        d_co = np.array([[i for i in range(len(self.d_list)) if self.d_list[i].startswith("dc")]])
+
+        y_spex = np.array([[i for i in range(len(self.d_list)) if self.ys_list[i].startswith("yse")]])
+        y_co = np.array([[i for i in range(len(self.d_list)) if self.ys_list[i].startswith("ysc")]])
+        y_zero = np.array([[i for i in range(len(self.ys_list + self.yo_list)) if (self.ys_list + self.yo_list)[i].startswith("yo")]])
+
+        Combined_SS_block = self.reorder_coupling(
+            A=A_block,
+            B=B_block,
+            C=C_block,
+            D=D_block,
+            E=E_block,
+            F=F_block,
+            M = np.eye(3),
+            uc = u_ctrl,
+            us = u_split,
+            de = d_ex,
+            dc = d_co,
+            ye = y_spex,
+            yz = y_zero,
+            yc = y_co
+        )
+
+
+
+        # These are for the three-node gen-BES-EL configuration
+        d_ex = slice(0, 1)
+        d_co = slice(1, 4)
+
+        y_co = slice(0, 3)
+        y_ex = slice(3, 7)
+
+        # v these are for the "validation" configuration
+        # d_ex = slice(0, 1)
+        # d_co = slice(1, 7)
+
+        # y_co = slice(0, 6)
+        # y_ex = slice(6, 12)
+        # # y_ex = slice(6, 7)
+
+        E_c = E_block[:, d_co]
+        E_e = E_block[:, d_ex]
+
+        C_c = C_block[y_co, :]
+        C_e = C_block[y_ex, :]
+
+        D_c = D_block[y_co, :]
+        D_e = D_block[y_ex, :]
+        # D_c = np.concatenate([Dc_zero, Ds], axis=1)[y_co, :]
+        # D_e = np.concatenate([Dc_zero, Ds], axis=1)[y_ex, :]
+
+        F_cc = F_block[y_co, d_co]
+        F_ec = F_block[y_ex, d_co]
+        F_ce = F_block[y_co, d_ex]
+        F_ee = F_block[y_ex, d_ex]
+
+        # y_co = P_out,co e_co
+        # d_co = P_in,co e_co
+        # y_co = P_out,co @ P_in,co ^-1 d_co
+
+        P_outco = P_out[y_co, d_co]
+        P_inco = P_in[d_co, d_co]
+
+        P_inout = P_outco @ np.linalg.inv(P_inco)
+
+        FccIi = np.linalg.inv(F_cc - P_inout)
+
+        A_hat = A_block + E_c @ FccIi @ C_c
+        B_hat = B_block + E_c @ FccIi @ D_c
+        E_hat = E_e + E_c @ FccIi @ F_ce
+
+        C_hat = C_e + F_ec @ FccIi @ C_c
+        D_hat = D_e + F_ec @ FccIi @ D_c
+        F_hat = F_ee + F_ec @ FccIi @ F_ce
+
+        # self.print_block_matrix(A_hat, B_hat, C_hat, D_hat, E_hat, F_hat)
+
+        # Three-node case
+        u_control = slice(0, mc)
+        u_split = slice(mc, mc + ms)
+
+        y_external = slice(0, 1)
+        y_zeros = slice(1, 4)
+
+        # Validation case
+        # u_control = slice(0, mc)
+        # u_split = slice(mc, mc + ms)
+
+        # y_external = slice(0, 1)
+        # y_zeros = slice(1, 6)
+
+        A_hat = A_hat
+        B_hat_c = B_hat[:, u_control]  # control
+        B_hat_s = B_hat[:, u_split]  # split
+        E_hat = E_hat
+
+        C_hat_e = C_hat[y_external, :]  # external
+        C_hat_z = C_hat[y_zeros, :]  # zero constraint
+
+        D_hat_ec = D_hat[y_external, u_control]  # external from control
+        D_hat_es = D_hat[y_external, u_split]  # external from splitting
+        D_hat_zc = D_hat[y_zeros, u_control]  # zero from control
+        D_hat_zs = D_hat[y_zeros, u_split]  # zero from splitting
+
+        F_hat_e = F_hat[y_external, :]  # external
+        F_hat_z = F_hat[y_zeros, :]  # splitting
+
+        mats = [
+            [A_hat, B_hat_c, B_hat_s, E_hat],
+            [C_hat_e, D_hat_ec, D_hat_es, F_hat_e],
+            [C_hat_z, D_hat_zc, D_hat_zs, F_hat_z],
+        ]
+
+        in_labels = ["x", "u_c", "u_s", "d_ex"]
+        out_labels = ["x^+", "y_ex", "y_zero"]
+
+
+        print("\n\n")
+        self.print_block_matrices(mats, in_labels, out_labels)
+
         self.M_inc = M_inc
         self.M_inc_in = M_inc_in
         self.M_inc_out = M_inc_out
@@ -420,6 +615,66 @@ class DispatchModelPredictiveController:
 
         []
 
+    def reorder_coupling(self, A, B, C, D, E, F, M, uc, us, de, dc, ye, yz, yc):
+
+        x = np.arange(0, A.shape[0], 1)
+
+
+        A = A
+        B_c = B[x.T, uc]
+        B_s = B[x.T, us]
+        E_e = E[x.T, de]
+        E_c = E[x.T, dc]
+
+        C_e = C[ye.T, x]
+        D_ec = D[ye.T, uc]
+        D_es = D[ye.T, us]
+        F_ee = F[ye.T, de]
+        F_ec = F[ye.T, dc]
+        
+
+        C_c = C[yc.T, x]
+        D_cc = D[yc.T, uc]
+        D_cs = D[yc.T, us]
+        F_ce = F[yc.T, de]
+        F_cc = F[yc.T, dc]
+
+        C_z = C[yz.T, x]
+        D_zc = D[yz.T, uc]
+        D_zs = D[yz.T, us]
+        F_ze = F[yz.T, de]
+        F_zc = F[yz.T, dc]
+
+        FMi = np.linalg.inv(F_cc - M)
+
+        
+        ss_mat =  [
+            [A, B_c, B_s, E_e],
+            [C_e, D_ec, D_es, F_ee],
+            [C_z, D_zc, D_zs, F_ze],
+        ]
+
+        coupling_mat = [
+            [E_c @ FMi @ C_c, E_c @ FMi @ D_cc, E_c @ FMi @ D_cs, E_c @ FMi @ F_ce],
+            [F_ec @ FMi @ C_c, F_ec @ FMi @ D_cc, F_ec @ FMi @ D_cs, F_ec @ FMi @ F_ce],
+            [F_zc @ FMi @ C_c, F_zc @ FMi @ D_cc, F_zc @ FMi @ D_cs, F_zc @ FMi @ F_ce],
+        ]
+
+        combined_mat = [[ ss_mat[i][j] + coupling_mat[i][j] for j in range(len(ss_mat[i]))]  for i in range(len(ss_mat))]
+
+
+        self.print_block_matrices(combined_mat, in_labels=["x", "uc", "us", "de"], out_labels=["x+", "ye", "yz"])
+
+        state_space = np.block(ss_mat)
+        coupling = np.block(coupling_mat)
+
+        combined = state_space + coupling
+
+        return combined
+
+
+    
+
     def setup_optimization(self):
 
         opti: ca.Opti = ca.Opti()
@@ -468,22 +723,19 @@ class DispatchModelPredictiveController:
             opti.subject_to(us_var[:, i] >= np.zeros(self.ms))
             opti.subject_to(e_var[:, i] >= np.zeros(self.q + 2))
 
-            opti.subject_to(uc_var[:,i] >= self.u_lb_list)
-            opti.subject_to(uc_var[:,i] <= self.u_ub_list)
+            opti.subject_to(uc_var[:, i] >= self.u_lb_list)
+            opti.subject_to(uc_var[:, i] <= self.u_ub_list)
 
-            opti.subject_to(x_var[:,i] >= self.x_lb_list)
-            opti.subject_to(x_var[:,i] <= self.x_ub_list)
+            opti.subject_to(x_var[:, i] >= self.x_lb_list)
+            opti.subject_to(x_var[:, i] <= self.x_ub_list)
 
-            opti.subject_to((self.Ds_flat @ ys_var[:,i]) >= self.y_lb_list)
-            opti.subject_to((self.Ds_flat @ ys_var[:,i]) <= self.y_ub_list)
-
-
+            opti.subject_to((self.Ds_flat @ ys_var[:, i]) >= self.y_lb_list)
+            opti.subject_to((self.Ds_flat @ ys_var[:, i]) <= self.y_ub_list)
 
             # trickier constraints - maybe wont work
 
-
         # Bounds
-        # Add constraint 
+        # Add constraint
         # Objective
         opti.minimize(self.objective(x_var, uc_var, us_var, ys_var, e_var))
 
@@ -513,23 +765,24 @@ class DispatchModelPredictiveController:
                 [0, 0, 0, 0, 0, 0, 0, 1],
             ]
         )
-        Q_edge = np.diag(np.array([1, 0, 1]))
+        Q_edge = np.diag(np.array([0, 1, 1]))
 
         objective_value = 0
         for i in range(self.horizon):
 
             tracking_term = (
-                (reorder_edge @ e[:,i] - reference).T
+                (reorder_edge @ e[:, i] - reference).T
                 @ Q_edge
-                @ (reorder_edge @ e[:,i] - reference)
+                @ (reorder_edge @ e[:, i] - reference)
             )
 
             # BES_sparsity_term = ca.fabs(e[1,i] * e[3,i])
-            BES_sparsity_term = (e[1,i] * e[3,i])**2
-            H2S_sparsity_term = (e[4,i] * e[6,i])**2
+            BES_sparsity_term = (e[1, i] * e[3, i]) ** 2
+            # BES_sparsity_term = np.min(np.sum(np.abs(e[1, i], e[3,i])))
+            H2S_sparsity_term = (e[4, i] * e[6, i]) ** 2
             # H2S_sparsity_term = ca.fabs(e[4,i] * e[6,i])
 
-            objective_value += tracking_term + BES_sparsity_term  + H2S_sparsity_term
+            objective_value += tracking_term + BES_sparsity_term + H2S_sparsity_term
 
         return objective_value
 
@@ -603,9 +856,8 @@ class DispatchModelPredictiveController:
         # return u_ctrl, u_split
         # return u[:, 0]
         return uc, us
-    
+
     def plot_solution(self, sol, forecast):
-        
 
         uc = sol.value(self.opt_vars["uc"])
         us = sol.value(self.opt_vars["us"])
@@ -613,27 +865,137 @@ class DispatchModelPredictiveController:
         ys = sol.value(self.opt_vars["ys"])
         e = sol.value(self.opt_vars["e"])
 
-        fig, ax = plt.subplots(4,2, figsize=(10,10), sharex="all", layout="constrained")
+        fig, ax = plt.subplots(
+            4, 2, figsize=(10, 10), sharex="all", layout="constrained"
+        )
 
-        ax[0,0].fill_between(np.arange(0, len(forecast), 1), np.zeros(len(forecast)), forecast, alpha=.25, edgecolor=None, color="yellow", label="forecast")
-        ax[0,0].plot(e[1:3,:].T, label="generation")
+        ax[0, 0].fill_between(
+            np.arange(0, len(forecast), 1),
+            np.zeros(len(forecast)),
+            forecast,
+            alpha=0.25,
+            edgecolor=None,
+            color="yellow",
+            label="forecast",
+        )
+        ax[0, 0].plot(e[1:3, :].T, label="generation")
 
-        ax[1,0].plot(e[1,:], label="battery charge")
-        ax[1,0].plot(-e[3,:], label="battery discharge")
+        ax[1, 0].plot(e[1, :], label="battery charge")
+        ax[1, 0].plot(-e[3, :], label="battery discharge")
 
-        ax[2,0].plot(forecast + e[3,:], label="gen + bes")
-        
-        ax[1,1].plot(e[4,:], label="H2S charge")
-        ax[1,1].plot(-e[6,:], label="H2S discharge")
+        ax[2, 0].plot(forecast + e[3, :], label="gen + bes")
 
-        ax[0,1].plot(np.sum(e[4:6,:], axis=0), label="H2 gen")
+        ax[1, 1].plot(e[4, :], label="H2S charge")
+        ax[1, 1].plot(-e[6, :], label="H2S discharge")
 
-        ax[3, 1].plot(e[7,:], label="Steel")
+        ax[0, 1].plot(np.sum(e[4:6, :], axis=0), label="H2 gen")
 
+        ax[3, 1].plot(e[7, :], label="Steel")
 
         for i in range(ax.shape[0]):
             for j in range(ax.shape[1]):
-                ax[i,j].legend()
+                ax[i, j].legend()
 
     def print_matrix(self, matrix, rows, cols):
         pass
+
+    def print_block_matrix(self, A, B, C, D, E, F):
+
+        precision = 4
+
+        n = A.shape[1]
+        m = B.shape[1]
+        o = E.shape[1]
+
+        p = C.shape[0]
+
+        for i in range(n):
+            line = ""
+
+            line += "["
+
+            for j in range(n):
+                line += f" {A[i,j] : .2g}, "
+
+            line = line[0:-2]
+            line += "]  ["
+
+            for j in range(m):
+                line += f" {B[i,j] : .2g}, "
+
+            line = line[0:-2]
+            line += "]  ["
+
+            for j in range(o):
+                line += f" {E[i,j] : .2g}, "
+
+            line = line[0:-2]
+            line += "]"
+
+            print(line)
+
+        print("")
+
+        for i in range(p):
+            line = ""
+
+            line += "["
+
+            for j in range(n):
+                line += f" {C[i,j] : .2g}, "
+
+            line = line[0:-2]
+            line += "]  ["
+
+            for j in range(m):
+                line += f" {D[i,j] : .2g}, "
+
+            line = line[0:-2]
+            line += "]  ["
+
+            for j in range(o):
+                line += f" {F[i,j] : .2g}, "
+
+            line = line[0:-2]
+            line += "]"
+
+            print(line)
+
+        []
+
+    def print_block_matrices(self, mat, in_labels, out_labels):
+
+        try:
+            np.block(mat)
+        except:
+            AssertionError("bad matrix")
+
+        block_mat = np.block(mat)
+        block_cols = block_mat.shape[1]
+        block_rows = block_mat.shape[0]
+
+        for row_num, row_mat in enumerate(mat):
+            print("")
+            # print("====== for output: {out_labels[row_num]} ======")
+
+            row_mat_lens = [matr.shape[1] for matr in row_mat]
+
+            line = " " * 15
+            for coli, col_label in enumerate(in_labels):
+                line += f"{col_label}".ljust(row_mat_lens[coli] * 8 + 2)
+
+            print(line)
+            n_rows = row_mat[0].shape[0]
+            for i in range(n_rows):
+                line = f"{out_labels[row_num]}".ljust(10)
+                line += "["
+                for col_mat in row_mat:
+                    for j in range(col_mat.shape[1]):
+                        line += f"{col_mat[i,j] :.4g}, ".rjust(8)
+
+                    line = line[0:-2]
+                    line += " ]  ["
+                line = line[0:-2]
+                print(line)
+
+        []

@@ -13,7 +13,7 @@ class HydrogenStorage:
         # self.max_capacity_kg = 3e5 # kg
         self.min_capacity_kg = 0
         
-        self.max_charge_rate_kg_hr = 1e3
+        self.max_charge_rate_kg_hr = 3e3
         self.max_discharge_rate_kg_hr = self.max_charge_rate_kg_hr
 
         self.dt = 1 # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
