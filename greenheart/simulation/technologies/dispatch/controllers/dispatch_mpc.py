@@ -29,22 +29,47 @@ class DispatchModelPredictiveController:
 
         G = simulation_graph
 
+        # A_list = []
+        # B_list = []
+        # Bc_list = []
+        # Bs_zero_list = []
+        # E_list = []
+        # Eblock_list = []
+        # Ds_list = []
+        # Ds_flat_list = []
+        # C_list = []
+        # C_zero_list = []
+        # D_list = []
+        # Dc_list = []
+        # Dc_zero_list = []
+        # F_list = []
+        # Fblock_list = []
+        # Fblock_zero_list = []
+
+
         A_list = []
         B_list = []
-        Bc_list = []
-        Bs_zero_list = []
-        E_list = []
-        Eblock_list = []
-        Ds_list = []
-        Ds_flat_list = []
         C_list = []
-        C_zero_list = []
         D_list = []
-        Dc_list = []
-        Dc_zero_list = []
+        E_list = []
         F_list = []
-        Fblock_list = []
-        Fblock_zero_list = []
+
+        Bc_list = []
+        Bs_list = []
+
+        Cs_list = []
+        Co_list = []
+
+        Dsc_list = []
+        Dss_list = []
+        Doc_list = []
+        Dos_list = []
+
+        E_list = []
+
+        Fs_list = []
+        Fo_list = []
+
 
         n_list = []
         mc_list = []
@@ -60,6 +85,7 @@ class DispatchModelPredictiveController:
         d_list = []
         ys_list = []
         yo_list = []
+        e_list = []
 
         u_lb_list = []
         u_ub_list = []
@@ -71,49 +97,119 @@ class DispatchModelPredictiveController:
         constraint_dict = {}
 
         for node in traversal_order:
-            assert hasattr(G.nodes[node]["ionode"].model, "control_model")
+            assert hasattr(G.nodes[node]["ionode"].model, "control_model"), f"Node {node} has no control model available"
 
             cm = G.nodes[node]["ionode"].model.control_model
 
             in_degree = G.nodes[node]["ionode"].in_degree
             out_degree = G.nodes[node]["ionode"].out_degree
 
-            # First row
+            if out_degree > 1:
+                us_degree = out_degree
+            else:
+                us_degree = 0
+            
+            n = cm.A.shape[0]
+            
+            mc = cm.B.shape[1]
+            ms = us_degree
+            o = cm.E.shape[1]
+
+            if us_degree == 0:
+                ps = cm.C.shape[0]
+                po = 0
+            else:
+                ps = us_degree
+                po = cm.C.shape[0]
+
+
             A_list.append(cm.A)
+            B_list.append(cm.B)
+            C_list.append(cm.C)
+            D_list.append(cm.D)
+            # E_list.append(cm.E)
+            F_list.append(np.tile(cm.F, in_degree))
+
+            # First row
+            # Already have A matrix
             Bc_list.append(cm.B)
-            Bs_zero_list.append(np.zeros((cm.A.shape[0], out_degree)))
-            Eblock_list.append(np.repeat(cm.E, in_degree, axis=1))
+            Bs_list.append(np.zeros((n, ms)))
+            E_list.append(np.tile(cm.E, in_degree))
+
 
             # Second row
-            C_zero_list.append(np.zeros((out_degree * cm.C.shape[0], cm.C.shape[1])))
-            # C_zero_list.append(np.zeros_like(cm.C))
-            Dc_zero_list.append(np.zeros((out_degree * cm.D.shape[0], cm.D.shape[1])))
-            # Dc_zero_list.append(np.zeros_like(cm.D))
-            Ds_list.append(np.eye(out_degree))
-            Fblock_zero_list.append(
-                np.zeros((out_degree * cm.F.shape[0], in_degree * cm.F.shape[1]))
-            )
+            if ms == 0:  # y_split is just normal y
+                Cs_list.append(cm.C)
+                Dsc_list.append(cm.D)
+                Dss_list.append(np.zeros((ps, ms)))
+                Fs_list.append(np.tile(cm.F, in_degree))
+            else:  # no dimension here
+                Cs_list.append(np.zeros((ps, n)))
+                Dsc_list.append(np.zeros((ps, mc)))
+                Dss_list.append(np.eye(ms))
+                Fs_list.append(np.zeros((ps, in_degree * cm.F.shape[1])))
+
+
 
             # Third row
-            C_list.append(cm.C)
-            Dc_list.append(cm.D)
-            Ds_flat_list.append(
-                np.concatenate([np.eye(cm.C.shape[0])] * out_degree, axis=1)
-            )
-            # Ds_flat_list.append(
-            #     scipy.linalg.block_diag(
-            #         *(np.ones((1, cm.C.shape[0])) for n in range(out_degree))
-            #     )
-            # )
+            if ms == 0:  # y_split is Ds us
+                Co_list.append(np.zeros((po, n)))
+                Doc_list.append(np.zeros((po, mc)))
+                Dos_list.append(np.zeros((po, ms)))
+                Fo_list.append(np.zeros((po, in_degree * cm.F.shape[1])))
+            else: # yzero  is constrained here
+                Co_list.append(cm.C)
+                Doc_list.append(cm.D)
+                Dos_list.append(np.tile(np.eye(po), ms))
+                Fo_list.append(np.tile(cm.F, in_degree))
 
-            # Already have Ds
-            Fblock_list.append(np.repeat(cm.F, in_degree, axis=1))
 
-            # Others
-            B_list.append(cm.B)
-            D_list.append(cm.D)
-            E_list.append(cm.E)
-            F_list.append(cm.F)
+
+
+
+
+
+
+            # # First row
+            # A_list.append(cm.A)
+            # Bc_list.append(cm.B)
+            # Bs_zero_list.append(np.zeros((n, ms)))
+            # Eblock_list.append(np.repeat(cm.E, in_degree, axis=1))
+
+
+            # if ms > 0:
+
+            #     # Second row
+            #     C_zero_list.append(np.zeros((ps, n)))
+            #     Dc_zero_list.append(np.zeros((ps, mc)))
+            #     Ds_list.append(np.eye(ms))
+            #     Fblock_zero_list.append(  np.zeros((ps, in_degree * cm.F.shape[1]))    )
+                
+
+            #     # Third row
+            #     C_list.append(cm.C)
+            #     Dc_list.append(cm.D)
+            #     Ds_flat_list.append(      np.tile(np.eye(cm.C.shape[0]) , us_degree)     )
+            #     # Already have Ds
+            #     Fblock_list.append(np.tile(cm.F, in_degree))
+            #     # Fblock_list.append(np.repeat(cm.F, in_degree, axis=1))
+
+            # else: # ms == 0 
+
+            #     # Second row
+            #     C_zero_list.append(np.zeros((ps, n)))
+            #     Dc_zero_list.append(np.zeros((ps, mc)))
+            #     Ds_list.append(np.eye(ms))
+            #     Fblock_zero_list.append(  np.zeros((ps, in_degree * cm.F.shape[1]))    )
+                
+            #     # Third row
+            #     C_list.append(np.zeros((po, n)))
+            #     Dc_list.append(np.zeros((po, mc)))
+            #     Ds_flat_list.append( np.zeros((po, ps))   )
+            #     Fblock_list.append(np.zeros((po, o)))
+
+
+
 
             # repeat B and D columns (in_degree) times
             # repeat CDF rows (out_degree) times
@@ -122,12 +218,18 @@ class DispatchModelPredictiveController:
             subsystem_block = np.block([[cm.A, cm.B, cm.E], [cm.C, cm.D, cm.F]])
 
             # Dimensions
-            n_list.append(cm.A.shape[0])
-            mc_list.append(cm.B.shape[1])
-            ms_list.append(out_degree)
-            p_list.append(cm.C.shape[0] * out_degree)
-            o_list.append(cm.E.shape[1] * in_degree)
+            n_list.append(n)
+            mc_list.append(mc)
+            ms_list.append(ms)
+            p_list.append(ps + po)
+            o_list.append(o)
             pzero_list.append(cm.C.shape[0])
+            # n_list.append(cm.A.shape[0])
+            # mc_list.append(cm.B.shape[1])
+            # ms_list.append(out_degree)
+            # p_list.append(cm.C.shape[0] * out_degree)
+            # o_list.append(cm.E.shape[1] * in_degree)
+            # pzero_list.append(cm.C.shape[0])
 
             []
 
@@ -156,12 +258,9 @@ class DispatchModelPredictiveController:
 
             dsl = []
             if G.nodes[node]["is_source"]: # d = d_ex 
-
                 for i in range(cm.E.shape[1] * in_degree):
                     dsl.append("de {i} {node} (from source)")
-
             else: # d = d_co
-
                 for i in range(in_degree):
                     in_edges = list(G.in_edges(node))
                     dsl.append(f"dc {i} {node} (from {in_edges[i][1]})")
@@ -170,29 +269,25 @@ class DispatchModelPredictiveController:
 
             usl = []
             ysl = []
-
             if G.nodes[node]["is_sink"]: # ys = y_ex
-                
-                for i in range(out_degree):
+                for i in range(us_degree):
                     usl.append(f"us {i} {node} (to sink)")
-                    ysl.append(f"yse {i} {node} (to sink)")
-
-            else: # ys = y_co
-                
                 for i in range(out_degree):
+                    ysl.append(f"yse {i} {node} (to sink)")
+            else: # ys = y_co
+                for i in range(us_degree):
                     out_edges = list(G.out_edges(node))
                     usl.append(f"us {i} {node} (to {out_edges[i][1]})")
+
+                for i in range(out_degree):
+                    out_edges = list(G.out_edges(node))
                     ysl.append(f"ysc {i} {node} (to {out_edges[i][1]})")
-                
-            
             us_list.append(usl)
             ys_list.append(ysl)
 
-    
-            yol = []            
-            for i in range(cm.C.shape[0]):
-                yol.append(f"yo {i} {node}")
-
+            yol = []
+            for i in range(po):
+                yol.append(f"yo {i} {node}")      
             yo_list.append(yol)
 
 
@@ -204,23 +299,45 @@ class DispatchModelPredictiveController:
         self.yo_list = [x for xs in yo_list for x in xs]
 
 
+
+
         # First row
-        A = scipy.linalg.block_diag(*(mat for mat in A_list))
-        Bc = scipy.linalg.block_diag(*(mat for mat in Bc_list))
-        Bs_zero = scipy.linalg.block_diag(*(mat for mat in Bs_zero_list))
-        Eblock = scipy.linalg.block_diag(*(mat for mat in Eblock_list))
+        A = scipy.linalg.block_diag(*A_list)
+        Bc = scipy.linalg.block_diag(*Bc_list)
+        Bs = scipy.linalg.block_diag(*Bs_list)
+        E = scipy.linalg.block_diag(*E_list)
 
         # Second row
-        C_zero = scipy.linalg.block_diag(*(mat for mat in C_zero_list))
-        Dc_zero = scipy.linalg.block_diag(*(mat for mat in Dc_zero_list))
-        Ds = scipy.linalg.block_diag(*(mat for mat in Ds_list))
-        Fblock_zero = scipy.linalg.block_diag(*(mat for mat in Fblock_zero_list))
+        Cs = scipy.linalg.block_diag(*Cs_list)
+        Dsc = scipy.linalg.block_diag(*Dsc_list)
+        Dss = scipy.linalg.block_diag(*Dss_list)
+        Fs = scipy.linalg.block_diag(*Fs_list)
+
 
         # Third row
-        C = scipy.linalg.block_diag(*(mat for mat in C_list))
-        Dc = scipy.linalg.block_diag(*(mat for mat in Dc_list))
-        Ds_flat = scipy.linalg.block_diag(*(mat for mat in Ds_flat_list))
-        Fblock = scipy.linalg.block_diag(*(mat for mat in Fblock_list))
+        Co = scipy.linalg.block_diag(*Co_list)
+        Doc = scipy.linalg.block_diag(*Doc_list)
+        Dos = scipy.linalg.block_diag(*Dos_list)
+        Fo = scipy.linalg.block_diag(*Fo_list)
+
+
+        # # First row
+        # A = scipy.linalg.block_diag(*(mat for mat in A_list))
+        # Bc = scipy.linalg.block_diag(*(mat for mat in Bc_list))
+        # Bs_zero = scipy.linalg.block_diag(*(mat for mat in Bs_zero_list))
+        # Eblock = scipy.linalg.block_diag(*(mat for mat in Eblock_list))
+
+        # # Second row
+        # C_zero = scipy.linalg.block_diag(*(mat for mat in C_zero_list))
+        # Dc_zero = scipy.linalg.block_diag(*(mat for mat in Dc_zero_list))
+        # Ds = scipy.linalg.block_diag(*(mat for mat in Ds_list))
+        # Fblock_zero = scipy.linalg.block_diag(*(mat for mat in Fblock_zero_list))
+
+        # # Third row
+        # C = scipy.linalg.block_diag(*(mat for mat in C_list))
+        # Dc = scipy.linalg.block_diag(*(mat for mat in Dc_list))
+        # Ds_flat = scipy.linalg.block_diag(*(mat for mat in Ds_flat_list))
+        # Fblock = scipy.linalg.block_diag(*(mat for mat in Fblock_list))
 
         # others
         B = scipy.linalg.block_diag(*(b for b in B_list))
@@ -228,25 +345,32 @@ class DispatchModelPredictiveController:
         E = scipy.linalg.block_diag(*(e for e in E_list))
         F = scipy.linalg.block_diag(*(f for f in F_list))
 
-        self.A = A
-        self.Bc = Bc
-        self.Bs_zero = Bs_zero
-        self.Eblock = Eblock
-        self.C_zero = C_zero
-        self.Dc_zero = Dc_zero
-        self.Ds = Ds
-        self.Fblock_zero = Fblock_zero
-        self.C = C
-        self.Dc = Dc
-        self.Ds_flat = Ds_flat
-        self.Fblock = Fblock
+        # self.A = A
+        # self.Bc = Bc
+        # self.Bs_zero = Bs_zero
+        # self.Eblock = Eblock
+        # self.C_zero = C_zero
+        # self.Dc_zero = Dc_zero
+        # self.Ds = Ds
+        # self.Fblock_zero = Fblock_zero
+        # self.C = C
+        # self.Dc = Dc
+        # self.Ds_flat = Ds_flat
+        # self.Fblock = Fblock
 
-        # big block
+        # # big block
 
-        self.system_row1 = np.block([[A, Bc, Bs_zero, Eblock]])
-        self.system_row2 = np.block([[C_zero, Dc_zero, Ds, Fblock_zero]])
-        # TODO multiply Ds by flattening dimension corrector
-        self.system_row3 = np.block([[C, Dc, -Ds_flat @ Ds, Fblock]])
+        # self.system_row1 = np.block([[A, Bc, Bs_zero, Eblock]])
+        # self.system_row2 = np.block([[C_zero, Dc_zero, Ds, Fblock_zero]])
+        # # TODO multiply Ds by flattening dimension corrector
+        # self.system_row3 = np.block([[C, Dc, -Ds_flat @ Ds, Fblock]])
+
+        # self.system = np.block(
+        #     [[self.system_row1], [self.system_row2], [self.system_row3]]
+        # )
+        self.system_row1 = np.block([[A, Bc, Bs, E]])
+        self.system_row2 = np.block([[Cs, Dsc, Dss, Fs]])
+        self.system_row3 = np.block([[Co, Doc, Dos, Fo]])
 
         self.system = np.block(
             [[self.system_row1], [self.system_row2], [self.system_row3]]
@@ -414,27 +538,30 @@ class DispatchModelPredictiveController:
 
         # Expand E and F matrices
 
-        E_wide_args = []
-        F_wide_args = []
+        # E_wide_args = []
+        # F_wide_args = []
 
-        for i, node in enumerate(traversal_order):
-            # p_in = np.zeros((int(np.sum(M_inc_in[i, :])), M_inc.shape[1]))
-            in_inds = np.where(M_inc_in[i, :] == 1)[0]
-            for j in range(len(in_inds)):
-                E_wide_args.append(E_list[i])
-                F_wide_args.append(F_list[i])
-                # F_wide_args.append(Fblock_zero_list[i])
+        # for i, node in enumerate(traversal_order):
+        #     # p_in = np.zeros((int(np.sum(M_inc_in[i, :])), M_inc.shape[1]))
+        #     in_inds = np.where(M_inc_in[i, :] == 1)[0]
+        #     for j in range(len(in_inds)):
+        #         E_wide_args.append(E_list[i])
+        #         F_wide_args.append(F_list[i])
+        #         # F_wide_args.append(Fblock_zero_list[i])
 
-        E_wide = scipy.linalg.block_diag(*E_wide_args)
-        F_wide = scipy.linalg.block_diag(*F_wide_args)
+        # E_wide = scipy.linalg.block_diag(*E_wide_args)
+        # F_wide = scipy.linalg.block_diag(*F_wide_args)
+
+        # E_wide = E
+        
 
         A_block = A
-        B_block = np.block([Bc, Bs_zero])
-        E_block = E_wide
+        B_block = np.block([Bc, Bs])
+        E_block = E
 
-        C_block = np.block([[C_zero], [C]])
-        D_block = np.block([[Dc_zero, Ds], [Dc, -Ds_flat @ Ds]])
-        F_block = np.block([[np.zeros(Fblock.shape)], [F_wide]])
+        C_block = np.block([[Cs], [Co]])
+        D_block = np.block([[Dsc, Dss], [Doc, Dos]])
+        F_block = np.block([[Fs], [Fo]])
 
         u_ctrl = np.array([[i for i in range(len(self.uc_list + self.us_list)) if (self.uc_list + self.us_list)[i].startswith("uc")]])
         u_split = np.array([[i for i in range(len(self.uc_list + self.us_list)) if (self.uc_list + self.us_list)[i].startswith("us")]])
@@ -442,9 +569,18 @@ class DispatchModelPredictiveController:
         d_ex = np.array([[i for i in range(len(self.d_list)) if self.d_list[i].startswith("de")]])
         d_co = np.array([[i for i in range(len(self.d_list)) if self.d_list[i].startswith("dc")]])
 
-        y_spex = np.array([[i for i in range(len(self.d_list)) if self.ys_list[i].startswith("yse")]])
-        y_co = np.array([[i for i in range(len(self.d_list)) if self.ys_list[i].startswith("ysc")]])
+        y_spex = np.array([[i for i in range(len(self.ys_list)) if self.ys_list[i].startswith("yse")]])
+        y_co = np.array([[i for i in range(len(self.ys_list)) if self.ys_list[i].startswith("ysc")]])
         y_zero = np.array([[i for i in range(len(self.ys_list + self.yo_list)) if (self.ys_list + self.yo_list)[i].startswith("yo")]])
+
+        e_co = np.arange(1, len(G.edges) + 1, 1)[None, :]
+
+        # P in calculations still feel fragile. Relies on assumption about the order of edges in the graph. Probably fine but may throw an error some time.
+
+        # TODO: look for a graph configuration where P_out and P_in are not almost Identity then see how weird the M matrix can get.
+        M_yco_dco = P_out[y_co.T, e_co] @ np.linalg.inv(P_in[d_co.T, e_co])
+        # M = P_out[y_co.T, d_co] @ P_in[d_co.T, d_co]
+
 
         Combined_SS_block = self.reorder_coupling(
             A=A_block,
@@ -453,7 +589,7 @@ class DispatchModelPredictiveController:
             D=D_block,
             E=E_block,
             F=F_block,
-            M = np.eye(3),
+            M = M_yco_dco,
             uc = u_ctrl,
             us = u_split,
             de = d_ex,
@@ -466,19 +602,19 @@ class DispatchModelPredictiveController:
 
 
         # These are for the three-node gen-BES-EL configuration
-        d_ex = slice(0, 1)
-        d_co = slice(1, 4)
+        # d_ex = slice(0, 1)
+        # d_co = slice(1, 4)
 
-        y_co = slice(0, 3)
-        y_ex = slice(3, 7)
+        # y_co = slice(0, 3)
+        # y_ex = slice(3, 7)
 
         # v these are for the "validation" configuration
-        # d_ex = slice(0, 1)
-        # d_co = slice(1, 7)
+        d_ex = slice(0, 1)
+        d_co = slice(1, 7)
 
-        # y_co = slice(0, 6)
-        # y_ex = slice(6, 12)
-        # # y_ex = slice(6, 7)
+        y_co = slice(0, 6)
+        y_ex = slice(6, 12)
+        # y_ex = slice(6, 7)
 
         E_c = E_block[:, d_co]
         E_e = E_block[:, d_ex]
@@ -617,9 +753,8 @@ class DispatchModelPredictiveController:
 
     def reorder_coupling(self, A, B, C, D, E, F, M, uc, us, de, dc, ye, yz, yc):
 
-        x = np.arange(0, A.shape[0], 1)
-
-
+        x = np.arange(0, A.shape[0], 1)[None, :]
+        
         A = A
         B_c = B[x.T, uc]
         B_s = B[x.T, us]
@@ -979,19 +1114,19 @@ class DispatchModelPredictiveController:
             # print("====== for output: {out_labels[row_num]} ======")
 
             row_mat_lens = [matr.shape[1] for matr in row_mat]
+            if row_num == 0:
+                line = " " * 15
+                for coli, col_label in enumerate(in_labels):
+                    line += f"{col_label}".ljust(row_mat_lens[coli] * 9 + 2)
 
-            line = " " * 15
-            for coli, col_label in enumerate(in_labels):
-                line += f"{col_label}".ljust(row_mat_lens[coli] * 8 + 2)
-
-            print(line)
+                print(line)
             n_rows = row_mat[0].shape[0]
             for i in range(n_rows):
                 line = f"{out_labels[row_num]}".ljust(10)
                 line += "["
                 for col_mat in row_mat:
                     for j in range(col_mat.shape[1]):
-                        line += f"{col_mat[i,j] :.4g}, ".rjust(8)
+                        line += f"{col_mat[i,j] :.3g}, ".rjust(9)
 
                     line = line[0:-2]
                     line += " ]  ["
