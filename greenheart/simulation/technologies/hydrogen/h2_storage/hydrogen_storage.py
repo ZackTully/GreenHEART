@@ -164,3 +164,61 @@ class HydrogenStorage:
 
     def consolidate_simulation_outcome(self):
         pass
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
+    t = np.arange(0, 100, 0.01)
+    P_des = np.cos(t/25)
+    P_avail = 0.6 *  np.sin(t/20)
+    P_avail = np.where(P_avail >= 0, P_avail, 0)
+
+    P_des_pos = np.where(P_des >=0, P_des, 0)
+    P_des_neg = np.where(P_des <=0, P_des, 0)
+
+    y_model = np.max([P_des_pos - P_avail, np.zeros(len(t))], axis=0)
+    # u_passthrough = np.max([P_avail - P_des_pos, np.zeros(len(t))], axis=0)
+    u_passthrough = np.min([P_avail, P_des_pos], axis=0)
+    
+    P_des_charge = -P_des_neg
+    # P_avail_charge = np.max([np.zeros(len(t)),  P_avail], axis=0)
+
+    P_avail_charge = np.min([P_avail, P_des_charge], axis=0)
+
+    P_avail_curtail = np.max([np.zeros(len(t)), P_avail - P_des_pos - P_des_charge], axis=0)
+
+
+    fig, ax = plt.subplots(1,1,layout="constrained")
+    ax.spines[["right", "top"]].set_visible(False)
+
+    # ax.axhline(0, color="black",  )
+
+    ax.fill_between(t, np.zeros(len(t)), P_des, color="blue", alpha=.25, edgecolor=None, label="Desired")
+    ax.plot(t, P_des, color="blue")
+    ax.fill_between(t, np.zeros(len(t)), P_avail, color="orange", alpha=.25, edgecolor=None, label="Available")
+    ax.plot(t, P_avail, color="orange")
+
+
+
+    ax.plot(t, P_des_charge, label="desired charge")
+    # ax.plot(t, P_avail_charge, label="actual charge")
+
+    ax.fill_between(t, P_avail,  P_avail + y_model, label="model output")    
+    ax.fill_between(t, np.zeros(len(t)), u_passthrough, label="passthrough")    
+    ax.fill_between(t, np.zeros(len(t)), P_avail_charge, label="Charge actual")    
+    
+    curtail_bottom = np.where(P_avail_curtail > 0, np.abs(P_des), 0)
+    ax.fill_between(t, curtail_bottom, curtail_bottom + P_avail_curtail, label="curtail")    
+
+
+
+    ax.legend()
+
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Power")
+
+    ax.set_xlim([0, t[-1]])
+
+
+    []

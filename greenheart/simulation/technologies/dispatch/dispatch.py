@@ -28,7 +28,7 @@ class GreenheartDispatch:
 
         self.use_MPC = True
 
-        self.update_period = 24 # Re-compute the trajectory every 24 hours
+        self.update_period = 1 # Re-compute the trajectory every 24 hours
 
         if self.use_MPC:
             self.uc_mpc = None

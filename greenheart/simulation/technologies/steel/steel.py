@@ -1156,7 +1156,11 @@ class SteelModel:
 
         self.store_step(DRI_produced, unused_power, unused_h2, step_index)
 
-        return (unused_power, unused_h2, h2_temp)
+
+
+        # return (unused_power, unused_h2, h2_temp)
+        # return (unused_power, unused_h2, 0)
+        return (DRI_produced, 0, 0)
 
     def consolidate_sim_outcome(self):
 

@@ -114,7 +114,14 @@ class Node:
 
     def splitting(self, model_output, u_split, step_index):
 
+        # if np.isclose(u_split, np.zeros(len(u_split)), atol=1):
+        #     pass
 
+        if (u_split < 0).any():
+            assert np.min(u_split) >= -1
+            u_split = np.where(u_split < 0, 0.0, u_split)
+
+            
         if self.splitting_method == "fractional":
             split = np.nan_to_num(u_split / np.sum(u_split))
         elif self.splitting_method == "absolute":
