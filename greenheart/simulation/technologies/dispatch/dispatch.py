@@ -247,13 +247,16 @@ class GreenheartDispatch:
 
         # u_mpc = self.controller.compute_trajectory(x0, forecast)
         if not(step_index % self.update_period) or (step_index == 0):
-            uc_mpc_traj, us_mpc_traj = self.controller.compute_trajectory(x0, forecast)
+            uc_mpc_traj, us_mpc_traj, curtail_mpc_traj= self.controller.compute_trajectory(x0, forecast, step_index)
             self.uc_mpc_traj = uc_mpc_traj
             self.us_mpc_traj = us_mpc_traj
+            self.curtail_mpc_traj = curtail_mpc_traj
             self.previous_update = step_index
 
         uc_mpc = self.uc_mpc_traj[:, step_index - self.previous_update]
         us_mpc = self.us_mpc_traj[:, step_index - self.previous_update]
+        curtail_mpc = self.curtail_mpc_traj[:, step_index - self.previous_update]
+
 
 
 
@@ -266,6 +269,7 @@ class GreenheartDispatch:
             G_dispatch.edges[edge].update({"dispatch": 0})
 
 
+        G.nodes["generation"].update({"dispatch_ctrl": curtail_mpc})
 
 
 

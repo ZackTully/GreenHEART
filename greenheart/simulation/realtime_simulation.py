@@ -774,8 +774,10 @@ class StandinNode:
 
     def step(self, input, dispatch=None, step_index=None):
         u_passthrough = 0
-        u_curtail = 0
-        return self.output, u_passthrough, u_curtail
+        assert dispatch >= 0
+        u_curtail = dispatch
+        output = self.output - u_curtail
+        return output, u_passthrough, u_curtail
 
 
 class IONode:
