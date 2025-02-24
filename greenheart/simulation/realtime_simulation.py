@@ -409,6 +409,8 @@ class RealTimeSimulation:
     def simulate(self, dispatcher: GreenheartDispatch, hopp_results):
         # Get generation signals
 
+        self.dispatcher = dispatcher
+
         gen_profiles = {}
 
         for hopp_tech in hopp_results["annual_energies"]["technologies"].keys():
@@ -773,7 +775,10 @@ class StandinNode:
         self.output = output
 
     def step(self, input, dispatch=None, step_index=None):
+
         u_passthrough = 0
+        if dispatch >= -1:
+            dispatch = np.max([0.0, dispatch[0]])
         assert dispatch >= 0
         u_curtail = dispatch
         output = self.output - u_curtail

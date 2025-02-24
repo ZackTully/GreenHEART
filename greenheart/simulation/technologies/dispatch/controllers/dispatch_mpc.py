@@ -22,15 +22,15 @@ class DispatchModelPredictiveController:
         nodes = system_graph["traversal_order"]
         traversal_order = system_graph["traversal_order"]
 
-        self.horizon = 5
+        self.horizon = 48
         self.G = simulation_graph
         self.traversal_order = traversal_order
 
         self.allow_curtail_forecast = True
         self.include_edges = True
+        self.use_sparsity_constraint = False
 
         self.curtail_storage = np.zeros(8760 + self.horizon)
-
 
         self.build_control_model(traversal_order, simulation_graph)
         self.setup_optimization()
@@ -38,23 +38,6 @@ class DispatchModelPredictiveController:
     def build_control_model(self, traversal_order, simulation_graph):
 
         G = simulation_graph
-
-        # A_list = []
-        # B_list = []
-        # Bc_list = []
-        # Bs_zero_list = []
-        # E_list = []
-        # Eblock_list = []
-        # Ds_list = []
-        # Ds_flat_list = []
-        # C_list = []
-        # C_zero_list = []
-        # D_list = []
-        # Dc_list = []
-        # Dc_zero_list = []
-        # F_list = []
-        # Fblock_list = []
-        # Fblock_zero_list = []
 
         A_list = []
         B_list = []
@@ -168,45 +151,6 @@ class DispatchModelPredictiveController:
                 Dos_list.append(-np.tile(np.eye(po), ms) @ Dss_list[-1])
                 Fo_list.append(np.tile(cm.F, in_degree))
 
-            # # First row
-            # A_list.append(cm.A)
-            # Bc_list.append(cm.B)
-            # Bs_zero_list.append(np.zeros((n, ms)))
-            # Eblock_list.append(np.repeat(cm.E, in_degree, axis=1))
-
-            # if ms > 0:
-
-            #     # Second row
-            #     C_zero_list.append(np.zeros((ps, n)))
-            #     Dc_zero_list.append(np.zeros((ps, mc)))
-            #     Ds_list.append(np.eye(ms))
-            #     Fblock_zero_list.append(  np.zeros((ps, in_degree * cm.F.shape[1]))    )
-
-            #     # Third row
-            #     C_list.append(cm.C)
-            #     Dc_list.append(cm.D)
-            #     Ds_flat_list.append(      np.tile(np.eye(cm.C.shape[0]) , us_degree)     )
-            #     # Already have Ds
-            #     Fblock_list.append(np.tile(cm.F, in_degree))
-            #     # Fblock_list.append(np.repeat(cm.F, in_degree, axis=1))
-
-            # else: # ms == 0
-
-            #     # Second row
-            #     C_zero_list.append(np.zeros((ps, n)))
-            #     Dc_zero_list.append(np.zeros((ps, mc)))
-            #     Ds_list.append(np.eye(ms))
-            #     Fblock_zero_list.append(  np.zeros((ps, in_degree * cm.F.shape[1]))    )
-
-            #     # Third row
-            #     C_list.append(np.zeros((po, n)))
-            #     Dc_list.append(np.zeros((po, mc)))
-            #     Ds_flat_list.append( np.zeros((po, ps))   )
-            #     Fblock_list.append(np.zeros((po, o)))
-
-            # repeat B and D columns (in_degree) times
-            # repeat CDF rows (out_degree) times
-
             # Should break if the control model has inconsistent dimensions
             subsystem_block = np.block([[cm.A, cm.B, cm.E], [cm.C, cm.D, cm.F]])
 
@@ -217,14 +161,6 @@ class DispatchModelPredictiveController:
             p_list.append(ps + po)
             o_list.append(o)
             pzero_list.append(cm.C.shape[0])
-            # n_list.append(cm.A.shape[0])
-            # mc_list.append(cm.B.shape[1])
-            # ms_list.append(out_degree)
-            # p_list.append(cm.C.shape[0] * out_degree)
-            # o_list.append(cm.E.shape[1] * in_degree)
-            # pzero_list.append(cm.C.shape[0])
-
-            []
 
             u_lb_list.append(cm.u_lb)
             u_ub_list.append(cm.u_ub)
@@ -306,24 +242,6 @@ class DispatchModelPredictiveController:
         Doc = scipy.linalg.block_diag(*Doc_list)
         Dos = scipy.linalg.block_diag(*Dos_list)
         Fo = scipy.linalg.block_diag(*Fo_list)
-
-        # # First row
-        # A = scipy.linalg.block_diag(*(mat for mat in A_list))
-        # Bc = scipy.linalg.block_diag(*(mat for mat in Bc_list))
-        # Bs_zero = scipy.linalg.block_diag(*(mat for mat in Bs_zero_list))
-        # Eblock = scipy.linalg.block_diag(*(mat for mat in Eblock_list))
-
-        # # Second row
-        # C_zero = scipy.linalg.block_diag(*(mat for mat in C_zero_list))
-        # Dc_zero = scipy.linalg.block_diag(*(mat for mat in Dc_zero_list))
-        # Ds = scipy.linalg.block_diag(*(mat for mat in Ds_list))
-        # Fblock_zero = scipy.linalg.block_diag(*(mat for mat in Fblock_zero_list))
-
-        # # Third row
-        # C = scipy.linalg.block_diag(*(mat for mat in C_list))
-        # Dc = scipy.linalg.block_diag(*(mat for mat in Dc_list))
-        # Ds_flat = scipy.linalg.block_diag(*(mat for mat in Ds_flat_list))
-        # Fblock = scipy.linalg.block_diag(*(mat for mat in Fblock_list))
 
         # others
         B = scipy.linalg.block_diag(*(b for b in B_list))
@@ -452,33 +370,6 @@ class DispatchModelPredictiveController:
 
         # assert the shapes are correct
 
-        # n = A.shape[0]  # number of states
-        # m = B.shape[1]  # number of controllable inputs
-        # o = E.shape[1]  # number of disturbances
-        # p = C.shape[0]  # number of outputs
-        # q = len(G.edges)  # number of edges
-
-        # self.A, self.B, self.C, self.D, self.E, self.F = A, B, C, D, E, F
-        # self.n, self.m, self.o, self.p, self.q = n, m, o, p, q
-
-        # q = len(G.edges)
-        # n = np.sum(n_list)
-        # mc = np.sum(mc_list)
-        # ms = np.sum(ms_list)
-        # p = np.sum(p_list)
-        # pz = np.sum(pzero_list)
-        # o = np.sum(o_list)
-
-        # self.n, self.mc, self.ms, self.p, self.pz, self.o, self.q = (
-        #     n,
-        #     mc,
-        #     ms,
-        #     p,
-        #     pz,
-        #     o,
-        #     q,
-        # )
-
         self.q = len(G.edges)
         self.n = len(self.x_list)
         self.mc = len(self.uc_list)
@@ -525,26 +416,6 @@ class DispatchModelPredictiveController:
 
         P_in = np.concatenate(p_ins, axis=0)
         P_out = np.concatenate(p_outs, axis=0)
-
-        # Try a different state space combination method
-
-        # Expand E and F matrices
-
-        # E_wide_args = []
-        # F_wide_args = []
-
-        # for i, node in enumerate(traversal_order):
-        #     # p_in = np.zeros((int(np.sum(M_inc_in[i, :])), M_inc.shape[1]))
-        #     in_inds = np.where(M_inc_in[i, :] == 1)[0]
-        #     for j in range(len(in_inds)):
-        #         E_wide_args.append(E_list[i])
-        #         F_wide_args.append(F_list[i])
-        #         # F_wide_args.append(Fblock_zero_list[i])
-
-        # E_wide = scipy.linalg.block_diag(*E_wide_args)
-        # F_wide = scipy.linalg.block_diag(*F_wide_args)
-
-        # E_wide = E
 
         A_block = A
         B_block = np.block([Bc, Bs])
@@ -627,98 +498,6 @@ class DispatchModelPredictiveController:
         self.Cs, self.Dsc, self.Dss, self.Fs = combined_mat[1]
         self.Co, self.Doc, self.Dos, self.Fo = combined_mat[2]
         self.Csp, self.Dspc, self.Dsps, self.Fsp = combined_mat[3]
-
-        []
-        # # These are for the three-node gen-BES-EL configuration
-        # # d_ex = slice(0, 1)
-        # # d_co = slice(1, 4)
-
-        # # y_co = slice(0, 3)
-        # # y_ex = slice(3, 7)
-
-        # # v these are for the "validation" configuration
-        # d_ex = slice(0, 1)
-        # d_co = slice(1, 7)
-
-        # y_co = slice(0, 6)
-        # y_ex = slice(6, 12)
-        # # y_ex = slice(6, 7)
-
-        # E_c = E_block[:, d_co]
-        # E_e = E_block[:, d_ex]
-
-        # C_c = C_block[y_co, :]
-        # C_e = C_block[y_ex, :]
-
-        # D_c = D_block[y_co, :]
-        # D_e = D_block[y_ex, :]
-        # # D_c = np.concatenate([Dc_zero, Ds], axis=1)[y_co, :]
-        # # D_e = np.concatenate([Dc_zero, Ds], axis=1)[y_ex, :]
-
-        # F_cc = F_block[y_co, d_co]
-        # F_ec = F_block[y_ex, d_co]
-        # F_ce = F_block[y_co, d_ex]
-        # F_ee = F_block[y_ex, d_ex]
-
-        # # y_co = P_out,co e_co
-        # # d_co = P_in,co e_co
-        # # y_co = P_out,co @ P_in,co ^-1 d_co
-
-        # P_outco = P_out[y_co, d_co]
-        # P_inco = P_in[d_co, d_co]
-
-        # P_inout = P_outco @ np.linalg.inv(P_inco)
-
-        # FccIi = np.linalg.inv(F_cc - P_inout)
-
-        # A_hat = A_block + E_c @ FccIi @ C_c
-        # B_hat = B_block + E_c @ FccIi @ D_c
-        # E_hat = E_e + E_c @ FccIi @ F_ce
-
-        # C_hat = C_e + F_ec @ FccIi @ C_c
-        # D_hat = D_e + F_ec @ FccIi @ D_c
-        # F_hat = F_ee + F_ec @ FccIi @ F_ce
-
-        # # self.print_block_matrix(A_hat, B_hat, C_hat, D_hat, E_hat, F_hat)
-
-        # # Three-node case
-        # u_control = slice(0, mc)
-        # u_split = slice(mc, mc + ms)
-
-        # y_external = slice(0, 1)
-        # y_zeros = slice(1, 4)
-
-        # # Validation case
-        # # u_control = slice(0, mc)
-        # # u_split = slice(mc, mc + ms)
-
-        # # y_external = slice(0, 1)
-        # # y_zeros = slice(1, 6)
-
-        # A_hat = A_hat
-        # B_hat_c = B_hat[:, u_control]  # control
-        # B_hat_s = B_hat[:, u_split]  # split
-        # E_hat = E_hat
-
-        # C_hat_e = C_hat[y_external, :]  # external
-        # C_hat_z = C_hat[y_zeros, :]  # zero constraint
-
-        # D_hat_ec = D_hat[y_external, u_control]  # external from control
-        # D_hat_es = D_hat[y_external, u_split]  # external from splitting
-        # D_hat_zc = D_hat[y_zeros, u_control]  # zero from control
-        # D_hat_zs = D_hat[y_zeros, u_split]  # zero from splitting
-
-        # F_hat_e = F_hat[y_external, :]  # external
-        # F_hat_z = F_hat[y_zeros, :]  # splitting
-
-        # mats = [
-        #     [A_hat, B_hat_c, B_hat_s, E_hat],
-        #     [C_hat_e, D_hat_ec, D_hat_es, F_hat_e],
-        #     [C_hat_z, D_hat_zc, D_hat_zs, F_hat_z],
-        # ]
-
-        # in_labels = ["x", "u_c", "u_s", "d_ex"]
-        # out_labels = ["x^+", "y_ex", "y_zero"]
 
         # print("\n\n")
         # self.print_block_matrices(mats, in_labels, out_labels)
@@ -828,11 +607,11 @@ class DispatchModelPredictiveController:
             for i in range(len(ss_mat))
         ]
 
-        self.print_block_matrices(
-            combined_mat,
-            in_labels=["x", "uc", "us", "de"],
-            out_labels=["x+", "ye", "yz", "ys"],
-        )
+        # self.print_block_matrices(
+        #     combined_mat,
+        #     in_labels=["x", "uc", "us", "de"],
+        #     out_labels=["x+", "ye", "yz", "ys"],
+        # )
 
         state_space = np.block(ss_mat)
         coupling = np.block(coupling_mat)
@@ -845,8 +624,16 @@ class DispatchModelPredictiveController:
 
         opti: ca.Opti = ca.Opti()
         p_opts = {"print_time": False, "verbose": False}
-        s_opts = {"print_level": 0}
-        opti.solver("ipopt", p_opts, s_opts)
+        s_opts = {
+            "print_level": 0,
+            # "linear_solver": "ma27",
+            "max_iter":1000,
+        }
+        opti.solver(
+            "ipopt",
+            p_opts,
+            s_opts,
+        )
 
         # Variables
         uc_var = opti.variable(self.mc, self.horizon)
@@ -858,7 +645,6 @@ class DispatchModelPredictiveController:
             curtail = opti.variable(self.ox, self.horizon)
         else:
             curtail = opti.parameter(self.ox, self.horizon)
-
 
         # Parameters
         de_param = opti.parameter(self.ox, self.horizon)
@@ -895,6 +681,13 @@ class DispatchModelPredictiveController:
             opti.subject_to(x_var[:, i + 1] == xkp1)
             opti.subject_to(ys_var[:, i] == ysk)
 
+            if self.use_sparsity_constraint:
+                opti.subject_to(
+                    us_var[2, i] == ca.if_else(uc_var[1, i] >= 0, uc_var[1, i], 0)
+                )
+                opti.subject_to(
+                    us_var[0, i] == ca.if_else(uc_var[0, i] >= 0, uc_var[0, i], 0)
+                )
             # opti.subject_to(us_var[2, i] <= ca.fabs(uc_var[1,i]))
 
             opti.subject_to(us_var[:, i] >= np.zeros(self.ms))
@@ -918,7 +711,7 @@ class DispatchModelPredictiveController:
         # Bounds
         # Add constraint
         # Objective
-        opti.minimize(self.objective(x_var, uc_var, us_var, ys_var))
+        opti.minimize(self.objective(x_var, uc_var, us_var, ys_var, curtail))
 
         self.opti = opti
         self.opt_vars = {
@@ -935,11 +728,15 @@ class DispatchModelPredictiveController:
         else:
             self.opt_params.update({"curtail": curtail})
 
-    def objective(self, x, uc, us, ys):
+    def objective(self, x, uc, us, ys, curtail):
 
-        ref_steel = 37e3
+        ref_steel = 45.48e3
+        # ref_steel = 37.92e3
         # ref_steel = 20e3
         self.reference = ref_steel
+
+        bes_state_reference = 1200000
+        h2s_state_reference = 320467
 
         objective_value = 0
         for i in range(self.horizon):
@@ -952,18 +749,34 @@ class DispatchModelPredictiveController:
 
             # h2s_sparsity = 1e-5 * (ysp[3] ** 2 + ysp[5] ** 2) ** 2
             # h2s_sparsity = 1e-5 * (ysp[3] * ysp[5] ) **2
-            # h2s_sparsity = 1e3 * ((ysp[3] +  ysp[5]) + ca.fabs(uc[1,i]) ) 
+            # h2s_sparsity = 1e3 * ((ysp[3] +  ysp[5]) + ca.fabs(uc[1,i]) )
             # h2s_sparsity = us[3,i] ** 2 - uc[1, i]**2
-            h2s_sparsity = 1e3 * ca.if_else(uc[1,i] >= 0, (uc[1,i] - us[3,i])**2, 0)
+            h2s_sparsity = 1e3 * ca.if_else(
+                uc[1, i] >= 0, (uc[1, i] - us[3, i]) ** 2, 0
+            )
             # h2s_sparsity = (2 * us[3, i] - uc[1, i] - ca.fabs(uc[1, i]))
             # h2s_sparsity = 1e3 * (ysp[3] -  uc[1,i] ) **2
             # h2s_sparsity = 1e3 * (ysp[3] + ysp[5]) **2
             # bes_sparsity = 1e-5 * (ysp[0] ** 2 + ysp[2] ** 2) ** 2
-            bes_sparsity = 1e-5 * (ysp[0] * ysp[2] ) ** 2
+            bes_sparsity = 1e-5 * (ysp[0] * ysp[2]) ** 2
 
             no_h2s_charge = 1e3 * uc[1, i] ** 2
 
-            objective_value +=  tracking_term #  + h2s_sparsity # + bes_sparsity
+            bes_state = 1e-5 * (x[0, i] - bes_state_reference) ** 2
+            h2s_state = 1e-3 * (x[1, i] - h2s_state_reference) ** 2
+
+            curtail_penalty = 1e-3 * curtail[0, i] ** 2
+            storage_agreement = 1e-3 * (0.0218 * uc[0, i] - uc[1, i]) ** 2
+
+            objective_value += (
+                tracking_term
+                # + bes_state
+                # + h2s_state
+                # + storage_agreement
+                # + h2s_sparsity
+                # + bes_sparsity
+                # + curtail_penalty
+            )
 
         return objective_value
 
@@ -971,13 +784,23 @@ class DispatchModelPredictiveController:
         self.opti.set_value(self.opt_params["d_ex"], src_forecast)
         self.opti.set_value(self.opt_params["x0"], x0)
         if not self.allow_curtail_forecast:
-            self.opti.set_value(self.opt_params["curtail"], np.zeros(self.opt_params["curtail"].shape))
+            self.opti.set_value(
+                self.opt_params["curtail"], np.zeros(self.opt_params["curtail"].shape)
+            )
 
     def update_optimization_constraints(self):
         pass
 
-    def compute_trajectory(self, x0, forecast, step_index = 0):
+    def compute_trajectory(self, x0, forecast, step_index=0):
         self.update_optimization_parameters(x0, forecast)
+
+        if hasattr(self, "x_init"): # then try to update initial guess
+            self.opti.set_initial(self.opt_vars["uc"], self.uc_init)
+            self.opti.set_initial(self.opt_vars["us"], self.us_init)
+            self.opti.set_initial(self.opt_vars["x"], self.x_init)
+            self.opti.set_initial(self.opt_vars["ys"], self.ys_init)
+            
+
 
         try:
 
@@ -1019,21 +842,37 @@ class DispatchModelPredictiveController:
             x_db = self.opti.debug.value(self.opt_vars["x"])
             uc_db = self.opti.debug.value(self.opt_vars["uc"])
             us_db = self.opti.debug.value(self.opt_vars["us"])
-            ys_db = self.opti.debug.value(self.opt_vars["ys"])
+            ys_db = self.opti.debug.value(self.opt_vars["ys"])[None, :]
+
+            fig, ax = plt.subplots(
+                np.max([uc_db.shape[0], us_db.shape[0], x_db.shape[0], ys_db.shape[0]]),
+                4,
+                sharex="all",
+                layout="constrained",
+            )
+
+            to_plot = [x_db, uc_db, us_db, ys_db]
+            titles = ["x", "uc", "us", "ys"  ]
+            for i in range(len(to_plot)):
+                ax[0,i].set_title(titles[i])
+                for j in range(len(to_plot[i])):
+                    ax[j, i].plot(to_plot[i][j, :])
+
+
 
             np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
-            print("\nDebug x:")
-            print(x_db)
-            print("\nDebug uc:")
-            print(uc_db)
-            print("\nDebug us:")
-            print(us_db)
-            print("\nDebug ys:")
-            print(ys_db)
+            # print("\nDebug x:")
+            # print(x_db)
+            # print("\nDebug uc:")
+            # print(uc_db)
+            # print("\nDebug us:")
+            # print(us_db)
+            # print("\nDebug ys:")
+            # print(ys_db)
+            # print(self.opti.debug)  
 
-            assert False, "error"
-
+            assert False, self.opti.debug
 
         jac = sol.value(ca.jacobian(sol.opti.f, sol.opti.x)).toarray()[0]
         try:
@@ -1057,8 +896,11 @@ class DispatchModelPredictiveController:
             jac_x = np.reshape(jac[x_slice], (self.horizon + 1, self.n))
             jac_ys = np.reshape(jac[ys_slice], (self.horizon, self.pse))
 
-
-            self.print_block_matrices(mat = [[jac_uc, jac_us, jac_x[0:self.horizon, :], jac_ys]], in_labels=["jac uc", "jac us", "jac x", "jac ys"], out_labels=[""])
+            self.print_block_matrices(
+                mat=[[jac_uc, jac_us, jac_x[0 : self.horizon, :], jac_ys]],
+                in_labels=["jac uc", "jac us", "jac x", "jac ys"],
+                out_labels=[""],
+            )
 
             []
 
@@ -1080,7 +922,13 @@ class DispatchModelPredictiveController:
         else:
             curtail = sol.value(self.opt_params["curtail"])
 
-        self.curtail_storage[step_index:step_index + self.horizon] = curtail
+        self.curtail_storage[step_index : step_index + self.horizon] = curtail
+
+        self.uc_init = uc
+        self.us_init = us
+        self.x_init = x
+        self.ys_init = ys
+        self.curtail_init = curtail
 
 
         if False:
@@ -1109,7 +957,6 @@ class DispatchModelPredictiveController:
             u_ctrl = uc[None, 0]
         else:
             u_ctrl = uc[:, 0]
-        
 
         if curtail.ndim < 2:
             curtail = curtail[None, :]
