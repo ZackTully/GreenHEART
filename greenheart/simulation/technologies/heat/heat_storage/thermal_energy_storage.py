@@ -6,123 +6,22 @@ from greenheart.simulation.technologies.heat.materials import Quartz
 
 from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
-# class ShomateEquation:
-#     T: np.ndarray
-
-#     a: np.ndarray
-#     b: np.ndarray
-#     c: np.ndarray
-#     d: np.ndarray
-#     e: np.ndarray
-#     f: np.ndarray
-#     g: np.ndarray
-#     h: np.ndarray
-
-#     a_interp: scipy.interpolate.interp1d
-#     b_interp: scipy.interpolate.interp1d
-#     c_interp: scipy.interpolate.interp1d
-#     d_interp: scipy.interpolate.interp1d
-#     e_interp: scipy.interpolate.interp1d
-#     f_interp: scipy.interpolate.interp1d
-#     G_interp: scipy.interpolate.interp1d
-#     h_interp: scipy.interpolate.interp1d
-
-#     def __init__(self):
-#         self.a_interp = scipy.interpolate.interp1d(self.T, self.a, kind="previous")
-#         self.b_interp = scipy.interpolate.interp1d(self.T, self.b, kind="previous")
-#         self.c_interp = scipy.interpolate.interp1d(self.T, self.c, kind="previous")
-#         self.d_interp = scipy.interpolate.interp1d(self.T, self.d, kind="previous")
-#         self.e_interp = scipy.interpolate.interp1d(self.T, self.e, kind="previous")
-#         self.f_interp = scipy.interpolate.interp1d(self.T, self.f, kind="previous")
-#         self.g_interp = scipy.interpolate.interp1d(self.T, self.g, kind="previous")
-#         self.h_interp = scipy.interpolate.interp1d(self.T, self.h, kind="previous")
-
-#     def Cp(self, temperature):
-#         # return heat capacity [j mol^-1 K^-1]
-
-#         t = temperature / 1000
-
-#         Cp = (
-#             self.a_interp(temperature)
-#             + self.b_interp(temperature) * t
-#             + self.c_interp(temperature) * t**2
-#             + self.d_interp(temperature) * t**3
-#             + self.e_interp(temperature) / (t**2)
-#         )
-
-#         return Cp
-
-#     def H(self, temperature):
-#         # Return standard enthalpy [kJ mol^-1]
-#         # Return H^circle - H^circle_298.15
-
-#         t = temperature / 1000
-
-#         H = (
-#             self.a_interp(temperature) * t
-#             + self.b_interp(temperature) * t**2 / 2
-#             + self.c_interp(temperature) * t**3 / 3
-#             + self.d_interp(temperature) * t**4 / 4
-#             - self.e_interp(temperature) / t
-#             + self.f_interp(temperature)
-#             - self.h_interp(temperature)
-#         )
-
-#         return H
-
-#     def S(self, temperature):
-
-#         # Return standard entropy [J mol^-1 K^-1]
-
-#         t = temperature / 1000
-
-#         S = (
-#             self.a_interp(temperature) * np.log(t)
-#             + self.b_interp(temperature) * t
-#             + self.c_interp(temperature) * t**2 / 2
-#             + self.d_interp(temperature) * t**3 / 3
-#             - self.e_interp(temperature) / (2 * t**2)
-#             + self.g_interp(temperature)
-#         )
-
-#         return S
-
-
-# class Quartz(ShomateEquation):
-#     # SiO2
-
-#     # https://webbook.nist.gov/cgi/cbook.cgi?ID=C14808607&Type=JANAFS&Table=on
-
-#     T_max = 1996
-
-#     # Temperature (K)	298. to 847.	847. to 1996.
-#     T = np.array([298, 847, 1996])
-#     a = np.array([-6.076591, 58.75340, 58.75340])
-#     b = np.array([251.6755, 10.27925, 10.27925])
-#     c = np.array([-324.7964, -0.131384, -0.131384])
-#     d = np.array([168.5604, 0.025210, 0.025210])
-#     e = np.array([0.002548, 0.025601, 0.025601])
-#     f = np.array([-917.6893, -929.3292, -929.3292])
-#     g = np.array([-27.96962, 105.8092, 105.8092])
-#     h = np.array([-910.8568, -910.8568, -910.8568])
-
-#     molar_mass = 60.0843  # [g mol^-1]
-
 
 class ThermalEnergyStorage:
 
     # TODO check units on inputs for consistency kWH
     # TODO also check for kelvin celsisus consistency
-    def __init__(self, 
-        M_hot_capacity = 22500e3,
-        M_cold_capacity = 22500e3, 
-        mdot_max_charge = 1082057 ,
-        mdot_max_discharge = 1082057,
-        T_hot_target = 1200,
-        T_cold_target = 300, 
-        initial_SOC = 0.5
+    def __init__(
+        self,
+        M_hot_capacity=22500e3,
+        M_cold_capacity=22500e3,
+        mdot_max_charge=1082057,
+        mdot_max_discharge=1082057,
+        T_hot_target=1200,
+        T_cold_target=300,
+        initial_SOC=0.5,
     ):
-        
+
         self.sand = Quartz()
 
         self.mm = self.sand.molar_mass * 1e-3  # [kg mol^-1] molar mass
@@ -131,41 +30,31 @@ class ThermalEnergyStorage:
 
         self.eta_P_in = 0.98  # from Table 3
         self.eta_Q_out = 1
-        # self.eta_Q_out = 0.98
-
-
 
         self.M_hot_capacity = M_hot_capacity  # [kg] assuming a single silo
         self.M_cold_capacity = M_cold_capacity  # [kg] assume a single silo
 
         self.mdot_max_charge = mdot_max_charge  # [kg hr^-1] of sand
         self.mdot_max_discharge = mdot_max_discharge  # [kg hr^-1] of sand
-        # self.mdot_max_charge = 25248 / 84 * 3600  # [kg hr^-1] of sand
-        # self.mdot_max_discharge = 25248 / 84 * 3600  # [kg hr^-1] of sand
-        
+
         self.T_max = 1700  # C
 
         self.P_in_max = 316  # [MW]
 
-        self.T_hot_target = T_hot_target # C
+        self.T_hot_target = T_hot_target  # C
         self.T_cold_target = T_cold_target  # C
-        # self.T_hot_target = 1200  # C
-        # self.T_cold_target = 300  # C
 
         # states
         self.T_hot = 1200  # C
         # TODO revisit and find a better way to initialize starting condition from initial SOC
         self.M_hot = self.M_hot_capacity * initial_SOC  # kg
-        # self.M_hot = 11250000.0  # kg
-        # self.H_hot = self.M_hot * self.sand.H(self.T_hot) * self.sand.molar_mass * 1e-3
         self.H_hot = (self.M_hot * 1000 / self.sand.molar_mass) * self.sand.H(
             self.T_hot + self.C2K
         )
 
         self.T_cold = 300  # C
         # TODO revisit and find a better way to initialize starting condition from initial SOC
-        self.M_cold = self.M_hot_capacity * (1 - initial_SOC) # kg
-        # self.H_cold = self.M_cold * self.sand.H(self.T_cold) * self.sand.molar_mass * 1e-3
+        self.M_cold = self.M_hot_capacity * (1 - initial_SOC)  # kg
         self.H_cold = (self.M_cold * 1000 / self.sand.molar_mass) * self.sand.H(
             self.T_cold + self.C2K
         )
@@ -174,21 +63,30 @@ class ThermalEnergyStorage:
         self.H_loss_phr = H_loss_pday / 24
         self.H_loss_phr = 0.03 / (5 * 24)
 
-        # self.step_tank(0, 0, 0, 0)
-
         # energy capacity in kJ
         self.energy_capacity = (self.M_hot_capacity / self.mm) * (
             self.sand.H(self.T_hot_target + self.C2K)
             - self.sand.H(self.T_cold_target + self.C2K)
         )
 
-
         self.SOC = (self.H_hot - self.H_cold) / self.energy_capacity
 
-
-        self.max_charge_kWh = (mdot_max_charge / self.mm) * ( self.sand.H(self.T_hot_target + self.C2K) - self.sand.H(self.T_cold_target + self.C2K) ) / 3600
-        self.max_discharge_kWh = (mdot_max_discharge / self.mm) * ( self.sand.H(self.T_hot_target + self.C2K) - self.sand.H(self.T_cold_target + self.C2K) ) / 3600
-
+        self.max_charge_kWh = (
+            (mdot_max_charge / self.mm)
+            * (
+                self.sand.H(self.T_hot_target + self.C2K)
+                - self.sand.H(self.T_cold_target + self.C2K)
+            )
+            / 3600
+        )
+        self.max_discharge_kWh = (
+            (mdot_max_discharge / self.mm)
+            * (
+                self.sand.H(self.T_hot_target + self.C2K)
+                - self.sand.H(self.T_cold_target + self.C2K)
+            )
+            / 3600
+        )
 
         self.setup_storage()
         self.control_model = self.create_control_model()
@@ -210,17 +108,16 @@ class ThermalEnergyStorage:
             "u_lb": np.array([-self.max_discharge_kWh]),
             "u_ub": np.array([self.max_charge_kWh]),
             "x_lb": np.array([0]),
-            "x_ub": np.array([self.energy_capacity /3600]),
+            "x_ub": np.array([self.energy_capacity / 3600]),
             "y_lb": np.array([None]),
             "y_ub": np.array([None]),
         }
 
+        control_model = ControlModel(
+            A, B, C, D, E, F, bounds=bounds_dict, discrete=True
+        )
 
-        control_model = ControlModel(A, B, C, D, E, F, bounds=bounds_dict, discrete=True)
-     
         return control_model
-
-
 
     def setup_storage(self):
         self.M_hot_store = np.zeros(8760)
@@ -247,9 +144,9 @@ class ThermalEnergyStorage:
         self.M_cold_store[step_index] = self.M_cold
         self.T_cold_store[step_index] = self.T_cold
         self.H_cold_store[step_index] = self.H_cold
-        
+
         self.SOC_store[step_index] = self.SOC
-        
+
         self.Q_out_store[step_index] = Q_out
 
         self.P_used_store[step_index] = P_used
@@ -287,15 +184,13 @@ class ThermalEnergyStorage:
         T_c2h = self.T_hot_target + (self.T_hot_target - self.T_hot)
         # T_c2h = self.T_hot_target
         m_c2h = (P_in_dispatch * (self.eta_P_in) * self.mm) / (
-            self.sand.H(T_c2h + self.C2K)
-            - self.sand.H(self.T_cold + self.C2K)
+            self.sand.H(T_c2h + self.C2K) - self.sand.H(self.T_cold + self.C2K)
         )
 
         T_h2c = self.T_cold_target + (self.T_cold_target - self.T_cold)
         # T_h2c = self.T_cold_target
         m_h2c = (-Q_out_dispatch * self.eta_Q_out * self.mm) / (
-            self.sand.H(T_h2c + self.C2K)
-            - self.sand.H(self.T_hot + self.C2K)
+            self.sand.H(T_h2c + self.C2K) - self.sand.H(self.T_hot + self.C2K)
         )
 
         # Check with constraints and refues to do it if the cosntraints are violated
@@ -320,9 +215,7 @@ class ThermalEnergyStorage:
         m_h2c = np.min([h2c_constraint, m_h2c])
         m_h2c = np.max([0, m_h2c])
 
-
         assert m_h2c <= h2c_constraint
-
 
         return (m_c2h, m_h2c, P_in_dispatch, Q_out_dispatch, T_c2h, T_h2c)
 
@@ -364,8 +257,6 @@ class ThermalEnergyStorage:
             - m_c2h / self.mm * self.sand.H(self.T_cold + self.C2K)
             - H_cold_loss
         )
-        # H_hot_next = self.H_hot + m_c2h / self.mm * self.sand.H(T_c2h) - H_hot_loss
-        # H_cold_next = self.H_cold + m_h2c / self.mm * self.sand.H(T_h2c) - H_cold_loss
 
         def func(T, H, M):
             return self.sand.H(T + self.C2K) - H / (M / (self.sand.molar_mass * 1e-3))
@@ -413,7 +304,7 @@ class ThermalEnergyStorage:
 
 
 class EnduringGeneral:
-    operation_and_maintenance_usdpkwhth = 0.00171 # usd / kwhth
+    operation_and_maintenance_usdpkwhth = 0.00171  # usd / kwhth
 
 
 class EnduringParticleHeater:
@@ -426,7 +317,7 @@ class EnduringParticleHeater:
 
     gross_capital_cost_3units_USD = 6912614
 
-    heating_efficiency = .98 # from Ma et al. 2021
+    heating_efficiency = 0.98  # from Ma et al. 2021
 
 
 class EnduringLockHopper:
@@ -506,100 +397,6 @@ class EnduringParticleSilo:
 
 
 # class EnduringCosts:
-
-
-class ThermalEnergyStorage_old:
-    def __init__(self):
-        self.particle_cp = 1.155  # kJ kg^-1 K^-1
-
-        self.dt = 3600  # [s]
-        self.T_tank = 1200  # [C] temperature of the particles in the storage tank
-        self.T_ambient = 15  # [C]
-
-        self.m_tank = 1000000  # [kg] mass of particles in storage tank
-
-        # Low-level controller parameters
-        self.T_max = 1710  # [C] maximum tank temperature, particle melting temperature
-        self.T_min = 1000  # [C]
-
-        # How to define max charge rate? heat flow rate, delta temp., particle mass flow
-        self.Q_in_max = 5000  # [kW]
-        self.Q_out_max = 5000  # [kW]
-
-        # state storage
-        self.T_tank_storage = np.zeros(8760)
-
-    def step(self, Qdot_in_available, dispatch, step_index):
-
-        Qdot_desired = dispatch
-
-        # if dispatch > 0:
-        #     Qdot_desired = - dispatch
-        # elif Qdot_in_available >= 0:
-        #     Qdot_desired = Qdot_in_available
-
-        Qdot_controller = self.control(Qdot_in_available, Qdot_desired)
-        Qdot_controller = float(Qdot_controller)
-        self.step_particle_tank(Qdot_controller)
-
-        self.record(step_index)
-
-        if Qdot_controller <= 0:
-            Qdot_output = -Qdot_controller
-        else:
-            Qdot_output = 0.0
-
-        return Qdot_output
-
-    def record(self, step_index):
-        self.T_tank_storage[step_index] = self.T_tank
-
-    def control(self, Qdot_in_available, Qdot_desired):
-        # Qdot_in_avaible: [kW s^-1] should be > 0
-        # Qdot_desired: [kW s^-1] can be positive or negative
-
-        assert Qdot_in_available >= 0, "Cannot have negative available heat"
-
-        # state constraint
-        upper1 = (self.T_max - self.T_tank) * self.m_tank * self.particle_cp / self.dt
-        lower1 = (self.T_min - self.T_tank) * self.m_tank * self.particle_cp / self.dt
-
-        # rate constraint
-        upper2 = self.Q_in_max
-        lower2 = -self.Q_out_max
-
-        # available constraint
-        upper3 = Qdot_in_available
-
-        upper = np.min([upper1, upper2, upper3])
-        lower = np.max([lower1, lower2])
-
-        if Qdot_desired >= upper:
-            Qdot_out = upper
-        elif Qdot_desired <= lower:
-            Qdot_out = lower
-        else:
-            Qdot_out = Qdot_desired
-
-        return Qdot_out
-
-    def heat_exchanger(self, Qdot_io, mdot_particle, T_in_particle):
-        # Qdot_io: [kW/s] heatflow positive or negative
-        T_out_particle = T_in_particle + Qdot_io / (mdot_particle * self.particle_cp)
-
-        assert T_out_particle > -273, "output needs to be hotter than absolute zero"
-        return mdot_particle, T_out_particle
-
-    def step_particle_tank(self, Qdot_io, mdot_particle=100):
-
-        # TODO include heat loss to ambient
-
-        mdot_out = mdot_particle
-        T_out = self.T_tank
-        mdot_in, T_in = self.heat_exchanger(Qdot_io, mdot_out, T_out)
-        T_tank_delta_dot = (mdot_in / self.m_tank) * (T_in - self.T_tank)
-        self.T_tank += T_tank_delta_dot * self.dt
-
 
 class HighTempTES:
     def __init__(
@@ -724,12 +521,9 @@ class HighTempTES:
 
 
 if __name__ == "__main__":
-    
+
     # test-like stuff - Reproduce the plant described in the tech report and check if the cost is close
 
-
-    
-    
     # config = {
     #     "ChargeRate": 315,
     #     "DischargeRate": 135,
