@@ -333,6 +333,7 @@ def run_capex(
     h2_transport_compressor_results,
     h2_transport_pipe_results,
     h2_storage_results,
+    tes_cost_results,
     hopp_config,
     greenheart_config,
     design_scenario,
@@ -445,6 +446,12 @@ def run_capex(
             % greenheart_config["h2_storage"]["type"]
         )
 
+
+
+    # TES capex information
+    tes_capex = tes_cost_results["capex_tes_usd"]
+
+
     # store capex component breakdown
     capex_breakdown = {
         "wind": wind_cost_results.total_wind_cost_no_export,
@@ -459,6 +466,7 @@ def run_capex(
         "h2_transport_compressor": h2_transport_compressor_capex,
         "h2_transport_pipeline": h2_transport_pipe_capex,
         "h2_storage": h2_storage_capex,
+        "thermal_energy_storage": tes_capex
     }
 
     # discount capex to appropriate year for unified costing
@@ -510,6 +518,7 @@ def run_opex(
     h2_transport_compressor_results,
     h2_transport_pipe_results,
     h2_storage_results,
+    tes_cost_results,
     hopp_config,
     greenheart_config,
     desal_results,
@@ -569,6 +578,9 @@ def run_opex(
         desal_opex = 0.0
     annual_operating_cost_desal = desal_opex
 
+
+    tes_opex = tes_cost_results["opex_tes_usdpyr"]
+
     # store opex component breakdown
     opex_breakdown_annual = {
         "wind_and_electrical": wind_cost_results.annual_operating_cost_wind,
@@ -583,6 +595,7 @@ def run_opex(
         "h2_transport_compressor": h2_transport_compressor_opex,
         "h2_transport_pipeline": h2_transport_pipeline_opex,
         "h2_storage": storage_opex,
+        "thermal_energy_storage": tes_opex
     }
 
     # discount opex to appropriate year for unified costing
@@ -1344,6 +1357,15 @@ def run_profast_full_plant_model(
             escalation=gen_inflation,
         )
 
+    if "thermal_energy_storage" in capex_breakdown.keys():
+        pf.add_capital_item(
+            name = "Thermal Energy Storage System",
+            cost = capex_breakdown["thermal_energy_storage"],
+            depr_type=greenheart_config["finance_parameters"]["depreciation_method"],
+            depr_period=greenheart_config["finance_parameters"]["depreciation_period"],
+            refurb=[0],
+        )
+
     pf.add_fixed_cost(
         name="Wind and Electrical Export Fixed O&M Cost",
         usage=1.0,
@@ -1376,6 +1398,15 @@ def run_profast_full_plant_model(
             unit="$/year",
             cost=opex_breakdown["battery"],
             escalation=gen_inflation,
+        )
+
+    if "thermal_energy_storage" in opex_breakdown.keys():
+        pf.add_fixed_cost(
+            name = "Thermal Energy Storage O&M Cost",
+            usage=1.0,
+            unit="$/year",
+            cost=opex_breakdown["thermal_energy_storage"],
+            escalation = gen_inflation
         )
 
     if design_scenario["transportation"] == "hvdc+pipeline" or not (

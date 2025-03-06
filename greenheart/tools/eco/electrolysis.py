@@ -66,9 +66,15 @@ def run_electrolyzer_physics(
     else:
         hydrogen_production_capacity_required_kgphr = []
         grid_connection_scenario = "off-grid"
-        energy_to_electrolyzer_kw = np.asarray(
-            hopp_results["combined_hybrid_power_production_hopp"]
-        )
+        if "energy_to_electrolyzer_kw" in hopp_results:
+            energy_to_electrolyzer_kw = np.asarray(
+                hopp_results["energy_to_electrolyzer_kw"]
+            )
+
+        else:
+            energy_to_electrolyzer_kw = np.asarray(
+                hopp_results["combined_hybrid_power_production_hopp"]
+            )
         
     n_pem_clusters = int(ceildiv(electrolyzer_size_mw, greenheart_config["electrolyzer"]["cluster_rating_MW"]))
 

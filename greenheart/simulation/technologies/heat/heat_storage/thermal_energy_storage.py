@@ -2,116 +2,127 @@ import numpy as np
 import scipy.interpolate
 import scipy.optimize
 import matplotlib.pyplot as plt
+from greenheart.simulation.technologies.heat.materials import Quartz
+
+from greenheart.simulation.technologies.dispatch.control_model import ControlModel
+
+# class ShomateEquation:
+#     T: np.ndarray
+
+#     a: np.ndarray
+#     b: np.ndarray
+#     c: np.ndarray
+#     d: np.ndarray
+#     e: np.ndarray
+#     f: np.ndarray
+#     g: np.ndarray
+#     h: np.ndarray
+
+#     a_interp: scipy.interpolate.interp1d
+#     b_interp: scipy.interpolate.interp1d
+#     c_interp: scipy.interpolate.interp1d
+#     d_interp: scipy.interpolate.interp1d
+#     e_interp: scipy.interpolate.interp1d
+#     f_interp: scipy.interpolate.interp1d
+#     G_interp: scipy.interpolate.interp1d
+#     h_interp: scipy.interpolate.interp1d
+
+#     def __init__(self):
+#         self.a_interp = scipy.interpolate.interp1d(self.T, self.a, kind="previous")
+#         self.b_interp = scipy.interpolate.interp1d(self.T, self.b, kind="previous")
+#         self.c_interp = scipy.interpolate.interp1d(self.T, self.c, kind="previous")
+#         self.d_interp = scipy.interpolate.interp1d(self.T, self.d, kind="previous")
+#         self.e_interp = scipy.interpolate.interp1d(self.T, self.e, kind="previous")
+#         self.f_interp = scipy.interpolate.interp1d(self.T, self.f, kind="previous")
+#         self.g_interp = scipy.interpolate.interp1d(self.T, self.g, kind="previous")
+#         self.h_interp = scipy.interpolate.interp1d(self.T, self.h, kind="previous")
+
+#     def Cp(self, temperature):
+#         # return heat capacity [j mol^-1 K^-1]
+
+#         t = temperature / 1000
+
+#         Cp = (
+#             self.a_interp(temperature)
+#             + self.b_interp(temperature) * t
+#             + self.c_interp(temperature) * t**2
+#             + self.d_interp(temperature) * t**3
+#             + self.e_interp(temperature) / (t**2)
+#         )
+
+#         return Cp
+
+#     def H(self, temperature):
+#         # Return standard enthalpy [kJ mol^-1]
+#         # Return H^circle - H^circle_298.15
+
+#         t = temperature / 1000
+
+#         H = (
+#             self.a_interp(temperature) * t
+#             + self.b_interp(temperature) * t**2 / 2
+#             + self.c_interp(temperature) * t**3 / 3
+#             + self.d_interp(temperature) * t**4 / 4
+#             - self.e_interp(temperature) / t
+#             + self.f_interp(temperature)
+#             - self.h_interp(temperature)
+#         )
+
+#         return H
+
+#     def S(self, temperature):
+
+#         # Return standard entropy [J mol^-1 K^-1]
+
+#         t = temperature / 1000
+
+#         S = (
+#             self.a_interp(temperature) * np.log(t)
+#             + self.b_interp(temperature) * t
+#             + self.c_interp(temperature) * t**2 / 2
+#             + self.d_interp(temperature) * t**3 / 3
+#             - self.e_interp(temperature) / (2 * t**2)
+#             + self.g_interp(temperature)
+#         )
+
+#         return S
 
 
-class ShomateEquation:
-    T: np.ndarray
+# class Quartz(ShomateEquation):
+#     # SiO2
 
-    a: np.ndarray
-    b: np.ndarray
-    c: np.ndarray
-    d: np.ndarray
-    e: np.ndarray
-    f: np.ndarray
-    g: np.ndarray
-    h: np.ndarray
+#     # https://webbook.nist.gov/cgi/cbook.cgi?ID=C14808607&Type=JANAFS&Table=on
 
-    a_interp: scipy.interpolate.interp1d
-    b_interp: scipy.interpolate.interp1d
-    c_interp: scipy.interpolate.interp1d
-    d_interp: scipy.interpolate.interp1d
-    e_interp: scipy.interpolate.interp1d
-    f_interp: scipy.interpolate.interp1d
-    G_interp: scipy.interpolate.interp1d
-    h_interp: scipy.interpolate.interp1d
+#     T_max = 1996
 
-    def __init__(self):
-        self.a_interp = scipy.interpolate.interp1d(self.T, self.a, kind="previous")
-        self.b_interp = scipy.interpolate.interp1d(self.T, self.b, kind="previous")
-        self.c_interp = scipy.interpolate.interp1d(self.T, self.c, kind="previous")
-        self.d_interp = scipy.interpolate.interp1d(self.T, self.d, kind="previous")
-        self.e_interp = scipy.interpolate.interp1d(self.T, self.e, kind="previous")
-        self.f_interp = scipy.interpolate.interp1d(self.T, self.f, kind="previous")
-        self.g_interp = scipy.interpolate.interp1d(self.T, self.g, kind="previous")
-        self.h_interp = scipy.interpolate.interp1d(self.T, self.h, kind="previous")
+#     # Temperature (K)	298. to 847.	847. to 1996.
+#     T = np.array([298, 847, 1996])
+#     a = np.array([-6.076591, 58.75340, 58.75340])
+#     b = np.array([251.6755, 10.27925, 10.27925])
+#     c = np.array([-324.7964, -0.131384, -0.131384])
+#     d = np.array([168.5604, 0.025210, 0.025210])
+#     e = np.array([0.002548, 0.025601, 0.025601])
+#     f = np.array([-917.6893, -929.3292, -929.3292])
+#     g = np.array([-27.96962, 105.8092, 105.8092])
+#     h = np.array([-910.8568, -910.8568, -910.8568])
 
-    def Cp(self, temperature):
-        # return heat capacity [j mol^-1 K^-1]
-
-        t = temperature / 1000
-
-        Cp = (
-            self.a_interp(temperature)
-            + self.b_interp(temperature) * t
-            + self.c_interp(temperature) * t**2
-            + self.d_interp(temperature) * t**3
-            + self.e_interp(temperature) / (t**2)
-        )
-
-        return Cp
-
-    def H(self, temperature):
-        # Return standard enthalpy [kJ mol^-1]
-        # Return H^circle - H^circle_298.15
-
-        t = temperature / 1000
-
-        H = (
-            self.a_interp(temperature) * t
-            + self.b_interp(temperature) * t**2 / 2
-            + self.c_interp(temperature) * t**3 / 3
-            + self.d_interp(temperature) * t**4 / 4
-            - self.e_interp(temperature) / t
-            + self.f_interp(temperature)
-            - self.h_interp(temperature)
-        )
-
-        return H
-
-    def S(self, temperature):
-
-        # Return standard entropy [J mol^-1 K^-1]
-
-        t = temperature / 1000
-
-        S = (
-            self.a_interp(temperature) * np.log(t)
-            + self.b_interp(temperature) * t
-            + self.c_interp(temperature) * t**2 / 2
-            + self.d_interp(temperature) * t**3 / 3
-            - self.e_interp(temperature) / (2 * t**2)
-            + self.g_interp(temperature)
-        )
-
-        return S
-
-
-class Quartz(ShomateEquation):
-    # SiO2
-
-    # https://webbook.nist.gov/cgi/cbook.cgi?ID=C14808607&Type=JANAFS&Table=on
-
-    T_max = 1996
-
-    # Temperature (K)	298. to 847.	847. to 1996.
-    T = np.array([298, 847, 1996])
-    a = np.array([-6.076591, 58.75340, 58.75340])
-    b = np.array([251.6755, 10.27925, 10.27925])
-    c = np.array([-324.7964, -0.131384, -0.131384])
-    d = np.array([168.5604, 0.025210, 0.025210])
-    e = np.array([0.002548, 0.025601, 0.025601])
-    f = np.array([-917.6893, -929.3292, -929.3292])
-    g = np.array([-27.96962, 105.8092, 105.8092])
-    h = np.array([-910.8568, -910.8568, -910.8568])
-
-    molar_mass = 60.0843  # [g mol^-1]
+#     molar_mass = 60.0843  # [g mol^-1]
 
 
 class ThermalEnergyStorage:
 
     # TODO check units on inputs for consistency kWH
     # TODO also check for kelvin celsisus consistency
-    def __init__(self):
+    def __init__(self, 
+        M_hot_capacity = 22500e3,
+        M_cold_capacity = 22500e3, 
+        mdot_max_charge = 1082057 ,
+        mdot_max_discharge = 1082057,
+        T_hot_target = 1200,
+        T_cold_target = 300, 
+        initial_SOC = 0.5
+    ):
+        
         self.sand = Quartz()
 
         self.mm = self.sand.molar_mass * 1e-3  # [kg mol^-1] molar mass
@@ -119,29 +130,41 @@ class ThermalEnergyStorage:
         self.C2K = 273.15  # convert celsius to kelvin
 
         self.eta_P_in = 0.98  # from Table 3
-        self.eta_Q_out = 0.98
+        self.eta_Q_out = 1
+        # self.eta_Q_out = 0.98
 
-        self.M_hot_capacity = 22500e3  # [kg] assuming a single silo
-        self.M_cold_capacity = 22500e3  # [kg] assume a single silo
 
-        self.mdot_max = 25248 / 84 * 3600  # [kg hr^-1] of sand
+
+        self.M_hot_capacity = M_hot_capacity  # [kg] assuming a single silo
+        self.M_cold_capacity = M_cold_capacity  # [kg] assume a single silo
+
+        self.mdot_max_charge = mdot_max_charge  # [kg hr^-1] of sand
+        self.mdot_max_discharge = mdot_max_discharge  # [kg hr^-1] of sand
+        # self.mdot_max_charge = 25248 / 84 * 3600  # [kg hr^-1] of sand
+        # self.mdot_max_discharge = 25248 / 84 * 3600  # [kg hr^-1] of sand
+        
         self.T_max = 1700  # C
 
         self.P_in_max = 316  # [MW]
 
-        self.T_hot_target = 1200  # C
-        self.T_cold_target = 300  # C
+        self.T_hot_target = T_hot_target # C
+        self.T_cold_target = T_cold_target  # C
+        # self.T_hot_target = 1200  # C
+        # self.T_cold_target = 300  # C
 
         # states
         self.T_hot = 1200  # C
-        self.M_hot = 11250000.0  # kg
+        # TODO revisit and find a better way to initialize starting condition from initial SOC
+        self.M_hot = self.M_hot_capacity * initial_SOC  # kg
+        # self.M_hot = 11250000.0  # kg
         # self.H_hot = self.M_hot * self.sand.H(self.T_hot) * self.sand.molar_mass * 1e-3
         self.H_hot = (self.M_hot * 1000 / self.sand.molar_mass) * self.sand.H(
             self.T_hot + self.C2K
         )
 
         self.T_cold = 300  # C
-        self.M_cold = 11250000.0  # kg
+        # TODO revisit and find a better way to initialize starting condition from initial SOC
+        self.M_cold = self.M_hot_capacity * (1 - initial_SOC) # kg
         # self.H_cold = self.M_cold * self.sand.H(self.T_cold) * self.sand.molar_mass * 1e-3
         self.H_cold = (self.M_cold * 1000 / self.sand.molar_mass) * self.sand.H(
             self.T_cold + self.C2K
@@ -162,7 +185,42 @@ class ThermalEnergyStorage:
 
         self.SOC = (self.H_hot - self.H_cold) / self.energy_capacity
 
+
+        self.max_charge_kWh = (mdot_max_charge / self.mm) * ( self.sand.H(self.T_hot_target + self.C2K) - self.sand.H(self.T_cold_target + self.C2K) ) / 3600
+        self.max_discharge_kWh = (mdot_max_discharge / self.mm) * ( self.sand.H(self.T_hot_target + self.C2K) - self.sand.H(self.T_cold_target + self.C2K) ) / 3600
+
+
         self.setup_storage()
+        self.control_model = self.create_control_model()
+
+    def create_control_model(self):
+        m = 1
+        n = 1
+        p = 1
+        o = 1
+
+        A = np.array([[1]])
+        B = np.array([[1]])
+        C = np.array([[0]])
+        D = np.array([[-1]])
+        E = np.array([[0]])
+        F = np.array([[1]])
+
+        bounds_dict = {
+            "u_lb": np.array([-self.max_discharge_kWh]),
+            "u_ub": np.array([self.max_charge_kWh]),
+            "x_lb": np.array([0]),
+            "x_ub": np.array([self.energy_capacity /3600]),
+            "y_lb": np.array([None]),
+            "y_ub": np.array([None]),
+        }
+
+
+        control_model = ControlModel(A, B, C, D, E, F, bounds=bounds_dict, discrete=True)
+     
+        return control_model
+
+
 
     def setup_storage(self):
         self.M_hot_store = np.zeros(8760)
@@ -207,15 +265,15 @@ class ThermalEnergyStorage:
         available_power_kJ = available_power * 3600
         dispatch_kJ = dispatch * 3600
 
-        u_LLC = self.low_level_controller(available_power, dispatch, step_index)
+        u_LLC = self.low_level_controller(available_power_kJ, dispatch_kJ, step_index)
         Q_out, unused_power = self.step_tank(
-            available_power, dispatch, *u_LLC, step_index=step_index
+            available_power_kJ, dispatch_kJ, *u_LLC, step_index=step_index
         )
 
         # translate into kWh
         Q_out_kWh = Q_out / 3600
 
-        return Q_out
+        return Q_out_kWh
 
     def low_level_controller(self, available_power, dispatch, step_index=None):
         # Takes power charging request or heat dischargin request
@@ -242,24 +300,29 @@ class ThermalEnergyStorage:
 
         # Check with constraints and refues to do it if the cosntraints are violated
 
-        c2h1 = self.mdot_max
+        c2h1 = self.mdot_max_charge
         c2h2 = self.M_hot_capacity - self.M_hot
+        c2h3 = self.M_cold
         # c2h3 = 0 # Consider doing a temperature constraint
 
-        c2h_constraint = np.min([c2h1, c2h2])
+        c2h_constraint = np.min([c2h1, c2h2, c2h3])
+        m_c2h = np.min([c2h_constraint, m_c2h])
+
+        m_c2h = np.max([0, m_c2h])
 
         assert m_c2h <= c2h_constraint
 
-        m_c2h = np.min([c2h_constraint, m_c2h])
-
-        h2c1 = self.mdot_max
+        h2c1 = self.mdot_max_discharge
         h2c2 = self.M_cold_capacity - self.M_cold
+        h2c3 = self.M_hot
 
-        h2c_constraint = np.min([h2c1, h2c2])
+        h2c_constraint = np.min([h2c1, h2c2, h2c3])
+        m_h2c = np.min([h2c_constraint, m_h2c])
+        m_h2c = np.max([0, m_h2c])
+
 
         assert m_h2c <= h2c_constraint
 
-        m_h2c = np.min([h2c_constraint, m_h2c])
 
         return (m_c2h, m_h2c, P_in_dispatch, Q_out_dispatch, T_c2h, T_h2c)
 
@@ -341,10 +404,16 @@ class ThermalEnergyStorage:
         self.SOC = (H_hot_next - H_cold_next) / self.energy_capacity
 
         assert self.M_hot <= self.M_hot_capacity
+        assert self.M_hot >= 0
         assert self.M_cold <= self.M_cold_capacity
+        assert self.M_cold >= 0
         assert self.T_hot <= self.T_max
 
         return Q_out, unused_power
+
+
+class EnduringGeneral:
+    operation_and_maintenance_usdpkwhth = 0.00171 # usd / kwhth
 
 
 class EnduringParticleHeater:
@@ -356,6 +425,8 @@ class EnduringParticleHeater:
     unitized_capital_cost_USDpkW = 7.3
 
     gross_capital_cost_3units_USD = 6912614
+
+    heating_efficiency = .98 # from Ma et al. 2021
 
 
 class EnduringLockHopper:
@@ -377,7 +448,7 @@ class EnduringLockHopper:
     discharge_time_s = 462
 
 
-class EnduringParticleFluidizedBed:
+class EnduringPressurizedFluidizedBedHeatExchanger:
 
     # Table 13
 
@@ -385,14 +456,20 @@ class EnduringParticleFluidizedBed:
     PFBHX_equipment_cost_USD = 4574561.0
     particle_separation_cyclone_equipment_cost_USD = 57124.0
 
-    single_PFBHX_capital_cost_USD = 9719377.0  # 3 units?
+    single_unit_capital_cost_USD = 9719377.0  # 3 units?
     total_PFBHX_system_capital_cost_USD = 29158132.0
 
     unitized_capital_cost_USDpkW = 72.0  # dollars per kW electric
 
 
 class EnduringPipeline:
-    pass
+    # from Table 12 page 29
+
+    pipe_length_m = 12
+    total_pressure_drop_kPa = 4.04
+
+    single_unit_capital_cost_usd = 675932
+    gross_capital_cost_3units_USD = 2027797
 
 
 class EnduringParticleHoist:
@@ -647,88 +724,94 @@ class HighTempTES:
 
 
 if __name__ == "__main__":
-    config = {
-        "ChargeRate": 315,
-        "DischargeRate": 135,
-        "StorageHours": 100,
-        "ChargeEfficiency": 98,
-        "DischargeEfficiency": 52,
-        # "StorageEfficiency":97,
-        "dt": 3600,
-    }
-    # GWhth = MWe*(eta)
-    # 52 percent efficient
-    #
-    tes = HighTempTES(**config)
+    
+    # test-like stuff - Reproduce the plant described in the tech report and check if the cost is close
 
-    # TES = ThermalEnergyStorage()
 
-    quart = Quartz()
+    
+    
+    # config = {
+    #     "ChargeRate": 315,
+    #     "DischargeRate": 135,
+    #     "StorageHours": 100,
+    #     "ChargeEfficiency": 98,
+    #     "DischargeEfficiency": 52,
+    #     # "StorageEfficiency":97,
+    #     "dt": 3600,
+    # }
+    # # GWhth = MWe*(eta)
+    # # 52 percent efficient
+    # #
+    # tes = HighTempTES(**config)
 
-    def func(T, H):
-        return quart.H(T) - H
+    # # TES = ThermalEnergyStorage()
 
-    H_state = 10.7
+    # quart = Quartz()
 
-    T_state = scipy.optimize.fsolve(func, x0=500, args=(H_state), xtol=1e-3)
+    # def func(T, H):
+    #     return quart.H(T) - H
 
-    tes = ThermalEnergyStorage()
+    # H_state = 10.7
 
-    # print(tes.T_hot)
-    # tes.step_tank(50, 0, 100, 0)
-    # print(tes.T_hot)
+    # T_state = scipy.optimize.fsolve(func, x0=500, args=(H_state), xtol=1e-3)
 
-    H_1 = tes.H_hot
+    # tes = ThermalEnergyStorage()
 
-    Q_out = tes.step(available_power=10639227.25826057, dispatch=10639227.25826057)
+    # # print(tes.T_hot)
+    # # tes.step_tank(50, 0, 100, 0)
+    # # print(tes.T_hot)
 
-    H_2 = tes.H_hot
+    # H_1 = tes.H_hot
 
-    print(H_2 - H_1)
+    # Q_out = tes.step(available_power=10639227.25826057, dispatch=10639227.25826057)
 
-    time = np.arange(0, 1000, 1)
+    # H_2 = tes.H_hot
 
-    # Try for 316 MW input
-    power_multiplier = 316e3
-    P_avail = power_multiplier * np.sin(time / 20)
-    P_avail = np.where(P_avail >= 0, P_avail, 0)
-    P_dis = power_multiplier * np.sin((time + 10) / 15)
+    # print(H_2 - H_1)
 
-    for k in range(len(time)):
-        Q_out = tes.step(P_avail[k], P_dis[k], step_index=k)
+    # time = np.arange(0, 1000, 1)
 
-    fig, ax = plt.subplots(5, 1, sharex="col", layout="constrained")
+    # # Try for 316 MW input
+    # power_multiplier = 316e3
+    # P_avail = power_multiplier * np.sin(time / 20)
+    # P_avail = np.where(P_avail >= 0, P_avail, 0)
+    # P_dis = power_multiplier * np.sin((time + 10) / 15)
 
-    ax[0].plot(time, P_avail, label="P avail")
-    ax[0].plot(time, P_dis, label="Dispatch")
+    # for k in range(len(time)):
+    #     Q_out = tes.step(P_avail[k], P_dis[k], step_index=k)
 
-    ax[1].plot(time, tes.M_cold_store[0 : len(time)], label="M cold")
-    ax[1].plot(time, tes.M_hot_store[0 : len(time)], label="M hot")
-    ax1t = ax[1].twinx()
-    ax1t.plot(time, tes.m_c2h_store[0 : len(time)], label="m c2h")
-    ax1t.plot(time, tes.m_h2c_store[0 : len(time)], label="m h2c")
-    ax1t.legend()
+    # fig, ax = plt.subplots(5, 1, sharex="col", layout="constrained")
 
-    ax[2].plot(time, tes.H_hot_store[0 : len(time)], label="H hot")
-    # ax[2].plot(time, tes.H_cold_store[0 : len(time)], label="H cold")
+    # ax[0].plot(time, P_avail, label="P avail")
+    # ax[0].plot(time, P_dis, label="Dispatch")
 
-    ax2t = ax[2].twinx()
-    ax2t.plot(time, tes.SOC_store[0:len(time)], label="SOC")
-    ax2t.legend()
+    # ax[1].plot(time, tes.M_cold_store[0 : len(time)], label="M cold")
+    # ax[1].plot(time, tes.M_hot_store[0 : len(time)], label="M hot")
+    # ax1t = ax[1].twinx()
+    # ax1t.plot(time, tes.m_c2h_store[0 : len(time)], label="m c2h")
+    # ax1t.plot(time, tes.m_h2c_store[0 : len(time)], label="m h2c")
+    # ax1t.legend()
 
-    ax[3].plot(time, tes.T_hot_store[0 : len(time)], label="T hot")
-    # ax[3].plot(time, tes.T_cold_store[0:len(time)], label="T cold")
+    # ax[2].plot(time, tes.H_hot_store[0 : len(time)], label="H hot")
+    # # ax[2].plot(time, tes.H_cold_store[0 : len(time)], label="H cold")
 
-    ax[4].plot(time, tes.Q_out_store[0 : len(time)], label="Q out")
+    # ax2t = ax[2].twinx()
+    # ax2t.plot(time, tes.SOC_store[0:len(time)], label="SOC")
+    # ax2t.legend()
 
-    for a in ax:
-        a.legend()
+    # ax[3].plot(time, tes.T_hot_store[0 : len(time)], label="T hot")
+    # # ax[3].plot(time, tes.T_cold_store[0:len(time)], label="T cold")
 
-    m = 22500e3  # kg
-    GWhth_per_silo = (
-        ((m / tes.mm) * (tes.sand.H(1200 + tes.C2K) - tes.sand.H(300 + tes.C2K)))
-        / 1e6
-        / 3600
-    )
+    # ax[4].plot(time, tes.Q_out_store[0 : len(time)], label="Q out")
+
+    # for a in ax:
+    #     a.legend()
+
+    # m = 22500e3  # kg
+    # GWhth_per_silo = (
+    #     ((m / tes.mm) * (tes.sand.H(1200 + tes.C2K) - tes.sand.H(300 + tes.C2K)))
+    #     / 1e6
+    #     / 3600
+    # )
 
     []

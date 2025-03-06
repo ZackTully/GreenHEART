@@ -13,6 +13,11 @@ from hopp.utilities import load_yaml
 
 class DispatchModelPredictiveController:
 
+    step_index_store: list
+    uc_store: list
+    us_store: list
+    dco_store: list
+
     def __init__(self, config, simulation_graph):
 
         system_graph = load_yaml(
@@ -34,6 +39,30 @@ class DispatchModelPredictiveController:
 
         self.build_control_model(traversal_order, simulation_graph)
         self.setup_optimization()
+        self.setup_solution_storage()
+
+    def setup_solution_storage(self):
+        self.step_index_store = []
+        self.uc_store = []
+        self.us_store = []
+        self.x_store = []
+        self.yex_store = []
+        self.ysp_store = []
+        self.curtail_store = []
+        self.de_store = []
+        self.dco_store = []
+
+
+    def store_solution(self, step_index, uc, us, x, yex, ysp,  curtail, dex, dco):
+        self.step_index_store.append(step_index)
+        self.uc_store.append(uc)
+        self.us_store.append(us)
+        self.x_store.append(x)
+        self.yex_store.append(yex)
+        self.ysp_store.append(ysp)
+        self.curtail_store.append(curtail)
+        self.de_store.append(dex)
+        self.dco_store.append(dco)
 
     def build_control_model(self, traversal_order, simulation_graph):
 
@@ -473,6 +502,13 @@ class DispatchModelPredictiveController:
 
         # TODO: look for a graph configuration where P_out and P_in are not almost Identity then see how weird the M matrix can get.
         M_yco_dco = P_out[y_co.T, e_co] @ np.linalg.inv(P_in[d_co.T, e_co])
+        # y_co  = M_yco_dco @ d_co
+        self.M_yco_dco = M_yco_dco
+
+        M_dco_yco = P_in[d_co.T, e_co] @ np.linalg.inv(P_out[y_co.T, e_co])
+        # d_co = M_dco_yco @ yco
+        self.M_dco_yco = M_dco_yco
+
         # M = P_out[y_co.T, d_co] @ P_in[d_co.T, d_co]
 
         combined_block, combined_mat = self.reorder_coupling(
@@ -607,11 +643,11 @@ class DispatchModelPredictiveController:
             for i in range(len(ss_mat))
         ]
 
-        # self.print_block_matrices(
-        #     combined_mat,
-        #     in_labels=["x", "uc", "us", "de"],
-        #     out_labels=["x+", "ye", "yz", "ys"],
-        # )
+        self.print_block_matrices(
+            combined_mat,
+            in_labels=["x", "uct", "usp", "dex"],
+            out_labels=["x+", "yex", "yze", "yco"],
+        )
 
         state_space = np.block(ss_mat)
         coupling = np.block(coupling_mat)
@@ -875,6 +911,7 @@ class DispatchModelPredictiveController:
             assert False, self.opti.debug
 
         jac = sol.value(ca.jacobian(sol.opti.f, sol.opti.x)).toarray()[0]
+        # jac = self.opti.debug.value(ca.jacobian(self.opti.debug.f, self.opti.debug.x)).toarray()[0]
         try:
             assert (np.abs(jac) < 1).any()
             # True
@@ -888,7 +925,7 @@ class DispatchModelPredictiveController:
                 (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1),
             )
             ys_slice = slice(
-                (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1), None
+                (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1), (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1) + self.pse * self.horizon
             )
 
             jac_uc = np.reshape(jac[uc_slice], (self.horizon, self.mc))
@@ -898,8 +935,8 @@ class DispatchModelPredictiveController:
 
             self.print_block_matrices(
                 mat=[[jac_uc, jac_us, jac_x[0 : self.horizon, :], jac_ys]],
-                in_labels=["jac uc", "jac us", "jac x", "jac ys"],
-                out_labels=[""],
+                in_labels=["jac uc", "jac us", "jac x", "jac yex"],
+                out_labels=[f"step {i}" for i in range(self.horizon)],
             )
 
             []
@@ -929,6 +966,18 @@ class DispatchModelPredictiveController:
         self.x_init = x
         self.ys_init = ys
         self.curtail_init = curtail
+
+
+        ysp = self.Csp @ x[:, :-1] + self.Dspc @ uc + self.Dsps @ us + self.Fsp @ de
+        # coupling disturbances
+        dco = self.M_dco_yco @ ysp
+
+
+        ysp = np.concatenate([ysp, ys[None, :]])
+
+
+
+        self.store_solution(step_index=step_index, uc=uc, us=us, x=x, yex=ys, ysp=ysp, curtail=curtail, dex=de, dco = dco)
 
 
         if False:
@@ -1148,6 +1197,8 @@ class DispatchModelPredictiveController:
         # block_rows = block_mat.shape[0]
 
         out_label_width = int(np.max([len(label) for label in out_labels]))
+        num_col_width = 10
+
 
         for row_num, row_mat in enumerate(mat):
             if not no_space:
@@ -1155,9 +1206,9 @@ class DispatchModelPredictiveController:
 
             row_mat_lens = [matr.shape[1] for matr in row_mat]
             if row_num == 0:
-                line = " " * (out_label_width + 3)
+                line = " " * (out_label_width + 5)
                 for coli, col_label in enumerate(in_labels):
-                    line += f"{col_label}".ljust(row_mat_lens[coli] * 9 + 2)
+                    line += f"{col_label}".ljust(row_mat_lens[coli] * num_col_width + 3)
 
                 print(line)
             n_rows = row_mat[0].shape[0]
@@ -1166,7 +1217,7 @@ class DispatchModelPredictiveController:
                 line += "["
                 for col_mat in row_mat:
                     for j in range(col_mat.shape[1]):
-                        line += f"{col_mat[i,j] :.5g}, ".rjust(9)
+                        line += f"{col_mat[i,j] :.4g}, ".rjust(num_col_width)
 
                     line = line[0:-2]
                     line += " ]  ["

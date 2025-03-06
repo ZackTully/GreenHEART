@@ -31,6 +31,7 @@ from greenheart.simulation.technologies.dispatch.dispatch import (
     GreenheartDispatch,
 )
 
+import greenheart.tools.thermal.thermal_mgmt as therm_man
 from greenheart.simulation.realtime_simulation import RealTimeSimulation
 
 # visualization imports
@@ -560,18 +561,6 @@ def run_simulation(config: GreenHeartSimulationConfig):
     if config.realtime_simulation:
         simulator.simulate(dispatcher, hopp_results)
 
-        # bat_I1 = hi.system.battery.outputs.I
-        # bat_P1 = hi.system.battery.outputs.P
-        # bat_Q1 = hi.system.battery.outputs.Q
-
-        # Run HOPP again with battery
-        # Update hi.site_info to have the desired schedule
-        # hi.system.site.desired_schedule
-        # hi.system.site.realtime = True
-        # hi.system.dispatch_options["battery_dispatch"] = "externally_defined_heuristic"
-
-        # config.hopp_config["config"]["dispatch_options"]["battery_dispatch"] = "simple"
-
         config.hopp_config["config"]["dispatch_options"]["battery_dispatch"] = "externally_defined_heuristic"
 
         hi = he_hopp.setup_hopp(
@@ -586,16 +575,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
             save_plots=config.save_plots,
         )
 
-        # hi.system.dispatch_builder.options.battery_dispatch = "externally_defined_heuristic"
-        # hi.system.dispatch_builder.site.battery_schedule = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
-        # hi.system.dispatch_builder.site.desired_schedule = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
-        # hi.system.dispatch_builder.options.battery_schedule = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
-
         hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = -simulator.G.nodes["battery"]["ionode"].model.store_charge_power / 1e3
-        # hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
-        # hi.system.dispatch_builder.power_sources["battery"].dispatch.user_fixed_dispatch = simulator.G.nodes["battery"]["ionode"].model.store_storage_state / 1e3
-
-
 
         hopp_results = he_hopp.run_hopp(
             hi,
@@ -604,19 +584,6 @@ def run_simulation(config: GreenHeartSimulationConfig):
             ],
             verbose=config.verbose,
         )
-
-        # bat_I2 = hi.system.battery.outputs.I
-        # bat_P2 = hi.system.battery.outputs.P
-        # bat_Q2 = hi.system.battery.outputs.Q
-
-        # import matplotlib.pyplot as plt
-        # fig, ax = plt.subplots(1, 1, layout="constrained")
-        # ax.plot(simulator.G.nodes["battery"]["ionode"].model.store_charge_power)
-        # ax.plot(np.array(bat_P2))
-        # ax.plot(np.array(bat_P1))
-
-
-        []
 
     if config.design_scenario["wind_location"] == "onshore":
         wind_config = he_fin.WindCostConfig(
@@ -680,7 +647,11 @@ def run_simulation(config: GreenHeartSimulationConfig):
             remaining_power_profile_in
         )
 
-        # ZCT - Extract electrolyzer timeseries from controller and apply here
+        # NOTE This is where the power gets split between hydrogen and heat pathways
+        if True:
+
+            hopp_results_internal["energy_to_electrolyzer_kw"] = 0.93 * remaining_power_profile_in
+            hopp_results_internal["energy_to_heating_kw"] = 0.07 * remaining_power_profile_in
 
         # TODO come back and make this a more reliable cases test
         if not config.realtime_simulation:
@@ -754,7 +725,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
                 "annual operating cost [$]": [0.0],
             }
 
-        # ZCT - extract h2 storage timeseries from controller and apply here
+    
 
         # pressure vessel storage
         pipe_storage, h2_storage_results = he_h2.run_h2_storage(
@@ -767,6 +738,20 @@ def run_simulation(config: GreenHeartSimulationConfig):
             realtime_flag = config.realtime_simulation,
             simulator = simulator
         )
+
+        # Do heat stuff here
+        h2_heating_results, tes_sizing_results, tes_cost_results,  TES = therm_man.run_h2_heating(
+            hopp_results_internal,
+            greenheart_config,
+            electrolyzer_physics_results,
+            h2_storage_results,
+        )
+
+        if False:
+            tes_cost_results = {
+                "capex_tes_usd": 0,
+                "opex_tes_usdpyr": 0
+            }
 
         total_energy_available = np.sum(
             hopp_results["combined_hybrid_power_production_hopp"]
@@ -858,6 +843,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
                     h2_storage_power_kw,
                     electrolyzer_energy_consumption_bop_kw,
                     remaining_power_profile,
+                    h2_heating_results
                 )
             else:
                 return total_accessory_power_renewable_kw
@@ -875,6 +861,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
                 total_accessory_power_renewable_kw,
                 total_accessory_power_grid_kw,
                 remaining_power_profile,
+                h2_heating_results,
+                tes_cost_results
             )
 
     # define function to provide to the brent solver
@@ -903,6 +891,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
             h2_storage_power_kw,
             electrolyzer_bop_kw,
             remaining_power_profile,
+            h2_heating_results
         ) = energy_internals(
             power_for_peripherals_kw_in=initial_guess,
             solver=True,
@@ -918,6 +907,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
             h2_transport_compressor_power_kw,
             h2_storage_power_kw,
             electrolyzer_bop_kw,
+            h2_heating_results
         )
 
     #################### solving for energy needed for non-electrolyzer components ####################################
@@ -954,6 +944,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
         total_accessory_power_renewable_kw,
         total_accessory_power_grid_kw,
         remaining_power_profile,
+        h2_heating_results,
+        tes_cost_results
     ) = energy_internals(
         solver=False, power_for_peripherals_kw_in=solver_result, simulator=simulator
     )
@@ -986,6 +978,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
         h2_transport_compressor_results,
         h2_transport_pipe_results,
         h2_storage_results,
+        tes_cost_results,
         config.hopp_config,
         config.greenheart_config,
         config.design_scenario,
@@ -1003,6 +996,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
         h2_transport_compressor_results,
         h2_transport_pipe_results,
         h2_storage_results,
+        tes_cost_results,
         config.hopp_config,
         config.greenheart_config,
         desal_results,

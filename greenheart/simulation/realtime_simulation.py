@@ -450,8 +450,11 @@ class RealTimeSimulation:
 
             # TODO improve this: 
             x0 = np.zeros( 2)
+            # x0 = np.zeros( 3)
             x0[0] = self.G.nodes["battery"]["ionode"].model.storage_state
             x0[1] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
+            # x0[2] = self.G.nodes["thermal_energy_storage"]["ionode"].model.H_hot 
+
 
             self.G = dispatcher.step(self.G, hybrid_profile[i], forecast=forecast, x_measured = x0,  step_index=i)
             self.G = self.step_system_state_function(self.G, hybrid_profile[i], i)

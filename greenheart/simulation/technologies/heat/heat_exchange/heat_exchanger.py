@@ -6,6 +6,7 @@ from attrs import define, field
 from typing import Optional
 from hopp.type_dec import FromDictMixin
 
+from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
 @define
 class StorageParticle(FromDictMixin):
@@ -191,6 +192,40 @@ class HeatExchanger:
         self.output_store = np.zeros((4, duration))
         self.wasted_store = np.zeros((4, duration))
 
+        self.control_model = self.create_control_model()
+
+
+    def create_control_model(self):
+
+
+        m = 0
+        n = 0
+        p = 2
+        o = 2
+
+
+        A = np.zeros((n, n))
+        B = np.zeros((n, m))
+        C = np.zeros((p, n))
+        D = np.zeros((p, m))
+        E = np.zeros((n, o))
+        F = np.eye(p)
+
+        bounds_dict = {
+            "u_lb": np.array([]),
+            "u_ub": np.array([]),
+            "x_lb": np.array([]),
+            "x_ub": np.array([]),
+            "y_lb": np.array([0, 0]),
+            "y_ub": np.array([None, None]),
+        }
+
+        control_model = ControlModel(
+            A, B, C, D, E, F, bounds=bounds_dict, discrete=True
+        )
+
+        return control_model
+
     # def inputs(self, inputs):
 
     #     # inputs = list of arrays shape (4, -)
@@ -297,11 +332,6 @@ class HeatExchanger:
         #     desired_mdotout = dispatch[0]
         # else: 
         #     desired_mdotout = 0
-
-
-
-
-
 
 
         Qdotin, mdotin, Tin = self.inputs(inputs)
