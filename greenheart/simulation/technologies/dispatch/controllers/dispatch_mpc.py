@@ -52,8 +52,7 @@ class DispatchModelPredictiveController:
         self.de_store = []
         self.dco_store = []
 
-
-    def store_solution(self, step_index, uc, us, x, yex, ysp,  curtail, dex, dco):
+    def store_solution(self, step_index, uc, us, x, yex, ysp, curtail, dex, dco):
         self.step_index_store.append(step_index)
         self.uc_store.append(uc)
         self.us_store.append(us)
@@ -75,35 +74,43 @@ class DispatchModelPredictiveController:
         E_list = []
         F_list = []
 
-        Bc_list = []
-        Bs_list = []
+        Bct_list = []
+        Bsp_list = []
 
-        Cs_list = []
-        Co_list = []
+        Csp_list = []
+        Cze_list = []
 
-        Dsc_list = []
-        Dss_list = []
-        Doc_list = []
-        Dos_list = []
+        Dspct_list = []
+        Dspsp_list = []
+        Dzect_list = []
+        Dzesp_list = []
 
-        E_list = []
-
-        Fs_list = []
-        Fo_list = []
+        Fsp_list = []
+        Fze_list = []
 
         n_list = []
-        mc_list = []
-        ms_list = []
+        mct_list = []
+        msp_list = []
         p_list = []
-        pzero_list = []
+        pex_list = []
+        pco_list = []
+        pze_list = []
         o_list = []
+        oco_list = []
+        oex_list = []
 
         x_list = []
-        uc_list = []
-        us_list = []
+        uct_list = []
+        usp_list = []
         d_list = []
-        ys_list = []
-        yo_list = []
+        dex_list = []
+        dco_list = []
+
+        y_list = []
+        yex_list = []
+        yco_list = []
+        yze_list = []
+
         e_list = []
 
         u_lb_list = []
@@ -126,22 +133,22 @@ class DispatchModelPredictiveController:
             out_degree = G.nodes[node]["ionode"].out_degree
 
             if out_degree > 1:
-                us_degree = out_degree
+                usp_degree = out_degree
             else:
-                us_degree = 0
+                usp_degree = 0
 
             n = cm.A.shape[0]
 
-            mc = cm.B.shape[1]
-            ms = us_degree
+            mct = cm.B.shape[1]
+            msp = usp_degree
             o = cm.E.shape[1]
 
-            if us_degree == 0:
-                ps = cm.C.shape[0]
-                po = 0
+            if usp_degree == 0:
+                psp = cm.C.shape[0]
+                pze = 0
             else:
-                ps = us_degree
-                po = cm.C.shape[0]
+                psp = usp_degree
+                pze = cm.C.shape[0]
 
             A_list.append(cm.A)
             B_list.append(cm.B)
@@ -152,44 +159,73 @@ class DispatchModelPredictiveController:
 
             # First row
             # Already have A matrix
-            Bc_list.append(cm.B)
-            Bs_list.append(np.zeros((n, ms)))
+            Bct_list.append(cm.B)
+            Bsp_list.append(np.zeros((n, msp)))
             E_list.append(np.tile(cm.E, in_degree))
 
             # Second row
-            if ms == 0:  # y_split is just normal y
-                Cs_list.append(cm.C)
-                Dsc_list.append(cm.D)
-                Dss_list.append(np.zeros((ps, ms)))
-                Fs_list.append(np.tile(cm.F, in_degree))
+            if msp == 0:  # y_split is just normal y
+                Csp_list.append(cm.C)
+                Dspct_list.append(cm.D)
+                Dspsp_list.append(np.zeros((psp, msp)))
+                
+
+                # NOTE this is sketchy
+
+                if (node == "heat_exchanger"):
+
+                    outputs_heat = ["thermal_energy_storage"]
+                    outputs_power = ["generation", "battery"]
+                    outputs_h2 = ["electrolyzer", "hydrogen_storage"]
+
+                    F_temp = []
+
+                    for edge in list(G.in_edges(node)):
+
+                        if (edge[0] in outputs_heat) or ((edge[0] in outputs_power)): 
+                            F_temp.append(np.array([0]))
+                        elif (edge[0] in outputs_h2):
+                            F_temp.append(np.array([1]))
+
+                    Fsp_list.append(np.concatenate(F_temp))
+
+
+                else:
+                    Fsp_list.append(np.tile(cm.F, in_degree))
+
+
+
             else:  # no dimension here
-                Cs_list.append(np.zeros((ps, n)))
-                Dsc_list.append(np.zeros((ps, mc)))
-                Dss_list.append(np.eye(ms))
-                Fs_list.append(np.zeros((ps, in_degree * cm.F.shape[1])))
+                Csp_list.append(np.zeros((psp, n)))
+                Dspct_list.append(np.zeros((psp, mct)))
+                Dspsp_list.append(np.eye(msp))
+                Fsp_list.append(np.zeros((psp, in_degree * cm.F.shape[1])))
 
             # Third row
-            if ms == 0:  # y_split is Ds us
-                Co_list.append(np.zeros((po, n)))
-                Doc_list.append(np.zeros((po, mc)))
-                Dos_list.append(np.zeros((po, ms)))
-                Fo_list.append(np.zeros((po, in_degree * cm.F.shape[1])))
+            if msp == 0:  # y_split is Ds us
+                Cze_list.append(np.zeros((pze, n)))
+                Dzect_list.append(np.zeros((pze, mct)))
+                Dzesp_list.append(np.zeros((pze, msp)))
+                if node == "heat_exchanger":
+                    Fze_list.append(np.zeros((pze, in_degree)))
+                else:
+                    Fze_list.append(np.zeros((pze, in_degree * cm.F.shape[1])))
             else:  # yzero  is constrained here
-                Co_list.append(cm.C)
-                Doc_list.append(cm.D)
-                Dos_list.append(-np.tile(np.eye(po), ms) @ Dss_list[-1])
-                Fo_list.append(np.tile(cm.F, in_degree))
+                Cze_list.append(cm.C)
+                Dzect_list.append(cm.D)
+                Dzesp_list.append(-np.tile(np.eye(pze), msp) @ Dspsp_list[-1])
+                Fze_list.append(np.tile(cm.F, in_degree))
 
             # Should break if the control model has inconsistent dimensions
             subsystem_block = np.block([[cm.A, cm.B, cm.E], [cm.C, cm.D, cm.F]])
 
             # Dimensions
             n_list.append(n)
-            mc_list.append(mc)
-            ms_list.append(ms)
-            p_list.append(ps + po)
+            mct_list.append(mct)
+            msp_list.append(msp)
+            p_list.append(psp + pze)
             o_list.append(o)
-            pzero_list.append(cm.C.shape[0])
+            pze_list.append(cm.C.shape[0])
 
             u_lb_list.append(cm.u_lb)
             u_ub_list.append(cm.u_ub)
@@ -208,69 +244,85 @@ class DispatchModelPredictiveController:
                 xl.append(f"x {i} {node}")
             x_list.append(xl)
 
-            ucl = []
+            uctl = []
             for i in range(cm.B.shape[1]):
-                ucl.append(f"uc {i} {node}")
-            uc_list.append(ucl)
+                uctl.append(f"uct {i} {node}")
+            uct_list.append(uctl)
 
             dsl = []
             if G.nodes[node]["is_source"]:  # d = d_ex
                 for i in range(cm.E.shape[1] * in_degree):
-                    dsl.append(f"de {i} {node} (from source)")
+                    dsl.append(f"dex {i} {node} (from source)")
+                dex_list.append(dsl)
             else:  # d = d_co
                 for i in range(in_degree):
                     in_edges = list(G.in_edges(node))
-                    dsl.append(f"dc {i} {node} (from {in_edges[i][1]})")
+                
+                    dsl.append(f"dco {i} {node} (from {in_edges[i][0]})")
+                dco_list.append(dsl)
 
             d_list.append(dsl)
 
-            usl = []
-            ysl = []
+            uspl = []
+            yspl = []
             if G.nodes[node]["is_sink"]:  # ys = y_ex
-                for i in range(us_degree):
-                    usl.append(f"us {i} {node} (to sink)")
+                for i in range(usp_degree):
+                    uspl.append(f"usp {i} {node} (to sink)")
+
                 for i in range(out_degree):
-                    ysl.append(f"yse {i} {node} (to sink)")
+                    yspl.append(f"yex {i} {node} (to sink)")
+
+                yex_list.append(yspl)
+
             else:  # ys = y_co
-                for i in range(us_degree):
+                for i in range(usp_degree):
                     out_edges = list(G.out_edges(node))
-                    usl.append(f"us {i} {node} (to {out_edges[i][1]})")
+                    uspl.append(f"usp {i} {node} (to {out_edges[i][1]})")
 
                 for i in range(out_degree):
                     out_edges = list(G.out_edges(node))
-                    ysl.append(f"ysc {i} {node} (to {out_edges[i][1]})")
-            us_list.append(usl)
-            ys_list.append(ysl)
+                    yspl.append(f"yco {i} {node} (to {out_edges[i][1]})")
 
-            yol = []
-            for i in range(po):
-                yol.append(f"yo {i} {node}")
-            yo_list.append(yol)
+                yco_list.append(yspl)
+            usp_list.append(uspl)
+            y_list.append(yspl)
+
+            yzel = []
+            for i in range(pze):
+                yzel.append(f"yze {i} {node}")
+            yze_list.append(yzel)
 
         self.x_list = [x for xs in x_list for x in xs]
-        self.uc_list = [x for xs in uc_list for x in xs]
-        self.us_list = [x for xs in us_list for x in xs]
+        self.uct_list = [x for xs in uct_list for x in xs]
+        self.usp_list = [x for xs in usp_list for x in xs]
         self.d_list = [x for xs in d_list for x in xs]
-        self.ys_list = [x for xs in ys_list for x in xs]
-        self.yo_list = [x for xs in yo_list for x in xs]
+        self.dco_list = [x for xs in dco_list for x in xs]
+        self.dex_list = [x for xs in dex_list for x in xs]
+
+        self.y_list = [x for xs in y_list + yze_list for x in xs]
+        self.yex_list = [x for xs in yex_list for x in xs]
+        self.yco_list = [x for xs in yco_list for x in xs]
+        self.yze_list = [x for xs in yze_list for x in xs]
+
+
 
         # First row
         A = scipy.linalg.block_diag(*A_list)
-        Bc = scipy.linalg.block_diag(*Bc_list)
-        Bs = scipy.linalg.block_diag(*Bs_list)
+        Bct = scipy.linalg.block_diag(*Bct_list)
+        Bsp = scipy.linalg.block_diag(*Bsp_list)
         E = scipy.linalg.block_diag(*E_list)
 
         # Second row
-        Cs = scipy.linalg.block_diag(*Cs_list)
-        Dsc = scipy.linalg.block_diag(*Dsc_list)
-        Dss = scipy.linalg.block_diag(*Dss_list)
-        Fs = scipy.linalg.block_diag(*Fs_list)
+        Csp = scipy.linalg.block_diag(*Csp_list)
+        Dspct = scipy.linalg.block_diag(*Dspct_list)
+        Dspsp = scipy.linalg.block_diag(*Dspsp_list)
+        Fsp = scipy.linalg.block_diag(*Fsp_list)
 
         # Third row
-        Co = scipy.linalg.block_diag(*Co_list)
-        Doc = scipy.linalg.block_diag(*Doc_list)
-        Dos = scipy.linalg.block_diag(*Dos_list)
-        Fo = scipy.linalg.block_diag(*Fo_list)
+        Cze = scipy.linalg.block_diag(*Cze_list)
+        Dzect = scipy.linalg.block_diag(*Dzect_list)
+        Dzesp = scipy.linalg.block_diag(*Dzesp_list)
+        Fze = scipy.linalg.block_diag(*Fze_list)
 
         # others
         B = scipy.linalg.block_diag(*(b for b in B_list))
@@ -278,13 +330,16 @@ class DispatchModelPredictiveController:
         E = scipy.linalg.block_diag(*(e for e in E_list))
         F = scipy.linalg.block_diag(*(f for f in F_list))
 
-        self.system_row1 = np.block([[A, Bc, Bs, E]])
-        self.system_row2 = np.block([[Cs, Dsc, Dss, Fs]])
-        self.system_row3 = np.block([[Co, Doc, Dos, Fo]])
 
-        self.system = np.block(
-            [[self.system_row1], [self.system_row2], [self.system_row3]]
-        )
+        assert len(self.d_list) == Fsp.shape[1]
+
+        # self.system_row1 = np.block([[A, Bc, Bs, E]])
+        # self.system_row2 = np.block([[Cs, Dsc, Dss, Fs]])
+        # self.system_row3 = np.block([[Co, Doc, Dos, Fo]])
+
+        # self.system = np.block(
+        #     [[self.system_row1], [self.system_row2], [self.system_row3]]
+        # )
 
         # cols = {}
         # rows = {}
@@ -358,26 +413,26 @@ class DispatchModelPredictiveController:
 
         # self.ys_order = ys_order
 
-        uc_order = {}
+        # uc_order = {}
 
-        for i in range(len(self.uc_list)):
-            node = self.uc_list[i].split(" ")[-1]
-            if node not in uc_order:
-                uc_order.update({node: []})
+        # for i in range(len(self.uc_list)):
+        #     node = self.uc_list[i].split(" ")[-1]
+        #     if node not in uc_order:
+        #         uc_order.update({node: []})
 
-            uc_order[node].append(i)
+        #     uc_order[node].append(i)
 
-        self.uc_order = uc_order
+        # self.uc_order = uc_order
 
-        us_order = {}
-        for i in range(len(self.us_list)):
-            node = self.us_list[i].split(" ")[-3]
-            if node not in us_order:
-                us_order.update({node: []})
+        # us_order = {}
+        # for i in range(len(self.us_list)):
+        #     node = self.us_list[i].split(" ")[-3]
+        #     if node not in us_order:
+        #         us_order.update({node: []})
 
-            us_order[node].append(i)
+        #     us_order[node].append(i)
 
-        self.us_order = us_order
+        # self.us_order = us_order
 
         edge_order = {}
         edge_order.update({0: ("source", "generation")})
@@ -401,13 +456,19 @@ class DispatchModelPredictiveController:
 
         self.q = len(G.edges)
         self.n = len(self.x_list)
-        self.mc = len(self.uc_list)
-        self.ms = len(self.us_list)
-        self.ps = len(self.ys_list)
-        self.pse = len([ys for ys in self.ys_list if ys.startswith("yse")])
-        self.po = len(self.yo_list)
+
+        self.mct = len(self.uct_list)
+        self.msp = len(self.usp_list)
+
+        self.p = len(self.y_list)
+        self.pco = len(self.yco_list)
+        self.pex = len(self.yex_list)
+        # self.pex = len([ys for ys in self.ys_list if ys.startswith("yse")])
+        self.pze = len(self.yze_list)
         self.o = len(self.d_list)
-        self.ox = len([d for d in self.d_list if d.startswith("de")])
+        self.oco = len(self.dco_list)
+        self.oex = len(self.dex_list)
+        # self.oex = len([d for d in self.d_list if d.startswith("de")])
 
         # Get the graph constraint matrix
 
@@ -447,65 +508,76 @@ class DispatchModelPredictiveController:
         P_out = np.concatenate(p_outs, axis=0)
 
         A_block = A
-        B_block = np.block([Bc, Bs])
+        B_block = np.block([Bct, Bsp])
         E_block = E
 
-        C_block = np.block([[Cs], [Co]])
-        D_block = np.block([[Dsc, Dss], [Doc, Dos]])
-        F_block = np.block([[Fs], [Fo]])
+        C_block = np.block([[Csp], [Cze]])
+        D_block = np.block([[Dspct, Dspsp], [Dzect, Dzesp]])
+        F_block = np.block([[Fsp], [Fze]])
 
-        u_ctrl = np.array(
-            [
-                [
-                    i
-                    for i in range(len(self.uc_list + self.us_list))
-                    if (self.uc_list + self.us_list)[i].startswith("uc")
-                ]
-            ]
-        )
-        u_split = np.array(
-            [
-                [
-                    i
-                    for i in range(len(self.uc_list + self.us_list))
-                    if (self.uc_list + self.us_list)[i].startswith("us")
-                ]
-            ]
-        )
 
-        d_ex = np.array(
-            [[i for i in range(len(self.d_list)) if self.d_list[i].startswith("de")]]
-        )
-        d_co = np.array(
-            [[i for i in range(len(self.d_list)) if self.d_list[i].startswith("dc")]]
-        )
 
-        y_spex = np.array(
-            [[i for i in range(len(self.ys_list)) if self.ys_list[i].startswith("yse")]]
-        )
-        y_co = np.array(
-            [[i for i in range(len(self.ys_list)) if self.ys_list[i].startswith("ysc")]]
-        )
-        y_zero = np.array(
-            [
-                [
-                    i
-                    for i in range(len(self.ys_list + self.yo_list))
-                    if (self.ys_list + self.yo_list)[i].startswith("yo")
-                ]
-            ]
-        )
+        def get_index(label_list, substring):
+            return np.array([[i for i in range(len(label_list)) if label_list[i].startswith(substring)]])
+
+
+        # uct_index = np.array(
+        #     [[i for i in range(len(u_list)) if (u_list)[i].startswith("uc")]]
+        # )
+        uct_index = get_index(self.uct_list + self.usp_list, "uct")
+        usp_index = get_index(self.uct_list + self.usp_list, "usp")
+
+
+        dex_index = get_index(self.d_list, "dex")
+        dco_index = get_index(self.d_list, "dco")
+
+        yex_index = get_index(self.y_list, "yex")
+        yco_index = get_index(self.y_list, "yco")
+        yze_index = get_index(self.y_list, "yze")
+
+        # usp_index = np.array(
+        #     [
+        #         [
+        #             i
+        #             for i in range(len(self.uc_list + self.us_list))
+        #             if (self.uc_list + self.us_list)[i].startswith("us")
+        #         ]
+        #     ]
+        # )
+
+        # d_ex = np.array(
+        #     [[i for i in range(len(self.d_list)) if self.d_list[i].startswith("de")]]
+        # )
+        # d_co = np.array(
+        #     [[i for i in range(len(self.d_list)) if self.d_list[i].startswith("dc")]]
+        # )
+
+        # y_spex = np.array(
+        #     [[i for i in range(len(self.ys_list)) if self.ys_list[i].startswith("yse")]]
+        # )
+        # y_co = np.array(
+        #     [[i for i in range(len(self.ys_list)) if self.ys_list[i].startswith("ysc")]]
+        # )
+        # y_zero = np.array(
+        #     [
+        #         [
+        #             i
+        #             for i in range(len(self.ys_list + self.yo_list))
+        #             if (self.ys_list + self.yo_list)[i].startswith("yo")
+        #         ]
+        #     ]
+        # )
 
         e_co = np.arange(1, len(G.edges) + 1, 1)[None, :]
 
         # P in calculations still feel fragile. Relies on assumption about the order of edges in the graph. Probably fine but may throw an error some time.
 
         # TODO: look for a graph configuration where P_out and P_in are not almost Identity then see how weird the M matrix can get.
-        M_yco_dco = P_out[y_co.T, e_co] @ np.linalg.inv(P_in[d_co.T, e_co])
+        M_yco_dco = P_out[yco_index.T, e_co] @ np.linalg.inv(P_in[dco_index.T, e_co])
         # y_co  = M_yco_dco @ d_co
         self.M_yco_dco = M_yco_dco
 
-        M_dco_yco = P_in[d_co.T, e_co] @ np.linalg.inv(P_out[y_co.T, e_co])
+        M_dco_yco = P_in[dco_index.T, e_co] @ np.linalg.inv(P_out[yco_index.T, e_co])
         # d_co = M_dco_yco @ yco
         self.M_dco_yco = M_dco_yco
 
@@ -519,13 +591,13 @@ class DispatchModelPredictiveController:
             E=E_block,
             F=F_block,
             M=M_yco_dco,
-            uc=u_ctrl,
-            us=u_split,
-            de=d_ex,
-            dc=d_co,
-            ye=y_spex,
-            yz=y_zero,
-            yc=y_co,
+            uc=uct_index,
+            us=usp_index,
+            de=dex_index,
+            dc=dco_index,
+            ye=yex_index,
+            yz=yze_index,
+            yc=yco_index,
         )
 
         self.combined_block = combined_block
@@ -663,7 +735,7 @@ class DispatchModelPredictiveController:
         s_opts = {
             "print_level": 0,
             # "linear_solver": "ma27",
-            "max_iter":1000,
+            "max_iter": 1000,
         }
         opti.solver(
             "ipopt",
@@ -830,13 +902,11 @@ class DispatchModelPredictiveController:
     def compute_trajectory(self, x0, forecast, step_index=0):
         self.update_optimization_parameters(x0, forecast)
 
-        if hasattr(self, "x_init"): # then try to update initial guess
+        if hasattr(self, "x_init"):  # then try to update initial guess
             self.opti.set_initial(self.opt_vars["uc"], self.uc_init)
             self.opti.set_initial(self.opt_vars["us"], self.us_init)
             self.opti.set_initial(self.opt_vars["x"], self.x_init)
             self.opti.set_initial(self.opt_vars["ys"], self.ys_init)
-            
-
 
         try:
 
@@ -888,13 +958,11 @@ class DispatchModelPredictiveController:
             )
 
             to_plot = [x_db, uc_db, us_db, ys_db]
-            titles = ["x", "uc", "us", "ys"  ]
+            titles = ["x", "uc", "us", "ys"]
             for i in range(len(to_plot)):
-                ax[0,i].set_title(titles[i])
+                ax[0, i].set_title(titles[i])
                 for j in range(len(to_plot[i])):
                     ax[j, i].plot(to_plot[i][j, :])
-
-
 
             np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
@@ -906,7 +974,7 @@ class DispatchModelPredictiveController:
             # print(us_db)
             # print("\nDebug ys:")
             # print(ys_db)
-            # print(self.opti.debug)  
+            # print(self.opti.debug)
 
             assert False, self.opti.debug
 
@@ -925,7 +993,10 @@ class DispatchModelPredictiveController:
                 (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1),
             )
             ys_slice = slice(
-                (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1), (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1) + self.pse * self.horizon
+                (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1),
+                (self.mc + self.ms) * self.horizon
+                + self.n * (self.horizon + 1)
+                + self.pse * self.horizon,
             )
 
             jac_uc = np.reshape(jac[uc_slice], (self.horizon, self.mc))
@@ -967,18 +1038,23 @@ class DispatchModelPredictiveController:
         self.ys_init = ys
         self.curtail_init = curtail
 
-
         ysp = self.Csp @ x[:, :-1] + self.Dspc @ uc + self.Dsps @ us + self.Fsp @ de
         # coupling disturbances
         dco = self.M_dco_yco @ ysp
 
-
         ysp = np.concatenate([ysp, ys[None, :]])
 
-
-
-        self.store_solution(step_index=step_index, uc=uc, us=us, x=x, yex=ys, ysp=ysp, curtail=curtail, dex=de, dco = dco)
-
+        self.store_solution(
+            step_index=step_index,
+            uc=uc,
+            us=us,
+            x=x,
+            yex=ys,
+            ysp=ysp,
+            curtail=curtail,
+            dex=de,
+            dco=dco,
+        )
 
         if False:
 
@@ -1198,7 +1274,6 @@ class DispatchModelPredictiveController:
 
         out_label_width = int(np.max([len(label) for label in out_labels]))
         num_col_width = 10
-
 
         for row_num, row_mat in enumerate(mat):
             if not no_space:

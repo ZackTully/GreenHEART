@@ -7,6 +7,7 @@ import time
 from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
 from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 from greenheart.simulation.realtime_node import Node
+
 # Greenheart imports
 
 from greenheart.simulation.technologies.ammonia.ammonia import (
@@ -114,7 +115,6 @@ class RealTimeSimulation:
 
         self.G = G
 
-
         # Instantiate the individual steppable models of each technology
 
         RT_techs = {}
@@ -141,7 +141,6 @@ class RealTimeSimulation:
                 RT_techs.update(self._setup_steel_node())
 
         # Build the connections with a graph network
-
 
         for node in self.G.nodes:
             model = None
@@ -173,7 +172,9 @@ class RealTimeSimulation:
             if graph_config["sink_node"] == node:
                 is_sink = True
 
-            self.G.nodes[node].update({"ionode": ionode, "is_source":is_source, "is_sink":is_sink})
+            self.G.nodes[node].update(
+                {"ionode": ionode, "is_source": is_source, "is_sink": is_sink}
+            )
 
         # nx.draw_networkx(G, with_labels=True)
 
@@ -444,23 +445,35 @@ class RealTimeSimulation:
 
             if i < (len(hybrid_profile) - dispatcher.controller.horizon):
 
-                forecast = hybrid_profile[i: i + dispatcher.controller.horizon]
+                forecast = hybrid_profile[i : i + dispatcher.controller.horizon]
             else:
                 forecast = np.ones(dispatcher.controller.horizon) * hybrid_profile[i]
 
-            # TODO improve this: 
-            x0 = np.zeros( 2)
-            # x0 = np.zeros( 3)
+            # TODO improve this:
+            # x0 = np.zeros( 2)
+            x0 = np.zeros(3)
             x0[0] = self.G.nodes["battery"]["ionode"].model.storage_state
             x0[1] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
-            # x0[2] = self.G.nodes["thermal_energy_storage"]["ionode"].model.H_hot 
+            x0[2] = (
+                self.G.nodes["thermal_energy_storage"]["ionode"].model._SOC()
+                * self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh
+            )
+            # x0[2] = self.G.nodes["thermal_energy_storage"]["ionode"].model.H_hot
 
-
-            self.G = dispatcher.step(self.G, hybrid_profile[i], forecast=forecast, x_measured = x0,  step_index=i)
+            self.G = dispatcher.step(
+                self.G,
+                hybrid_profile[i],
+                forecast=forecast,
+                x_measured=x0,
+                step_index=i,
+            )
             self.G = self.step_system_state_function(self.G, hybrid_profile[i], i)
 
             if not (i % 5):
-                print(f"\r {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {(1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)) :.2f} seconds longer \t\t\t\t", end="")
+                print(
+                    f"\r {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {(1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)) :.2f} seconds longer \t\t\t\t",
+                    end="",
+                )
 
             # TODO update to use self.G not G_error
             if error_feedback:
@@ -681,7 +694,6 @@ class RealTimeSimulation:
 
         config = self.config.greenheart_config["steel"]["costs"]["feedstocks"]
 
-
         inputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
         outputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
         component_dict = {
@@ -739,7 +751,7 @@ class RealTimeSimulationOutput:
 
 
 class StandinNode:
-    def __init__(self, out_degree = 1):
+    def __init__(self, out_degree=1):
         self.output = 0
         self.out_degree = 1
         # self.out_degree = out_degree
@@ -770,9 +782,9 @@ class StandinNode:
             "y_ub": np.array([None] * p),
         }
 
-
-        self.control_model = ControlModel(A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict)
-
+        self.control_model = ControlModel(
+            A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict
+        )
 
     def set_output(self, output):
         self.output = output
@@ -838,8 +850,6 @@ class IONode:
         #     self.model.control_model.make_splitting_node(self.out_degree)
 
         # self.make_fake_state_space()
-            
-        
 
     def step(
         self,
@@ -854,7 +864,9 @@ class IONode:
 
         model_input = self.consolidate_inputs(graph_input)
         model_dispatch_ctrl = self.model_dispatch_ctrl(model_input, node_dispatch_ctrl)
-        model_output, u_passthrough, u_curtail = self.model.step(model_input, model_dispatch_ctrl, step_index)
+        model_output, u_passthrough, u_curtail = self.model.step(
+            model_input, model_dispatch_ctrl, step_index
+        )
 
         # TODO send u_passthrough downstream
 
@@ -949,14 +961,14 @@ class IONode:
 
             graph_output = np.zeros((4, len(node_dispatch_split)))
             graph_output[np.where(self.input_list)[0], :] = (
-                np.array([model_output]).T @ np.array([node_dispatch_split])
+                np.array([model_output]).T
+                @ np.array([node_dispatch_split])
                 # node_dispatch_split * model_output
             )
 
             # if self.outputs["T"]:
             if self.name == "electrolyzer":
-                graph_output[3,:] = model_output[1]
-        
+                graph_output[3, :] = model_output[1]
 
         else:
 
@@ -981,7 +993,7 @@ class IONode:
             n = 0
             o = self.in_degree
             p = self.out_degree
-            
+
             self.A = np.zeros((n, n))
             self.B = np.zeros((n, m))
             self.E = np.zeros((n, o))

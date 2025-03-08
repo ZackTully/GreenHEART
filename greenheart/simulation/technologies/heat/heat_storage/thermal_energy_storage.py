@@ -8,6 +8,233 @@ from greenheart.simulation.technologies.dispatch.control_model import ControlMod
 
 
 class ThermalEnergyStorage:
+    pass
+
+    def __init__(
+        self,
+        M_hot_capacity=22500e3,
+        M_buffer_capacity=22500e3,
+        mdot_max_charge=1082057,
+        mdot_max_discharge=1082057,
+        T_hot_target=1200,
+        T_buffer_target=300,
+        initial_SOC=0.5,
+        M_total=22500e3,
+    ):
+
+        self.particle = Quartz()
+        self.C2K = 273.15
+        self.kJpkWh = 3600  # kJ per kWh
+        self.kWhpkJ = 1 / 3600  # kWh per kJ
+
+        self.lift_power_kWhpkg = (482 * 84.1 / 25248) * self.kWhpkJ
+        self.m_charge_max_kgphr = mdot_max_charge
+        self.m_discharge_max_kgphr = mdot_max_discharge
+        # self.m_charge_max_kgphr = 25248 * (3600 / 84.1)
+        # self.m_discharge_max_kgphr = 25248 * (3600 / 84.1)
+
+        self.T_hot_target = T_hot_target  # [C]
+        self.T_buffer_target = T_buffer_target  # [C]
+        # self.T_cold_target = 25 # [C]
+
+        self.T_hot = 1200  # [C]
+        self.T_buffer = 300  # [C]
+
+        self.M_hot_max = M_hot_capacity
+        self.M_buffer_max = M_buffer_capacity
+
+        self.M_total = M_total  # kg
+
+        self.M_hot = initial_SOC * self.M_total
+        self.M_buffer = (1 - initial_SOC) * self.M_total
+
+        self.H_hot_max_kWh = (
+            self.particle.H(self.T_hot_target + self.C2K)
+            / (self.particle.molar_mass / 1000)
+            / 3600
+            * self.M_hot_max
+        )
+        self.H_buffer_max_kWh = (
+            self.particle.H(self.T_buffer_target + self.C2K)
+            / (self.particle.molar_mass / 1000)
+            / 3600
+            * self.M_buffer_max
+        )
+
+        self.H_capacity_kWh = (
+            self.delta_H(self.T_buffer_target, self.T_hot_target) * self.M_total
+        )
+
+
+        self.max_charge_kWhphr = self.delta_H(self.T_buffer_target, self.T_hot_target) * self.m_charge_max_kgphr
+        self.max_discharge_kWhphr = -self.delta_H(self.T_hot_target, self.T_buffer_target) * self.m_discharge_max_kgphr
+
+        self.setup_storage()
+        self.control_model = self.create_control_model()
+
+
+        []
+
+    def _SOC(self):
+        return (self.tank_H("hot") - self.tank_H("buffer")) / self.H_capacity_kWh
+
+
+    def tank_H(self, which=None):
+        """_summary_
+
+        Args:
+            which (str, optional): "hot" or "buffer" which tank to return the enthalpy for
+
+        Returns:
+            float : [kWh] Current enthalpy of the tank
+        """
+
+        if which == "hot":
+            H = (
+                self.particle.H(self.T_hot + self.C2K)
+                / (self.particle.molar_mass / 1000)
+                / 3600
+                * self.M_hot
+            )
+        elif which == "buffer":
+            H = (
+                self.particle.H(self.T_buffer + self.C2K)
+                / (self.particle.molar_mass / 1000)
+                / 3600
+                * self.M_buffer
+            )
+
+        return H
+
+    def delta_H(self, T1, T2):
+        """_summary_
+
+        Args:
+            T1 (float): Start temperature [C]
+            T2 (float): End temperature [C]
+
+        Returns:
+            (float): change in enthalpy in [kWh kg^-1]
+        """
+        return (
+            self.kWhpkJ
+            * (self.particle.H(T2 + self.C2K) - self.particle.H(T1 + self.C2K))
+            / (self.particle.molar_mass / 1000)
+        )
+
+    def step(self, available_power, dispatch, step_index=None):
+
+        P_charge_desired_kWh = np.max([dispatch, 0])
+        Q_discharge_desired_kWh = -np.min([dispatch, 0])
+
+        m_charge, m_discharge = self.low_level_controller(
+            available_power, P_charge_desired_kWh, Q_discharge_desired_kWh, step_index
+        )
+
+        pass
+
+    def low_level_controller(
+        self, available_power, P_charge_desired_kWh, Q_discharge_desired_kWh, step_index
+    ):
+
+        if P_charge_desired_kWh > available_power:
+            P_charge_desired_kWh = available_power
+            unused_power = 0
+        else:
+            unused_power = available_power - P_charge_desired_kWh
+
+        # P_charge_desired_kWh = np.min([available_power, P_charge_desired_kWh])
+
+        m_charge = P_charge_desired_kWh / (
+            self.delta_H(self.T_buffer, self.T_hot_target) + self.lift_power_kWhpkg
+        )
+
+        assert m_charge <= self.m_charge_max_kgphr
+        assert m_charge >= self.M_buffer
+
+        # Choose m_discharge
+
+        # FIXME dont take the lifting power out of the heat energy out
+        m_discharge = Q_discharge_desired_kWh / (
+            -self.delta_H(self.T_hot, self.T_buffer_target) + self.lift_power_kWhpkg
+        )
+
+        assert m_discharge <= self.m_discharge_max_kgphr
+        assert m_discharge <= self.M_hot
+
+        return m_charge, m_discharge
+
+    def step_model(self, m_charge, m_discharge, step_index):
+
+        delta_M_hot = m_charge - m_discharge
+        delta_M_buffer = m_discharge - m_charge
+
+        delta_T_hot = 0
+        delta_T_buffer = 0
+
+        self.M_hot +=  delta_M_hot
+        self.M_buffer += delta_M_buffer
+
+        self.T_hot + delta_T_hot
+        self.T_buffer += delta_T_buffer
+
+        self.store_step(step_index)
+
+    def setup_storage(self):
+        duration = 8760
+        
+        self.M_hot_store = np.zeros(duration)
+        self.M_buffer_store = np.zeros(duration)
+
+        self.T_hot_store = np.zeros(duration)
+        self.T_buffer_store = np.zeros(duration)
+        
+        self.SOC_store = np.zeros(duration)
+
+
+
+
+    def store_step(self, step_index):
+
+        self.M_hot_store[step_index] = self.M_hot
+        self.M_buffer_store[step_index] = self.M_buffer
+
+        self.T_hot_store[step_index] = self.T_hot
+        self.T_buffer_store[step_index] = self.T_buffer
+
+        self.SOC_store[step_index] = self._SOC()
+
+    def create_control_model(self):
+        m = 1
+        n = 1
+        p = 1
+        o = 1
+
+        A = np.array([[1]])
+        B = np.array([[1]])
+        C = np.array([[0]])
+        D = np.array([[-1]])
+        E = np.array([[0]])
+        F = np.array([[1]])
+
+        bounds_dict = {
+            "u_lb": np.array([self.max_discharge_kWhphr]),
+            "u_ub": np.array([self.max_charge_kWhphr]),
+            "x_lb": np.array([0]),
+            "x_ub": np.array([self.H_capacity_kWh]),
+            "y_lb": np.array([None]),
+            "y_ub": np.array([None]),
+        }
+
+        control_model = ControlModel(
+            A, B, C, D, E, F, bounds=bounds_dict, discrete=True
+        )
+
+        return control_model
+   
+
+
+class ThermalEnergyStorage_old:
 
     # TODO check units on inputs for consistency kWH
     # TODO also check for kelvin celsisus consistency
@@ -398,6 +625,7 @@ class EnduringParticleSilo:
 
 # class EnduringCosts:
 
+
 class HighTempTES:
     def __init__(
         self,
@@ -607,5 +835,7 @@ if __name__ == "__main__":
     #     / 1e6
     #     / 3600
     # )
+
+    TES = ThermalEnergyStorage()
 
     []
