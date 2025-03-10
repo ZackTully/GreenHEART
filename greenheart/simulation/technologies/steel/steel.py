@@ -1105,6 +1105,8 @@ class SteelModel:
         self.control_model = ControlModel(
             A, B, C, D, E, F, bounds=bounds_dict, discrete=True
         )
+        self.control_model.set_disturbance_domain([1, 1, 1])
+        self.control_model.set_output_domain([0, 0, 0])
 
     def setup_simulation_storage(self):
         self.fe2o3_store = np.zeros(8760)

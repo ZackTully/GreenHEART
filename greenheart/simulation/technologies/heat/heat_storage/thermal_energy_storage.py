@@ -8,7 +8,6 @@ from greenheart.simulation.technologies.dispatch.control_model import ControlMod
 
 
 class ThermalEnergyStorage:
-    pass
 
     def __init__(
         self,
@@ -30,8 +29,11 @@ class ThermalEnergyStorage:
         self.lift_power_kWhpkg = (482 * 84.1 / 25248) * self.kWhpkJ
         self.m_charge_max_kgphr = mdot_max_charge
         self.m_discharge_max_kgphr = mdot_max_discharge
-        # self.m_charge_max_kgphr = 25248 * (3600 / 84.1)
-        # self.m_discharge_max_kgphr = 25248 * (3600 / 84.1)
+
+        self.eta_electric_heater = 0.98
+
+        self.Q_loss_flag = True
+        self.Q_loss_rate_kWhphr = 0.01 / 24  # 1% per day loss of heat energy
 
         self.T_hot_target = T_hot_target  # [C]
         self.T_buffer_target = T_buffer_target  # [C]
@@ -41,7 +43,10 @@ class ThermalEnergyStorage:
         self.T_buffer = 300  # [C]
 
         self.M_hot_max = M_hot_capacity
+        self.M_hot_min = 0.01 * M_hot_capacity
+
         self.M_buffer_max = M_buffer_capacity
+        self.M_buffer_min = 0.01 * M_buffer_capacity
 
         self.M_total = M_total  # kg
 
@@ -65,19 +70,25 @@ class ThermalEnergyStorage:
             self.delta_H(self.T_buffer_target, self.T_hot_target) * self.M_total
         )
 
-
-        self.max_charge_kWhphr = self.delta_H(self.T_buffer_target, self.T_hot_target) * self.m_charge_max_kgphr
-        self.max_discharge_kWhphr = -self.delta_H(self.T_hot_target, self.T_buffer_target) * self.m_discharge_max_kgphr
+        self.max_charge_kWhphr = (
+            self.delta_H(self.T_buffer_target, self.T_hot_target)
+            * self.m_charge_max_kgphr
+        )
+        self.max_discharge_kWhphr = (
+            -self.delta_H(self.T_hot_target, self.T_buffer_target)
+            * self.m_discharge_max_kgphr
+        )
 
         self.setup_storage()
         self.control_model = self.create_control_model()
 
-
         []
 
     def _SOC(self):
-        return (self.tank_H("hot") - self.tank_H("buffer")) / self.H_capacity_kWh
-
+        return (
+            self.delta_H(self.T_buffer, self.T_hot) * self.M_hot
+        ) / self.H_capacity_kWh
+        # return (self.tank_H("hot") - self.tank_H("buffer")) / self.H_capacity_kWh
 
     def tank_H(self, which=None):
         """_summary_
@@ -127,11 +138,17 @@ class ThermalEnergyStorage:
         P_charge_desired_kWh = np.max([dispatch, 0])
         Q_discharge_desired_kWh = -np.min([dispatch, 0])
 
-        m_charge, m_discharge = self.low_level_controller(
+        m_charge, m_discharge, unused_power = self.low_level_controller(
             available_power, P_charge_desired_kWh, Q_discharge_desired_kWh, step_index
         )
 
-        pass
+        Q_out_kWh = self.step_model(m_charge, m_discharge, step_index)
+
+        y_model = Q_out_kWh
+        u_passthrough = 0
+        u_curtail = unused_power
+
+        return y_model, u_passthrough, u_curtail
 
     def low_level_controller(
         self, available_power, P_charge_desired_kWh, Q_discharge_desired_kWh, step_index
@@ -145,12 +162,16 @@ class ThermalEnergyStorage:
 
         # P_charge_desired_kWh = np.min([available_power, P_charge_desired_kWh])
 
-        m_charge = P_charge_desired_kWh / (
+        m_charge = (self.eta_electric_heater * P_charge_desired_kWh) / (
             self.delta_H(self.T_buffer, self.T_hot_target) + self.lift_power_kWhpkg
         )
 
-        assert m_charge <= self.m_charge_max_kgphr
-        assert m_charge >= self.M_buffer
+        m_charge_sat = np.min(
+            [m_charge, self.m_charge_max_kgphr, self.M_buffer - self.M_buffer_min]
+        )
+
+        # assert m_charge <= self.m_charge_max_kgphr
+        # assert m_charge <= self.M_buffer
 
         # Choose m_discharge
 
@@ -159,40 +180,83 @@ class ThermalEnergyStorage:
             -self.delta_H(self.T_hot, self.T_buffer_target) + self.lift_power_kWhpkg
         )
 
-        assert m_discharge <= self.m_discharge_max_kgphr
-        assert m_discharge <= self.M_hot
+        m_discharge_sat = np.min(
+            [m_discharge, self.m_discharge_max_kgphr, self.M_hot - self.M_hot_min]
+        )
 
-        return m_charge, m_discharge
+        # assert m_discharge <= self.m_discharge_max_kgphr
+        # assert m_discharge <= self.M_hot
+
+        return m_charge_sat, m_discharge_sat, unused_power
 
     def step_model(self, m_charge, m_discharge, step_index):
 
         delta_M_hot = m_charge - m_discharge
         delta_M_buffer = m_discharge - m_charge
 
-        delta_T_hot = 0
-        delta_T_buffer = 0
+        if self.Q_loss_flag:
 
-        self.M_hot +=  delta_M_hot
+            if (self.M_hot / self.M_hot_max) > 0.01:
+                Q_loss_hot = self.Q_loss_rate_kWhphr * self.tank_H("hot")
+                delta_T_hot = -scipy.optimize.fsolve(
+                    lambda delta_T: Q_loss_hot
+                    - self.delta_H(self.T_hot - delta_T, self.T_hot) * self.M_hot,
+                    x0=1,
+                    xtol=1e-2,
+                    maxfev=50,
+                )[0]
+            else:
+                delta_T_hot = 0
+
+            if (self.M_buffer / self.M_buffer_max) > 0.01:
+                Q_loss_buffer = self.Q_loss_rate_kWhphr * self.tank_H("buffer")
+                delta_T_buffer = -scipy.optimize.fsolve(
+                    lambda delta_T: Q_loss_buffer
+                    - self.delta_H(self.T_buffer - delta_T, self.T_buffer)
+                    * self.M_buffer,
+                    x0=1,
+                    xtol=1e-2,
+                    maxfev=50,
+                )[0]
+
+            else:
+                delta_T_buffer = 0
+
+        else:
+
+            delta_T_hot = 0
+            delta_T_buffer = 0
+
+        Q_out_kWh = -self.delta_H(self.T_hot, self.T_buffer_target) * m_discharge
+
+        self.M_hot += delta_M_hot
         self.M_buffer += delta_M_buffer
 
-        self.T_hot + delta_T_hot
-        self.T_buffer += delta_T_buffer
+        # self.T_hot += delta_T_hot
+        # self.T_buffer += delta_T_buffer
+
+        self.T_hot = (
+            (self.T_hot + delta_T_hot) * self.M_hot + m_charge * self.T_hot_target
+        ) / (m_charge + self.M_hot)
+        self.T_buffer = (
+            (self.T_buffer + delta_T_buffer) * self.M_buffer
+            + m_discharge * self.T_buffer_target
+        ) / (m_discharge + self.M_buffer)
 
         self.store_step(step_index)
 
+        return Q_out_kWh
+
     def setup_storage(self):
         duration = 8760
-        
+
         self.M_hot_store = np.zeros(duration)
         self.M_buffer_store = np.zeros(duration)
 
         self.T_hot_store = np.zeros(duration)
         self.T_buffer_store = np.zeros(duration)
-        
+
         self.SOC_store = np.zeros(duration)
-
-
-
 
     def store_step(self, step_index):
 
@@ -218,7 +282,7 @@ class ThermalEnergyStorage:
         F = np.array([[1]])
 
         bounds_dict = {
-            "u_lb": np.array([self.max_discharge_kWhphr]),
+            "u_lb": np.array([-self.max_discharge_kWhphr]),
             "u_ub": np.array([self.max_charge_kWhphr]),
             "x_lb": np.array([0]),
             "x_ub": np.array([self.H_capacity_kWh]),
@@ -230,8 +294,13 @@ class ThermalEnergyStorage:
             A, B, C, D, E, F, bounds=bounds_dict, discrete=True
         )
 
+        control_model.set_disturbance_domain([1, 0, 0])
+        control_model.set_output_domain([0, 1, 0])
+
+        # control_model.set_disturbance_domain({"P":[0]})
+        # control_model.set_output_domain({"Q":[0]})
+
         return control_model
-   
 
 
 class ThermalEnergyStorage_old:
@@ -836,6 +905,76 @@ if __name__ == "__main__":
     #     / 3600
     # )
 
+    # Updated model from March 8 2025
     TES = ThermalEnergyStorage()
+
+    # Do timeseries comparing the control model to the simulation model
+
+    t_start = 0
+    t_stop = 2000  # hours
+    dt = 1  # hour
+
+    time = np.arange(t_start, t_stop, dt)
+
+    P_available = 125e3 * np.ones(len(time))  # 400 MW available
+    P_charge_desired = 100e3 * np.sin(
+        time / (100)
+    )  # charge with 300 MW. Close to maximium charging rate
+
+
+    P_charge_desired = np.concatenate([
+        100e3 * np.ones(100),
+        -100e3 * np.ones(100), 
+        np.zeros(200),
+        100e3 * np.ones(100),
+        np.zeros(100), 
+        -100e3 * np.ones(100), 
+        np.zeros(1300)
+    ])
+
+
+
+
+    Q_out_store = np.zeros(len(time))
+    P_pt_store = np.zeros(len(time))
+    P_curtail_store = np.zeros(len(time))
+
+    A = TES.control_model.A
+    B = TES.control_model.B
+    C = TES.control_model.C
+    D = TES.control_model.D
+    E = TES.control_model.E
+    F = TES.control_model.F
+
+    for i in range(len(time)):
+        Q_out, P_pt, P_curtail = TES.step(
+            available_power=P_available[i], dispatch=P_charge_desired[i], step_index=i
+        )
+
+        Q_out_store[i] = Q_out
+        P_pt_store[i] = P_pt
+        P_curtail_store[i] = P_curtail
+
+    fig, ax = plt.subplots(2, 3, sharex="all", sharey="col", layout="constrained")
+
+    ax[0, 0].plot(time, P_available, label="Available")
+    ax[0, 0].plot(time, P_charge_desired, label="Dispatch")
+
+    ax[0, 0].plot(time, Q_out_store, label="Q out")
+    ax[0, 0].plot(time, P_pt_store, label="passthrough")
+    ax[0, 0].plot(time, P_curtail_store, label="curtail")
+    ax[0, 2].plot(time, TES.SOC_store[0:t_stop])
+
+    for i in range(ax.shape[0]):
+        for j in range(ax.shape[1]):
+            ax[i, j].legend()
+
+    fig, ax = plt.subplots(1, 4, sharex="all", layout="constrained")
+
+    ax[0].plot(time, TES.M_hot_store[0:t_stop], label="M hot")
+    ax[0].plot(time, TES.M_buffer_store[0:t_stop], label="M buffer")
+
+    ax[1].plot(time, TES.T_hot_store[0:t_stop], label="T hot")
+    ax[1].plot(time, TES.T_buffer_store[0:t_stop], label="T buffer")
 
     []

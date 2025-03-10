@@ -20,10 +20,15 @@ class ControlModel:
         discrete:bool = True
     ):
 
-        # Put the splitter modification to the statespace in here
-
         # Always initialize the control model system as a single output system
         # Then split it by duplicating rows/columns of D or F and add the appropriate constraints
+
+
+        # TODO put domain of inputs and outputs
+
+
+        # Domain input matrix = [1, 0, 1, 1] where in edge time input matrix = input
+        # Domain output matrix = same thing
 
 
         self.A = A
@@ -52,11 +57,111 @@ class ControlModel:
                 self_bound = self.parse_bound(bounds[bound], getattr(self, bound))
                 setattr(self, bound, self_bound)
 
+        self.constraints([], [])
+
     def parse_bound(self, dict_bound, self_bound):
         assert len(dict_bound) == len(self_bound), "given bounds must match the system dimensions"
         return dict_bound
     
+
+
+    def constraints(self, y_position, constraint_type):
+
+        # attribute to self any constraints that need to be included in the plant model to make the component model work correctly
+        # Like for stoichiometric components like heat exchanger with output > 0 type constraints
+
+
+        # in control model, separate the input output aspects of the statespace from constraints that look like state space
+
+        # >=0 system
+
+        self.C_gt = [np.zeros((0, self.n))]
+        self.D_gt = [np.zeros((0, self.m))]
+        self.F_gt = [np.zeros((0, self.o))]
+
+
+        # =0 system
+
+        self.C_et = [np.zeros((0, self.n))]
+        self.D_et = [np.zeros((0, self.m))]
+        self.F_et = [np.zeros((0, self.o))]
+
+
+        for i in range(len(y_position)):
+
+            C_temp = np.atleast_2d(self.C[y_position[i], :])
+            D_temp = np.atleast_2d(self.D[y_position[i], :])
+            F_temp = np.atleast_2d(self.F[y_position[i], :])
+
+            self.C = np.delete(self.C, y_position[i], axis=0)
+            self.D = np.delete(self.D, y_position[i], axis=0)
+            self.F = np.delete(self.F, y_position[i], axis=0)
+
+            self.p -= 1
+
+            if constraint_type[i] == "greater":
+                self.C_gt.append(C_temp)
+                self.D_gt.append(D_temp)
+                self.F_gt.append(F_temp)
+            elif constraint_type[i] == "equal":
+                self.C_et.append(C_temp)
+                self.D_et.append(D_temp)
+                self.F_et.append(F_temp)
+
+
+        self.C_gt = np.concatenate(self.C_gt, axis=0)
+        self.D_gt = np.concatenate(self.D_gt, axis=0)
+        self.F_gt = np.concatenate(self.F_gt, axis=0)
+
+        self.C_et = np.concatenate(self.C_et, axis=0)
+        self.D_et = np.concatenate(self.D_et, axis=0)
+        self.F_et = np.concatenate(self.F_et, axis=0)
+
+
+    def set_disturbance_domain(self, domain_list):
+        self.disturbance_domain = np.array(domain_list)
+
+    def set_output_domain(self, domain_list):
+        self.output_domain = np.array(domain_list)
+
+    # def set_disturbance_domain(self, domain_dict):
+    #     if "P" in domain_dict:
+    #         self.P_disturbance = domain_dict["P"]
+    #     else:
+    #         self.P_disturbance = []
+
+    #     if "Qdot" in domain_dict:
+    #         self.Qdot_disturbance = domain_dict["Qdot"]
+    #     else:
+    #         self.Qdot_disturbance = []
+        
+    #     if "mdot" in domain_dict:
+    #         self.mdot_disturbance = domain_dict["mdot"]
+    #     else:
+    #         self.mdot_disturbance = []
+
+    # def set_output_domain(self, domain_dict):
+    #     if "P" in domain_dict:
+    #         self.P_output = domain_dict["P"]
+    #     else:
+    #         self.P_output = []
+
+    #     if "Qdot" in domain_dict:
+    #         self.Qdot_output = domain_dict["Qdot"]
+    #     else:
+    #         self.Qdot_output = []
+        
+    #     if "mdot" in domain_dict:
+    #         self.mdot_output = domain_dict["mdot"]
+    #     else:
+    #         self.mdot_output = []
+
+ 
+
+
     def make_splitting_node(self, out_degree):
+
+        # Dont need this anymore
 
         # Constraint C x + D u + F d == Cs x + Ds u + Fs d
 

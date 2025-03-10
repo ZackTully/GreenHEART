@@ -3,6 +3,9 @@ import scipy.interpolate
 
 
 class ShomateEquation:
+
+    # TODO make this robust to temperature inputs outside of the expected range but give a warning if that is the case
+
     T: np.ndarray
 
     a: np.ndarray
@@ -23,7 +26,15 @@ class ShomateEquation:
     g_interp: scipy.interpolate.interp1d
     h_interp: scipy.interpolate.interp1d
 
-    def __init__(self):
+    def __init__(self, kelvin=True):
+
+        if kelvin:
+            self.kelvin = True
+            self.kelvin_offset = 0
+        else:  # celsius
+            self.kelvin = False
+            self.kelvin_offset = 273.15  # [C]
+
         self.a_interp = scipy.interpolate.interp1d(self.T, self.a, kind="previous")
         self.b_interp = scipy.interpolate.interp1d(self.T, self.b, kind="previous")
         self.c_interp = scipy.interpolate.interp1d(self.T, self.c, kind="previous")
@@ -65,6 +76,16 @@ class ShomateEquation:
         )
 
         return H
+
+    def H_kwhpkg(self, temperature):
+        """
+        Args:
+            temperature (float): Temperature of the material in [K]
+
+        Returns:
+            float: Standard enthalpy in [kWh kg^-1]
+        """
+        return self.H(temperature) / (self.molar_mass / 1000) / 3600
 
     def S(self, temperature):
 
@@ -129,8 +150,9 @@ class Hydrogen(Gas):
 #     G = np.array([223.3967, 219.7809, 219.7809])
 #     H = np.array([-241.8264, -241.8264, -241.8264])
 
-    # molar_mass = 18.0153  # [g mol^-1]
-    # Water only in gas phase with nist data
+# molar_mass = 18.0153  # [g mol^-1]
+# Water only in gas phase with nist data
+
 
 class Water(Gas):
     # H20
@@ -143,15 +165,15 @@ class Water(Gas):
     a = np.array([-203.6060, 30.09200, 41.96426, 41.96426])
     b = np.array([1523.290, 6.832514, 8.622053, 8.622053])
     c = np.array([-3196.413, 6.793435, -1.499780, -1.499780])
-    d = np.array([ 2474.455, -2.534480, 0.098119, 0.098119])
+    d = np.array([2474.455, -2.534480, 0.098119, 0.098119])
     e = np.array([3.855326, 0.082139, -11.15764, -11.15764])
-    f = np.array([ -256.5478, -250.8810, -272.1797, -272.1797])
+    f = np.array([-256.5478, -250.8810, -272.1797, -272.1797])
     g = np.array([-488.7163, 223.3967, 219.7809, 219.7809])
     h = np.array([-285.8304, -241.8264, -241.8264, -241.8264])
 
     molar_mass = 18.0153  # [g mol^-1]
 
-    # water with liquid phase too from 
+    # water with liquid phase too from
     # https://webbook.nist.gov/cgi/cbook.cgi?ID=C7732185&Mask=2&Type=JANAFL&Table=on#JANAFL
 
 
@@ -265,4 +287,4 @@ class Quartz(Solid):
     g = np.array([-27.96962, 105.8092, 105.8092])
     h = np.array([-910.8568, -910.8568, -910.8568])
 
-    molar_mass = 60.0843 # [g mol^-1]
+    molar_mass = 60.0843  # [g mol^-1]

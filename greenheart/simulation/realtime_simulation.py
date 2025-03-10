@@ -451,10 +451,10 @@ class RealTimeSimulation:
 
             # TODO improve this:
             # x0 = np.zeros( 2)
-            x0 = np.zeros(3)
-            x0[0] = self.G.nodes["battery"]["ionode"].model.storage_state
-            x0[1] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
-            x0[2] = (
+            x0 = np.zeros(1)
+            # x0[0] = self.G.nodes["battery"]["ionode"].model.storage_state
+            # x0[1] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
+            x0[0] = (
                 self.G.nodes["thermal_energy_storage"]["ionode"].model._SOC()
                 * self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh
             )
@@ -785,6 +785,9 @@ class StandinNode:
         self.control_model = ControlModel(
             A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict
         )
+
+        self.control_model.set_disturbance_domain([1, 0, 0])
+        self.control_model.set_output_domain([1, 0, 0])
 
     def set_output(self, output):
         self.output = output

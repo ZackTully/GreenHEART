@@ -248,9 +248,9 @@ class GreenheartDispatch:
         # u_mpc = self.controller.compute_trajectory(x0, forecast)
         if not(step_index % self.update_period) or (step_index == 0):
             uc_mpc_traj, us_mpc_traj, curtail_mpc_traj= self.controller.compute_trajectory(x0, forecast, step_index)
-            self.uc_mpc_traj = uc_mpc_traj
-            self.us_mpc_traj = us_mpc_traj
-            self.curtail_mpc_traj = curtail_mpc_traj
+            self.uc_mpc_traj = np.atleast_2d(uc_mpc_traj)
+            self.us_mpc_traj = np.atleast_2d(us_mpc_traj)
+            self.curtail_mpc_traj = np.atleast_2d(curtail_mpc_traj)
             self.previous_update = step_index
 
         uc_mpc = self.uc_mpc_traj[:, step_index - self.previous_update]
@@ -273,12 +273,13 @@ class GreenheartDispatch:
 
 
 
-        for node in self.controller.uc_order.keys():
-            G.nodes[node]["dispatch_ctrl"] = uc_mpc[self.controller.uc_order[node]]
+        for node in self.controller.uct_order.keys():
+            if len(self.controller.uct_order[node]) > 0:
+                G.nodes[node]["dispatch_ctrl"] = uc_mpc[self.controller.uct_order[node]]
         
-        for node in self.controller.us_order.keys():
-            if len(self.controller.us_order[node]) > 1:
-                G.nodes[node]["dispatch_split"] = us_mpc[self.controller.us_order[node]]
+        for node in self.controller.usp_order.keys():
+            if len(self.controller.usp_order[node]) >= 1:
+                G.nodes[node]["dispatch_split"] = us_mpc[self.controller.usp_order[node]]
 
 
         # for i in range(len(u_mpc)):

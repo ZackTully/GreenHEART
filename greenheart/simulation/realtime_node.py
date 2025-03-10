@@ -47,6 +47,9 @@ class Node:
 
         self.splitting_method = "fractional" # fractional or absolute
 
+    def __repr__(self):
+        return self.name
+
     def consolidate_incoming_edges(self, incoming_edges):
 
         # Take a list of one or more graph edges as inputs and consolidate into one edge

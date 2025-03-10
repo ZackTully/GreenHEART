@@ -7,6 +7,11 @@ from typing import Optional
 from hopp.type_dec import FromDictMixin
 
 from greenheart.simulation.technologies.dispatch.control_model import ControlModel
+from greenheart.simulation.technologies.heat.materials import Hydrogen
+
+# TODO use materials from materials file
+
+
 
 @define
 class StorageParticle(FromDictMixin):
@@ -177,12 +182,17 @@ class Temperatures(FromDictMixin):
 
 
 class HeatExchanger:
-    def __init__(self):
+    def __init__(self, separate_cm_constraint=True):
+
+        self.H2 = Hydrogen()
+        self.C2K = 273.15
+
+        # Put some of this stuff into a config file
 
         self.eta_HX = 1
         self.Tout_desired = 900  # [C]
         self.Tout = self.Tout_desired
-        self.cp = 14.304  # [J kg^-1 K^-1]
+        self.cp = 14.304  # [kJ kg^-1 K^-1]
 
         self.output_variable = "Tout"
         self.output_variable = "mdot"
@@ -192,11 +202,50 @@ class HeatExchanger:
         self.output_store = np.zeros((4, duration))
         self.wasted_store = np.zeros((4, duration))
 
-        self.control_model = self.create_control_model()
+        self.control_model = self.create_control_model(separate_cm_constraint)
 
 
-    def create_control_model(self):
+    def calc_heating_ratio(self, T_in, T_out):
+        delta_H_kwhpkg = self.H2.H_kwhpkg(T_out + self.C2K) - self.H2.H_kwhpkg(T_in + self.C2K)
+        return delta_H_kwhpkg
 
+
+    def step_heating(self, mdot_in, Qdot_in, T_in, T_out=None):
+ 
+        if T_out is None:
+            T_out = self.Tout_desired
+
+
+        hr_kWhpkg = self.calc_heating_ratio(T_in, T_out) # ratio of heat input to hydrogen input
+
+
+        mdot_out = np.min([mdot_in, (1 / hr_kWhpkg) * Qdot_in])
+        Qdot_used = mdot_out * hr_kWhpkg
+        mdot_waste = mdot_in - mdot_out
+        Qdot_waste = Qdot_in - Qdot_used
+
+
+
+        # mdot_out_kgphr = mdot_in
+
+        # Qdot_used_kWh =  mdot_in * hr_kWhpkg
+
+        # if Qdot_used_kWh > Qdot_in:
+        #     []
+
+        # Qdot_out_kWhphr = Qdot_in - Qdot_used_kWh # extra or wasted Qdot_in
+
+
+
+
+        return mdot_out, mdot_waste, Qdot_waste
+
+
+
+
+    def create_control_model(self, separate_cm_constraint=True):
+        # FIXME this is dangerous and sketchy
+        # the actual outputs are set in the dispatch_mpc file so that needs to be improved later
 
         m = 0
         n = 0
@@ -204,12 +253,15 @@ class HeatExchanger:
         o = 2
 
 
+        # Assume the input is halfway between 20C from storage and 80C from electrolyzer
+        heating_ratio = self.calc_heating_ratio(50, 900)
+
         A = np.zeros((n, n))
         B = np.zeros((n, m))
         C = np.zeros((p, n))
         D = np.zeros((p, m))
         E = np.zeros((n, o))
-        F = np.eye(p)
+        F = np.array([[1, 0], [-heating_ratio, 1]])
 
         bounds_dict = {
             "u_lb": np.array([]),
@@ -223,6 +275,12 @@ class HeatExchanger:
         control_model = ControlModel(
             A, B, C, D, E, F, bounds=bounds_dict, discrete=True
         )
+
+        if separate_cm_constraint:
+            control_model.constraints(y_position=[1], constraint_type=["greater"])
+
+        control_model.set_disturbance_domain([[0, 0, 1], [1, 1, 0]])
+        control_model.set_output_domain([0, 0, 1])
 
         return control_model
 
@@ -328,10 +386,7 @@ class HeatExchanger:
 
     def step(self, inputs, dispatch, step_index):
 
-        # if dispatch[0] > 0:
-        #     desired_mdotout = dispatch[0]
-        # else: 
-        #     desired_mdotout = 0
+
 
 
         Qdotin, mdotin, Tin = self.inputs(inputs)
@@ -360,8 +415,14 @@ class HeatExchanger:
 
         self.store_step(output, wasted, step_index)
 
+        # TODO come back and make the output better
+
         # return output, wasted
-        return (output[2], output[3])
+        # return (output[2], output[3])
+        u_passthrough = 0
+        u_curtail = wasted[2]
+
+        return output[2], u_passthrough, u_curtail
 
     def store_step(self, output, wasted, step_index):
         self.output_store[:, step_index] = output
@@ -369,15 +430,112 @@ class HeatExchanger:
 
 
 if __name__ == "__main__":
-    HX = HeatExchanger()
+    HX = HeatExchanger(separate_cm_constraint=False)
 
-    Qdot, T_particle_out = HX.input_output(
-        mdot_h2=100 / 3600,
-        T_h2_in=25,
-        T_h2_out=900,
-        mdot_particle=1000 / 3600,
-        T_particle_in=1500,
-        T_particle_out=10,
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl
+
+    n_mdot = 25
+    n_Qdot = 25
+
+    mdot_in = np.linspace(0, 1000, n_mdot)
+    Qdot_in = np.linspace(0, 1000, n_Qdot)
+
+    mdot_out = np.zeros((n_mdot, n_Qdot))
+    mdot_waste = np.zeros((n_mdot, n_Qdot))
+    Qdot_waste = np.zeros((n_mdot, n_Qdot))
+    
+    
+    cm_mdot_out = np.zeros((n_mdot, n_Qdot))
+    cm_mdot_waste = np.zeros((n_mdot, n_Qdot))
+    cm_Qdot_waste = np.zeros((n_mdot, n_Qdot))
+
+
+
+    for i in range(len(mdot_in)):
+        for j in range(len(Qdot_in)):
+            mdo, mdw, qdw  = HX.step_heating(mdot_in[i], Qdot_in[j], T_in = 80)
+
+            mdot_out[i, j] = mdo
+            mdot_waste[i, j] = mdw
+            Qdot_waste[i,j] = qdw
+
+
+            y_HX = HX.control_model.F @ np.array([[mdot_in[i], Qdot_in[j]]]).T
+            cm_mdot_out[i, j] = y_HX[0]
+            cm_Qdot_waste[i, j] = y_HX[1]
+
+
+
+    n_levels = 20
+    mdot_out_levels = np.linspace(
+        np.min([np.min(mdot_out), np.min(cm_mdot_out)]),
+        np.max([np.max(mdot_out), np.max(cm_mdot_out)]),
+        n_levels
     )
+    mdot_waste_levels = np.linspace(
+        np.min([np.min(mdot_waste), np.min(cm_mdot_waste)]),
+        np.max([np.max(mdot_waste), np.max(cm_mdot_waste)]),
+        n_levels
+    )
+    Qdot_waste_levels = np.linspace(
+        np.min([np.min(Qdot_waste), np.min(cm_Qdot_waste)]),
+        np.max([np.max(Qdot_waste), np.max(cm_Qdot_waste)]),
+        n_levels
+    )
+
+
+    mdot_norm = mpl.colors.TwoSlopeNorm( 0, np.min([np.min(mdot_out), np.min(cm_mdot_out)]) - .1,   np.max([np.max(mdot_out), np.max(cm_mdot_out)]))
+    mdot_waste_norm = mpl.colors.TwoSlopeNorm( 0, np.min([np.min(mdot_waste), np.min(cm_mdot_waste)]) - .1,   np.max([np.max(mdot_waste), np.max(cm_mdot_waste)]))
+    Qdot_waste_norm = mpl.colors.TwoSlopeNorm( 0, np.min([np.min(Qdot_waste), np.min(cm_Qdot_waste)]) - .1,   np.max([np.max(Qdot_waste), np.max(cm_Qdot_waste)]))
+
+    MD, QD = np.meshgrid(mdot_in, Qdot_in)
+
+    fig, ax = plt.subplots(2, 3, sharex="all", sharey="all", layout="constrained")
+
+    mdot_contour = ax[0,0].contourf(MD, QD, mdot_out, levels=mdot_out_levels, norm=mdot_norm, cmap="seismic")
+    mwaste_contour = ax[0,1].contourf(MD, QD, mdot_waste, levels=mdot_waste_levels, norm=mdot_waste_norm, cmap="seismic")
+    qwaste_contour = ax[0,2].contourf(MD, QD, Qdot_waste, levels= Qdot_waste_levels, norm=Qdot_waste_norm, cmap="seismic")
+
+    fig.colorbar(mdot_contour, ax=ax[0, 0], location="bottom", ticks=[np.min([np.min(mdot_out), np.min(cm_mdot_out)]), np.max([np.max(mdot_out), np.max(cm_mdot_out)])])
+    fig.colorbar(mwaste_contour, ax=ax[0, 1], location="bottom", ticks=[np.min([np.min(mdot_waste), np.min(cm_mdot_waste)]), np.max([np.max(mdot_waste), np.max(cm_mdot_waste)])])
+    fig.colorbar(qwaste_contour, ax=ax[0, 2], location="bottom", ticks=[np.min([np.min(Qdot_waste), np.min(cm_Qdot_waste)]), np.max([np.max(Qdot_waste), np.max(cm_Qdot_waste)])])
+
+    ax[1,0].contourf(MD, QD, cm_mdot_out, levels=mdot_out_levels, norm=mdot_norm, cmap="seismic")
+    ax[1,1].contourf(MD, QD, cm_mdot_waste, levels=mdot_waste_levels, norm=mdot_waste_norm, cmap="seismic")
+    ax[1,2].contourf(MD, QD, cm_Qdot_waste, levels=Qdot_waste_levels, norm=Qdot_waste_norm, cmap="seismic")
+
+    ax[0,0].set_ylabel("Qdot in")
+    ax[1,0].set_ylabel("Qdot in")
+    ax[1,0].set_xlabel("mdot in")
+    ax[1,1].set_xlabel("mdot in")
+    ax[1,2].set_xlabel("mdot in")
+
+    ax[0,0].set_title("mdot out")
+    ax[0,1].set_title("mdot waste")
+    ax[0,2].set_title("Qdot waste")
+
+
+    for i in range(ax.shape[0]):
+        for j in range(ax.shape[1]):
+            ax[i, j].set_aspect("equal")
+
+
+
+
+    # Qdot, T_particle_out = HX.input_output(
+    #     mdot_h2=100 / 3600,
+    #     T_h2_in=25,
+    #     T_h2_out=900,
+    #     mdot_particle=1000 / 3600,
+    #     T_particle_in=1500,
+    #     T_particle_out=10,
+    # )
+
+
+
+
+
+
 
     []

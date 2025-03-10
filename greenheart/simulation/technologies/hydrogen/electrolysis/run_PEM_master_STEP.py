@@ -41,9 +41,10 @@ class run_PEM_clusters_step(run_PEM_clusters):
             "y_ub": np.array([1 / 55 * self.num_clusters * self.cluster_max_power]), # NOTE rough estimate, come back and fix this
         }
 
-        
 
         self.control_model = ControlModel(A, B, C, D, E, F)
+        self.control_model.set_disturbance_domain([1, 0, 0])
+        self.control_model.set_output_domain([0, 0, 1])
 
 
 
