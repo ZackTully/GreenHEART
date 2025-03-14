@@ -1069,6 +1069,11 @@ class SteelModel:
         #     0.4838920225624497  # [kg h2o (kg fe)^-1] mass ratio of water out to DRI out
         # )
 
+        # From Bhaskar 2022 Figure 2
+        self.P_eaf_kwhptls = 571.67832 # [kWh tonne^-1] per tonne liquid steel out of EAF
+        self.P_DRI_kwhptls = 298.95104 # [kWh tonne^-1] per tonne liquid steel out of EAF
+        self.m_ht_kgptls = 59.56 # [kg tonne^-1] per tonne liquid steel out of EAF
+
         self.setup_simulation_storage()
         self.create_control_model()
 
@@ -1125,11 +1130,6 @@ class SteelModel:
         self.power_waste_store[step_index] = power_waste
         self.h2_waste_store[step_index] = h2_waste
 
-    def get_simulation_model(self):
-        pass
-
-    def get_control_model(self):
-        pass
 
     def step(self, DRI_inputs, dispatch, step_index=0):
 
@@ -1227,5 +1227,58 @@ if __name__ == "__main__":
     }
 
     sm = SteelModel(config)
+
+    n_p = 100
+    n_h2 = 100
+    P_in = np.linspace(0, 1000, n_p)
+    h2_in = np.linspace(0, 1000, n_h2)
+
+    steel_out = np.zeros((n_p, n_h2))
+    h2_waste = np.zeros((n_p, n_h2))
+    p_waste = np.zeros((n_p, n_h2))
+
+    cm_steel_out = np.zeros((n_p, n_h2))
+    cm_h2_waste = np.zeros((n_p, n_h2))
+    cm_p_waste = np.zeros((n_p, n_h2))
+
+    for i in range(n_p):
+        for j in range(n_h2):
+            so, h2w, pw = sm.step((P_in[i], h2_in[j], 900), 0,  step_index = 0)
+
+            steel_out[i,j] = so
+            h2_waste[i,j] = h2w
+            p_waste[i,j] = pw
+
+            # y_sm = sm.control_model.F @ np.array([[P_in[i], h2_in[j]]]).T
+            # cm_steel_out[i,j] = y_sm[0]
+            # cm_p_waste[i,j] = y_sm[1]
+
+
+
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(2, 3 , sharex="all", sharey="all", layout="constrained")
+
+    PIN, H2IN = np.meshgrid(P_in, h2_in)
+
+    data = [steel_out, h2_waste, p_waste]
+    cm_data = [cm_steel_out, cm_h2_waste, cm_p_waste]
+    contours = []
+    cm_contours = []
+
+    for i in range(3):
+        contour = ax[0,i].contourf(PIN, H2IN, data[i])
+        contours.append(contour)
+
+        cm_contour = ax[1, i].contourf(PIN, H2IN, cm_data[i])
+        cm_contours.append(cm_contour)
+
+    ax[0,0].set_ylabel("Power in [kWh h^-1]")
+    ax[1,0].set_ylabel("Power in [kWh h^-1]")
+
+
+    ax[1, 0].set_xlabel("H2 in [kg h^-1]")
+    ax[1, 1].set_xlabel("H2 in [kg h^-1]")
+    ax[1, 2].set_xlabel("H2 in [kg h^-1]")
 
     []

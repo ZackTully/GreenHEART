@@ -18,7 +18,7 @@ class DispatchModelPredictiveController:
     usp_store: list
     dco_store: list
 
-    def __init__(self, config, simulation_graph):
+    def __init__(self, config, simulation_graph, node_order = None, edge_order = None):
 
         system_graph = load_yaml(
             config.greenheart_config["system"]["system_graph_config"]
@@ -26,6 +26,10 @@ class DispatchModelPredictiveController:
 
         nodes = system_graph["traversal_order"]
         traversal_order = system_graph["traversal_order"]
+
+        self.node_order = node_order
+        self.edge_order = edge_order
+
 
         self.horizon = 48
         self.G = simulation_graph
@@ -117,6 +121,9 @@ class DispatchModelPredictiveController:
         mats5 = {"Cgt": [], "Dgtct": [], "Dgtsp": [], "Fgtco": [], "Fgtex": []}
         mats6 = {"Cet": [], "Detct": [], "Detsp": [], "Fetco": [], "Fetex": []}
 
+        uct_order = {}
+        usp_order = {}
+
         for node in traversal_order:
 
             cm = G.nodes[node]["ionode"].model.control_model
@@ -141,16 +148,30 @@ class DispatchModelPredictiveController:
             msp = usp_degree
             m = mct + msp
 
+
+
+
             # create controllable input label lists
+
+            uct_indices = []
 
             uct_labels = []
             for i in range(mct):
+                uct_indices.append(int(len(uct_labels) + np.sum(dims["dims"]["mct"])))
                 uct_labels.append(f"uct {i} {node}")
 
+            if len(uct_indices) > 0:
+                uct_order.update({node:uct_indices})
+
+            usp_indices = []
             usp_labels = []
             for i in range(usp_degree):
+                usp_indices.append(int(len(usp_labels) + np.sum(dims["dims"]["msp"])))
                 out_edges = list(G.out_edges(node))
                 usp_labels.append(f"usp {i} {node} (to {out_edges[i][1]})")
+
+            if len(usp_indices) > 0:
+                usp_order.update({node:usp_indices})
 
             # create uncontrollable input label lists
             dex_labels = []
@@ -218,7 +239,6 @@ class DispatchModelPredictiveController:
             p = pex + pco
             pcons = pze + pet + pgt
 
-
             # Check the incoming edges for domain agreement
             in_edges = list(G.in_edges(node))
             disturbance_index = []
@@ -226,15 +246,13 @@ class DispatchModelPredictiveController:
                 up_node = in_edge[0]
                 up_cm = G.nodes[up_node]["ionode"].model.control_model
                 up_node_output_domain = up_cm.output_domain
-                disturbance_index.append(np.where( cm.disturbance_domain @ up_node_output_domain == 1)[0])
-
-
+                disturbance_index.append(
+                    np.where(cm.disturbance_domain @ up_node_output_domain == 1)[0]
+                )
 
             oco = len(disturbance_index)
 
-
             # assert oco == len(disturbance_index)
-
 
             dim_list = [n, mct, msp, m, oex, oco, o, pex, pco, pze, pet, pgt, p, pcons]
             labels_list = [
@@ -269,10 +287,6 @@ class DispatchModelPredictiveController:
 
             # Collect the relevant matrices
 
-
-
-
-
             # state transition row
             A = cm.A
             Bct = cm.B
@@ -281,7 +295,9 @@ class DispatchModelPredictiveController:
                 Eco = np.zeros((n, 0))
                 Eex = cm.E
             else:
-                Eco = np.concatenate([cm.E[:, di[0], None] for di in disturbance_index], axis=1)
+                Eco = np.concatenate(
+                    [cm.E[:, di[0], None] for di in disturbance_index], axis=1
+                )
                 # Eco = np.tile(cm.E, in_degree)
                 Eex = np.zeros((n, 0))
 
@@ -299,7 +315,9 @@ class DispatchModelPredictiveController:
                     "is_source"
                 ], "source should not be the same as sink"
 
-                Fexco = np.concatenate([cm.F[:, di[0], None] for di in disturbance_index], axis=1)
+                Fexco = np.concatenate(
+                    [cm.F[:, di[0], None] for di in disturbance_index], axis=1
+                )
                 # Fexco = np.tile(cm.F, in_degree)
                 Fexex = np.zeros((pex, oex))
             else:
@@ -365,7 +383,9 @@ class DispatchModelPredictiveController:
                         Fcoco = np.zeros((pco, 0))
                         Fcoex = cm.F
                     else:
-                        Fcoco = np.concatenate([cm.F[:, di[0], None] for di in disturbance_index], axis=1)
+                        Fcoco = np.concatenate(
+                            [cm.F[:, di[0], None] for di in disturbance_index], axis=1
+                        )
                         # Fcoco = np.tile(cm.F, in_degree)
                         Fcoex = np.zeros((pco, 0))
 
@@ -391,7 +411,9 @@ class DispatchModelPredictiveController:
                 Fgtco = np.zeros((pgt, oco))
                 Fgtex = cm.F_gt
             else:
-                Fgtco = np.concatenate([cm.F_gt[:, di[0], None] for di in disturbance_index], axis=1)
+                Fgtco = np.concatenate(
+                    [cm.F_gt[:, di[0], None] for di in disturbance_index], axis=1
+                )
                 # Fgtco = np.tile(cm.F_gt, in_degree)
                 Fgtex = np.zeros((pgt, oex))
 
@@ -407,7 +429,9 @@ class DispatchModelPredictiveController:
                 Fetco = np.zeros((pet, oco))
                 Fetex = cm.F_et
             else:
-                Fetco = np.concatenate([cm.F_et[:, di[0], None] for di in disturbance_index], axis=1)
+                Fetco = np.concatenate(
+                    [cm.F_et[:, di[0], None] for di in disturbance_index], axis=1
+                )
                 # Fetco = np.tile(cm.F_et, in_degree)
                 Fetex = np.zeros((pet, oex))
 
@@ -448,6 +472,9 @@ class DispatchModelPredictiveController:
         labels = dims["labels"]
         dims = dims["dims"]
 
+        for key in dims.keys():
+            setattr(self, key, np.sum(dims[key]))
+
         for key in labels.keys():
             labels[key] = [x for xs in labels[key] for x in xs]
 
@@ -458,13 +485,17 @@ class DispatchModelPredictiveController:
         labels["p"] = labels["pco"] + labels["pex"]
         labels["pcons"] = labels["pze"] + labels["pet"] + labels["pgt"]
 
+        for key in labels.keys():
+            setattr(self, f"{key}_label", labels[key])
+
+
         # Make indices and reduce the order of the verbose statespace
 
         # extended incidence matrix
         E_inc = np.concatenate(
             [
                 np.array([[1] + [0] * (len(G.nodes) - 1)]).T,
-                nx.incidence_matrix(G, oriented=True).toarray(),
+                nx.incidence_matrix(G, oriented=True, nodelist=self.node_order, edgelist=self.edge_order).toarray(),
                 np.array([[0] * (len(G.nodes) - 1) + [-1]]).T,
             ],
             axis=1,
@@ -520,8 +551,15 @@ class DispatchModelPredictiveController:
         # d_co = M_dco_yco @ yco
         self.M_dco_yco = M_dco_yco
 
-        MFi = np.linalg.inv(M_yco_dco - Fcoco)
+        if False:
+            fig, ax = plt.subplots(1, 2, layout="constrained")
+            ax[0].imshow(Fcoco)
+            ax[1].imshow(M_yco_dco)
 
+
+
+
+        MFi = np.linalg.inv(M_yco_dco - Fcoco)
 
         uncoupled_mat = [
             [A, Bct, Bsp, Eex],
@@ -534,11 +572,36 @@ class DispatchModelPredictiveController:
 
         coupling_mat = [
             [Eco @ MFi @ Cco, Eco @ MFi @ Dcoct, Eco @ MFi @ Dcosp, Eco @ MFi @ Fcoex],
-            [Fcoco @ MFi @ Cco, Fcoco @ MFi @ Dcoct, Fcoco @ MFi @ Dcosp, Fcoco @ MFi @ Fcoex],
-            [Fexco @ MFi @ Cco, Fexco @ MFi @ Dcoct, Fexco @ MFi @ Dcosp, Fexco @ MFi @ Fcoex],
-            [Fzeco @ MFi @ Cco, Fzeco @ MFi @ Dcoct, Fzeco @ MFi @ Dcosp, Fzeco @ MFi @ Fcoex],
-            [Fgtco @ MFi @ Cco, Fgtco @ MFi @ Dcoct, Fgtco @ MFi @ Dcosp, Fgtco @ MFi @ Fcoex],
-            [Fetco @ MFi @ Cco, Fetco @ MFi @ Dcoct, Fetco @ MFi @ Dcosp, Fetco @ MFi @ Fcoex],
+            [
+                Fcoco @ MFi @ Cco,
+                Fcoco @ MFi @ Dcoct,
+                Fcoco @ MFi @ Dcosp,
+                Fcoco @ MFi @ Fcoex,
+            ],
+            [
+                Fexco @ MFi @ Cco,
+                Fexco @ MFi @ Dcoct,
+                Fexco @ MFi @ Dcosp,
+                Fexco @ MFi @ Fcoex,
+            ],
+            [
+                Fzeco @ MFi @ Cco,
+                Fzeco @ MFi @ Dcoct,
+                Fzeco @ MFi @ Dcosp,
+                Fzeco @ MFi @ Fcoex,
+            ],
+            [
+                Fgtco @ MFi @ Cco,
+                Fgtco @ MFi @ Dcoct,
+                Fgtco @ MFi @ Dcosp,
+                Fgtco @ MFi @ Fcoex,
+            ],
+            [
+                Fetco @ MFi @ Cco,
+                Fetco @ MFi @ Dcoct,
+                Fetco @ MFi @ Dcosp,
+                Fetco @ MFi @ Fcoex,
+            ],
         ]
 
         combined_mat = [
@@ -565,6 +628,14 @@ class DispatchModelPredictiveController:
         self.E_inc = E_inc
         self.P_in = P_in
         self.P_out = P_out
+
+
+        for key in bounds.keys():
+            bounds[key] = np.concatenate(bounds[key])
+
+        self.bounds = bounds
+        self.uct_order = uct_order
+        self.usp_order = usp_order
 
         []
 
@@ -1289,6 +1360,8 @@ class DispatchModelPredictiveController:
         opti.subject_to(x_var[:, 0] == x0_param)
         # opti.subject_to(e_var[0, :] == e_src_param)
 
+        objective = 0
+
         # Dynamics constraint
         for i in range(self.horizon):
 
@@ -1296,34 +1369,67 @@ class DispatchModelPredictiveController:
                 self.A @ x_var[:, i]
                 + self.Bct @ uct_var[:, i]
                 + self.Bsp @ usp_var[:, i]
-                + self.E @ (dex_param[:, i] - curtail[:, i])
+                + self.Eex @ (dex_param[:, i] - curtail[:, i])
             )
+            # external outputs
             yexk = (
                 self.Cex @ x_var[:, i]
                 + self.Dexct @ uct_var[:, i]
                 + self.Dexsp @ usp_var[:, i]
-                + self.Fex @ (dex_param[:, i] - curtail[:, i])
-            )
-            opti.subject_to(
-                np.zeros((self.pze, 1))
-                == self.Cze @ x_var[:, i]
-                + self.Dzect @ uct_var[:, i]
-                + self.Dzesp @ usp_var[:, i]
-                + self.Fze @ (dex_param[:, i] - curtail[:, i])
+                + self.Fexex @ (dex_param[:, i] - curtail[:, i])
             )
 
+            # coupling outputs
             yco = (
                 self.Cco @ x_var[:, i]
                 + self.Dcoct @ uct_var[:, i]
                 + self.Dcosp @ usp_var[:, i]
-                + self.Fco @ (dex_param[:, i] - curtail[:, i])
+                + self.Fcoex @ (dex_param[:, i] - curtail[:, i])
             )
 
+            # Splitting constraint zero outputs
+            yze = (
+                self.Cze @ x_var[:, i]
+                + self.Dzect @ uct_var[:, i]
+                + self.Dzesp @ usp_var[:, i]
+                + self.Fzeex @ (dex_param[:, i] - curtail[:, i])
+            )
+
+            # greater than 0 constraint outputs
+            ygt = (
+                self.Cgt @ x_var[:, i]
+                + self.Dgtct @ uct_var[:, i]
+                + self.Dgtsp @ usp_var[:, i]
+                + self.Fgtex @ (dex_param[:, i] - curtail[:, i])
+            )         
+
+            # equal to 0 constraint outputs
+            yet = (
+                self.Cet @ x_var[:, i]
+                + self.Detct @ uct_var[:, i]
+                + self.Detsp @ usp_var[:, i]
+                + self.Fetex @ (dex_param[:, i] - curtail[:, i])
+            )            
+
+            # opti.subject_to(
+            #     np.zeros((self.pze, 1))
+            #     == self.Cze @ x_var[:, i]
+            #     + self.Dzect @ uct_var[:, i]
+            #     + self.Dzesp @ usp_var[:, i]
+            #     + self.Fzeex @ (dex_param[:, i] - curtail[:, i])
+            # )
+
             # NOTE Sketchy to have these values hard coded
-            opti.subject_to(yexk[1] == 2 * yco[6])
+            # opti.subject_to(yexk[1] == 2 * yco[6])
 
             opti.subject_to(x_var[:, i + 1] == xkp1)
             opti.subject_to(yex_var[:, i] == yexk[0])
+            if self.pze > 0:
+                opti.subject_to(yze == np.zeros((self.pze, 1)))
+            if self.pgt > 0:
+                opti.subject_to(ygt >= np.zeros((self.pgt, 1)))
+            if self.pet > 0:
+                opti.subject_to(yet == np.zeros((self.pet, 1)))
 
             if self.use_sparsity_constraint:
                 opti.subject_to(
@@ -1332,16 +1438,27 @@ class DispatchModelPredictiveController:
                 opti.subject_to(
                     usp_var[0, i] == ca.if_else(uct_var[0, i] >= 0, uct_var[0, i], 0)
                 )
+
+
+
+            objective += self.objective_step(x_var[:, i], uct_var[:, i], usp_var[:, i], yco, yexk, curtail[:, i])
+
+
             # opti.subject_to(us_var[2, i] <= ca.fabs(uc_var[1,i]))
 
             opti.subject_to(usp_var[:, i] >= np.zeros(self.msp))
             # opti.subject_to(e_var[:, i] >= np.zeros(self.q + 2))
 
-            opti.subject_to(uct_var[:, i] >= self.u_lb_list)
-            opti.subject_to(uct_var[:, i] <= self.u_ub_list)
+            opti.subject_to(uct_var[:, i] >= self.bounds["u_lb"])
+            opti.subject_to(uct_var[:, i] <= self.bounds["u_ub"])
 
-            opti.subject_to(x_var[:, i] >= self.x_lb_list)
-            opti.subject_to(x_var[:, i] <= self.x_ub_list)
+            opti.subject_to(x_var[:, i] >= self.bounds["x_lb"])
+            opti.subject_to(x_var[:, i] <= self.bounds["x_ub"])
+            # opti.subject_to(uct_var[:, i] >= self.u_lb_list)
+            # opti.subject_to(uct_var[:, i] <= self.u_ub_list)
+
+            # opti.subject_to(x_var[:, i] >= self.x_lb_list)
+            # opti.subject_to(x_var[:, i] <= self.x_ub_list)
 
             # opti.subject_to((self.Ds_flat @ ys_var[:, i]) >= self.y_lb_list)
             # opti.subject_to((self.Ds_flat @ ys_var[:, i]) <= self.y_ub_list)
@@ -1355,22 +1472,36 @@ class DispatchModelPredictiveController:
         # Bounds
         # Add constraint
         # Objective
-        opti.minimize(self.objective(x_var, uct_var, usp_var, yex_var, curtail))
+        # opti.minimize(self.objective(x_var, uct_var, usp_var, yex_var, curtail))
+        opti.minimize(objective)
 
         self.opti = opti
         self.opt_vars = {
-            "uc": uct_var,
-            "us": usp_var,
+            "uct": uct_var,
+            "usp": usp_var,
             "x": x_var,
-            "ys": yex_var,
+            "yex": yex_var,
             # "e": e_var,
         }
-        self.opt_params = {"d_ex": dex_param, "x0": x0_param}
+        self.opt_params = {"dex": dex_param, "x0": x0_param}
 
         if self.allow_curtail_forecast:
             self.opt_vars.update({"curtail": curtail})
         else:
             self.opt_params.update({"curtail": curtail})
+
+    def objective_step(self, x, uct, usp, yco, yex, curtail):
+        ref_steel = 45.48e3
+        self.reference = ref_steel
+        tracking_term = (ref_steel - yex) ** 2
+
+        BES_local_curtail = (yco[0]) - uct[0]
+
+        BES_simultaneous = uct[0] * uct[1]
+
+
+        obj_value = tracking_term + BES_simultaneous + BES_local_curtail
+        return obj_value
 
     def objective(self, x, uc, us, ys, curtail):
 
@@ -1425,7 +1556,7 @@ class DispatchModelPredictiveController:
         return objective_value
 
     def update_optimization_parameters(self, x0, src_forecast):
-        self.opti.set_value(self.opt_params["d_ex"], src_forecast)
+        self.opti.set_value(self.opt_params["dex"], src_forecast)
         self.opti.set_value(self.opt_params["x0"], x0)
         if not self.allow_curtail_forecast:
             self.opti.set_value(
@@ -1439,10 +1570,10 @@ class DispatchModelPredictiveController:
         self.update_optimization_parameters(x0, forecast)
 
         if hasattr(self, "x_init"):  # then try to update initial guess
-            self.opti.set_initial(self.opt_vars["uc"], self.uc_init)
-            self.opti.set_initial(self.opt_vars["us"], self.us_init)
+            self.opti.set_initial(self.opt_vars["uct"], self.uc_init)
+            self.opti.set_initial(self.opt_vars["usp"], self.us_init)
             self.opti.set_initial(self.opt_vars["x"], self.x_init)
-            self.opti.set_initial(self.opt_vars["ys"], self.ys_init)
+            self.opti.set_initial(self.opt_vars["yex"], self.ys_init)
 
         try:
 
@@ -1481,10 +1612,10 @@ class DispatchModelPredictiveController:
                     i += 4
                 i += 1
 
-            x_db = self.opti.debug.value(self.opt_vars["x"])[None, :]
-            uc_db = self.opti.debug.value(self.opt_vars["uc"])[None, :]
-            us_db = self.opti.debug.value(self.opt_vars["us"])
-            ys_db = self.opti.debug.value(self.opt_vars["ys"])  # [None, :]
+            x_db = self.opti.debug.value(self.opt_vars["x"]) # [None, :]
+            uc_db = self.opti.debug.value(self.opt_vars["uct"]) #[None, :]
+            us_db = self.opti.debug.value(self.opt_vars["usp"])
+            ys_db = self.opti.debug.value(self.opt_vars["yex"])  [None, :]
 
             fig, ax = plt.subplots(
                 np.max([uc_db.shape[0], us_db.shape[0], x_db.shape[0], ys_db.shape[0]]),
@@ -1494,8 +1625,8 @@ class DispatchModelPredictiveController:
             )
 
             to_plot = [x_db, uc_db, us_db, ys_db]
-            titles = ["x", "uc", "us", "ys"]
-            titles = [self.x_list, self.uct_list, self.usp_list, self.yex_list]
+            titles = ["x", "uct", "usp", "yex"]
+            titles = [self.n_label, self.mct_label, self.msp_label, self.pex_label]
             for i in range(len(to_plot)):
                 # ax[0, i].set_title(titles[i])
                 for j in range(len(to_plot[i])):
@@ -1524,15 +1655,15 @@ class DispatchModelPredictiveController:
         except:
             np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
-            uc_slice = slice(0, self.mc * self.horizon)
-            us_slice = slice(self.mc * self.horizon, (self.mc + self.ms) * self.horizon)
+            uc_slice = slice(0, self.mct * self.horizon)
+            us_slice = slice(self.mct * self.horizon, (self.mct + self.msp) * self.horizon)
             x_slice = slice(
-                (self.mc + self.ms) * self.horizon,
-                (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1),
+                (self.mct + self.msp) * self.horizon,
+                (self.mct + self.msp) * self.horizon + self.n * (self.horizon + 1),
             )
             ys_slice = slice(
-                (self.mc + self.ms) * self.horizon + self.n * (self.horizon + 1),
-                (self.mc + self.ms) * self.horizon
+                (self.mct + self.msp) * self.horizon + self.n * (self.horizon + 1),
+                (self.mct + self.msp) * self.horizon
                 + self.n * (self.horizon + 1)
                 + self.pse * self.horizon,
             )
@@ -1557,12 +1688,12 @@ class DispatchModelPredictiveController:
         # self.opti.debug.constraints()
         # self.opti.debug.show_infeasibilities()
 
-        uc = sol.value(self.opt_vars["uc"])
-        us = sol.value(self.opt_vars["us"])
+        uct = sol.value(self.opt_vars["uct"])
+        usp = sol.value(self.opt_vars["usp"])
         x = sol.value(self.opt_vars["x"])
-        ys = sol.value(self.opt_vars["ys"])
+        yex = sol.value(self.opt_vars["yex"])
         # e = sol.value(self.opt_vars["e"])
-        de = sol.value(self.opt_params["d_ex"])[None, :]
+        dex = sol.value(self.opt_params["dex"])[None, :]
         if self.allow_curtail_forecast:
             curtail = sol.value(self.opt_vars["curtail"])
         else:
@@ -1570,33 +1701,33 @@ class DispatchModelPredictiveController:
 
         self.curtail_storage[step_index : step_index + self.horizon] = curtail
 
-        self.uc_init = uc
-        self.us_init = us
+        self.uc_init = uct
+        self.us_init = usp
         self.x_init = x
-        self.ys_init = ys
+        self.ys_init = yex
         self.curtail_init = curtail
 
         ysp = (
             self.Cco @ np.atleast_2d(x)[:, :-1]
-            + self.Dcoct @ np.atleast_2d(uc)
-            + self.Dcosp @ us
-            + self.Fco @ (de - curtail)
+            + self.Dcoct @ np.atleast_2d(uct)
+            + self.Dcosp @ usp
+            + self.Fcoex @ (dex - curtail)
         )
         # coupling disturbances
         dco = self.M_dco_yco @ ysp
 
-        ysp = np.concatenate([ysp, ys])
+        ysp = np.concatenate([ysp, np.atleast_2d(yex)])
         # ysp = np.concatenate([ysp, ys[None, :]])
 
         self.store_solution(
             step_index=step_index,
-            uc=uc,
-            us=us,
+            uc=uct,
+            us=usp,
             x=x,
-            yex=ys,
+            yex=yex,
             ysp=ysp,
             curtail=curtail,
-            dex=de,
+            dex=dex,
             dco=dco,
         )
 
@@ -1623,19 +1754,18 @@ class DispatchModelPredictiveController:
             )
 
         if self.mct == 1:
-            u_ctrl = uc[None, 0]
+            u_ctrl = uct[None, 0]
         else:
-            u_ctrl = uc[:, 0]
+            u_ctrl = uct[:, 0]
 
         if curtail.ndim < 2:
             curtail = curtail[None, :]
 
         # self.plot_solution(sol, forecast)
 
-        u_split = us[:, 0]
-        # return u_ctrl, u_split
-        # return u[:, 0]
-        return uc, us, curtail
+        u_split = usp[:, 0]
+
+        return uct, usp, curtail
 
     def plot_solution(self, sol, forecast):
 
@@ -1826,10 +1956,16 @@ class DispatchModelPredictiveController:
             row_mat_lens = [matr.shape[1] for matr in row_mat]
             if row_num == 0:
                 line = " " * (out_label_width + 5)
+                line2 = " " * (out_label_width + 5 + 4)
                 for coli, col_label in enumerate(in_labels):
                     line += f"{col_label}".ljust(row_mat_lens[coli] * num_col_width + 3)
+                    for j in range(row_mat_lens[coli]):
+                        line2 += f"{j}".ljust(num_col_width)
+                    line2 += " " * 3
+
 
                 print(line)
+                print(line2)
             n_rows = row_mat[0].shape[0]
             for i in range(n_rows):
                 line = f"{out_labels[row_num]}".ljust(out_label_width + 3)

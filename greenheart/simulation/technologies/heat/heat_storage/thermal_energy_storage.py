@@ -135,6 +135,12 @@ class ThermalEnergyStorage:
 
     def step(self, available_power, dispatch, step_index=None):
 
+        if dispatch.ndim > 0:
+            dispatch = dispatch[0]
+
+        if available_power.ndim > 0:
+            available_power = available_power[0]
+
         P_charge_desired_kWh = np.max([dispatch, 0])
         Q_discharge_desired_kWh = -np.min([dispatch, 0])
 
@@ -276,18 +282,18 @@ class ThermalEnergyStorage:
 
         A = np.array([[1]])
         B = np.array([[1]])
-        C = np.array([[0]])
-        D = np.array([[-1]])
         E = np.array([[0]])
-        F = np.array([[1]])
+        C = np.array([[0, 0]]).T
+        D = np.array([[-1, -1]]).T
+        F = np.array([[0, 1]]).T
 
         bounds_dict = {
             "u_lb": np.array([-self.max_discharge_kWhphr]),
             "u_ub": np.array([self.max_charge_kWhphr]),
             "x_lb": np.array([0]),
             "x_ub": np.array([self.H_capacity_kWh]),
-            "y_lb": np.array([None]),
-            "y_ub": np.array([None]),
+            "y_lb": np.array([None, None]),
+            "y_ub": np.array([None, None]),
         }
 
         control_model = ControlModel(
@@ -297,8 +303,8 @@ class ThermalEnergyStorage:
         control_model.set_disturbance_domain([1, 0, 0])
         control_model.set_output_domain([0, 1, 0])
 
-        # control_model.set_disturbance_domain({"P":[0]})
-        # control_model.set_output_domain({"Q":[0]})
+        control_model.constraints(y_position=[1], constraint_type=["greater"])
+
 
         return control_model
 

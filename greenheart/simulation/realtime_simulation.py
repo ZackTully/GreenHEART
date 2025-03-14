@@ -103,6 +103,11 @@ class RealTimeSimulation:
         if "traversal_order" in graph_config.keys():
             self.node_order = graph_config["traversal_order"]
 
+        if "print_locs" in graph_config.keys():
+            self.print_locs = graph_config["print_locs"]
+
+        self.edge_order = edges
+
         G = nx.DiGraph()
         G.add_nodes_from(nodes)
         G.add_edges_from(edges)
@@ -154,15 +159,6 @@ class RealTimeSimulation:
                 in_degree=self.G.in_degree[node],
                 out_degree=self.G.out_degree[node],
             )
-            # ionode = IONode(
-            #     name=node,
-            #     model=RT_techs[node]["model"],
-            #     expected_inputs=RT_techs[node]["model_inputs"],
-            #     expected_outputs=RT_techs[node]["model_outputs"],
-            #     splitting_node=self.G.nodes[node]["split"],
-            #     in_degree=self.G.in_degree[node],
-            #     out_degree=self.G.out_degree[node],
-            # )
 
             # Add an assertion that there is one source and one sink
             is_source = False
@@ -248,55 +244,26 @@ class RealTimeSimulation:
             coords[0] += np.random.randn(1) * 0.05
             layout[key] = coords
 
+        if hasattr(self, "print_locs"):
+            layout = self.print_locs
+
         nodes = nx.draw_networkx_nodes(G, pos=layout, ax=ax)
         nodes.set_edgecolor("white")
         nodes.set_facecolor("white")
         labels = nx.draw_networkx_labels(G, pos=layout, ax=ax)
         edges = nx.draw_networkx_edges(G, pos=layout, ax=ax)
 
-        latex_graph = nx.to_latex(G, pos=nx.rescale_layout_dict(layout, scale=3))
+        # latex_graph = nx.to_latex(G, pos=nx.rescale_layout_dict(layout, scale=3))
 
     def step_system_state_function(self, G_dispatch, generation_available, step_index):
 
         if hasattr(self, "node_order"):
             node_order = self.node_order
-        else:
-
-            # Hard code for now but need to come back to make this general
-            node_order = [
-                "generation",
-                "curtail",
-                "electrolyzer",
-                "hydrogen_storage",
-                "steel",
-            ]
-
-            # Hard code for heat example
-            # node_order = [
-            #     "generation",
-            #     "curtail",
-            #     "battery",
-            #     "electrolyzer",
-            #     "hydrogen_storage",
-            #     "joule_heater",
-            #     "thermal_energy_storage",
-            #     "heat_exchanger",
-            #     "output",
-            # ]
-
-            node_order = ["generation", "curtail", "electrolyzer", "heat_exchanger"]
-
-        # G_simulated = self.G.copy()
-
-        # for node in list(G_simulated.nodes):
-        #     G_simulated.nodes[node].update({"wasted_output": 0})
 
         simulated_edges = list(self.G.edges)
         simulated_IO = {}
         for edge in simulated_edges:
             simulated_IO.update({edge: {"simulated": None}})
-
-        # nx.set_edge_attributes(G_simulated, simulated_IO)
 
         for node in list(self.G.nodes):
             self.G.nodes[node].update({"wasted_output": np.zeros(4)})
@@ -306,20 +273,13 @@ class RealTimeSimulation:
 
         for node in node_order:
 
-            # dispatch_IO_edges = G_dispatch.edges(node)
-            # simulated_IO_edges = G_simulated.edges(node)
-
             if node == "generation":
                 this_node_input = generation_available
                 # self.G.nodes[node]["model"].set_output(generation_available)
                 self.G.nodes[node]["ionode"].model.set_output(generation_available)
 
-            # Get the input to the node from the simulated graph
-            # These are only the edges coming into node node
-            # sim_in_edges = G_simulated.in_edges(node)
             sim_in_edges = self.G.in_edges(node)
 
-            # this_node_input = 0
             this_node_input = []
 
             for in_edge in sim_in_edges:
@@ -329,38 +289,12 @@ class RealTimeSimulation:
                 # assert edge_data is not None, "edge data is none, needs to be run first"
                 # assert not np.isnan(edge_data)
 
-                # this_node_input += edge_data
                 this_node_input.append(edge_data)
 
             if len(this_node_input) > 0:
                 this_node_input = np.stack(this_node_input)
-                # this_node_input = np.concatenate(this_node_input, axis=1)
             else:
                 this_node_input = np.zeros((1, 4))
-
-            # Gather inputs from edge list - All inputs to node should already be in simulated_IO
-            # Gather outputs from dispatch list
-
-            # dispatch_out_edges = G_dispatch.out_edges(node)
-            dispatch_out_edges = self.G.out_edges(node)
-            # dispatch_values = nx.get_edge_attributes(G_dispatch, "value")
-            dispatch_values = nx.get_edge_attributes(self.G, "dispatch")
-            node_dispatch_values = {
-                key: dispatch_values[key] for key in list(dispatch_out_edges)
-            }
-
-            # dispatch_out_total = np.sum(list(node_dispatch_values.values()))
-            # This may cause a problem for heat mass mixing
-            if len(node_dispatch_values) > 0:
-                dispatch_out_total = np.sum(
-                    np.stack(list(node_dispatch_values.values())), axis=0
-                )
-            else:
-                dispatch_out_total = np.zeros(4)
-
-            # node_output = self.G.nodes[node]["ionode"].step(
-            #     this_node_input, dispatch_out_total, step_index
-            # )
 
             node_dispatch_split = np.array(self.G.nodes[node]["dispatch_split"])
             node_dispatch_ctrl = np.array(self.G.nodes[node]["dispatch_ctrl"])
@@ -372,31 +306,10 @@ class RealTimeSimulation:
                 step_index,
             )
 
-            # node_output = self.G.nodes[node]["ionode"].step(
-            #     this_node_input,
-            #     dispatch_out_total,
-            #     step_index,
-            #     node_dispatch_split,
-            #     node_dispatch_ctrl,
-            # )
-
             sim_out_edges = self.G.out_edges(node)
-
             wasted_output = np.zeros_like(node_output)
-            # # for j in range(len(node_output)):
-            # wasted_output = np.where(
-            #     node_output > dispatch_out_total, (node_output - dispatch_out_total), 0
-            # )
-            # node_output -= wasted_output
 
-            # G_simulated.nodes[node].update({"wasted_output": wasted_output})
             self.G.nodes[node].update({"wasted_output": wasted_output})
-
-            # for out_edge in list(sim_out_edges):
-            #     scaled_output = node_output * np.nan_to_num(
-            #         node_dispatch_values[out_edge] / dispatch_out_total
-            #     )
-            #     simulated_IO[out_edge]["simulated"] = scaled_output
             for i, out_edge in enumerate(list(sim_out_edges)):
                 simulated_IO[out_edge]["simulated"] = node_output[:, i]
 
@@ -432,9 +345,6 @@ class RealTimeSimulation:
 
         # Loop for everything downstream of generation
         error_feedback = False
-
-        # G_dispatch = self.G.copy()
-
         t0 = time.time()
 
         for i in range(len(hybrid_profile)):
@@ -450,11 +360,12 @@ class RealTimeSimulation:
                 forecast = np.ones(dispatcher.controller.horizon) * hybrid_profile[i]
 
             # TODO improve this:
+            # NOTE try to get the state from the x infromation in the dispatch MP from when it sets up the system
             # x0 = np.zeros( 2)
-            x0 = np.zeros(1)
-            # x0[0] = self.G.nodes["battery"]["ionode"].model.storage_state
-            # x0[1] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
-            x0[0] = (
+            x0 = np.zeros(3)
+            x0[0] = self.G.nodes["battery"]["ionode"].model.storage_state
+            x0[2] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
+            x0[1] = (
                 self.G.nodes["thermal_energy_storage"]["ionode"].model._SOC()
                 * self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh
             )
@@ -624,11 +535,6 @@ class RealTimeSimulation:
         user_defined_pem_param_dictionary = pem_param_dict
         verbose = False
 
-        # if "use_step_model" in self.config.greenheart_config["electrolyzer"].keys():
-        #     step_model = self.config.greenheart_config["electrolyzer"]["use_step_model"]
-        # else:
-        #     step_model = False
-
         electrolyzer_model = run_PEM_clusters_step(
             electrical_generation_timeseries,
             electrolyzer_size_mw,
@@ -706,43 +612,176 @@ class RealTimeSimulation:
 
         return component_dict
 
-    # def _setup_joule_heater_node(self):
-    #     inputs =
-    #     outputs =
-    #     component_dict =
-
-    #     return component_dict
-    # if GH_tech == "joule_heater":
-    #     # RT_techs.update({"joule_heater": JouleHeater()})
-    #     RT_techs.update(
-    #         {
-    #             "joule_heater": {
-    #                 "model": JouleHeater(),
-    #                 "model_inputs": {
-    #                     "power": True,
-    #                     "Qdot": False,
-    #                     "mdot": False,
-    #                     "T": False,
-    #                 },
-    #                 "model_outputs": {
-    #                     "power": False,
-    #                     "Qdot": True,
-    #                     "mdot": False,
-    #                     "T": False,
-    #                 },
-    #             }
-    #         }
-    #     )
-
-    # def _setup__node(self):
-    #     inputs =
-    #     outputs =
-    #     component_dict =
-
-    #     return component_dict
-
     def get_component(self, component_name):
         return self.G.nodes[component_name]["ionode"].model
+
+    def unpack_component(self, component_name, make_plot=False):
+        # get inputs outputs, component model
+
+        # Do graph stuff
+
+        # input edges
+        # output edges
+
+        rt_node = self.G.nodes[component_name]["ionode"]
+
+        passthrough = rt_node.u_passthrough_store
+        input_curtail = rt_node.u_curtail_store
+        split_curtail = rt_node.u_curtail_split_store[
+            :, np.where(rt_node.output_list)[0]
+        ].T[0, :]
+        disturbance = rt_node.disturbance_store
+
+        in_edges = self.G.in_edges(component_name)
+
+        in_edge_index = []
+        for in_edge in in_edges:
+            for i, edge in enumerate(list(self.G.edges)):
+                if in_edge == edge:
+                    in_edge_index.append(i)
+
+        # in_edge_data = self.system_states[
+        #     in_edge_index, :, np.where(rt_node.input_list)[0]
+        # ]
+        in_edge_data = self.system_states[:, :, np.where(rt_node.input_list)[0]][
+            in_edge_index, :, :
+        ]
+
+        out_edges = self.G.out_edges(component_name)
+
+        out_edge_index = []
+        for out_edge in out_edges:
+            for i, edge in enumerate(list(self.G.edges)):
+                if out_edge == edge:
+                    out_edge_index.append(i)
+        out_edge_data = self.system_states[:, :, np.where(rt_node.output_list)[0]][
+            out_edge_index, :, :
+        ]
+        # out_edge_data = self.system_states[
+        #     out_edge_index, :, np.where(rt_node.output_list)[0]
+        # ]
+
+        # In these get the states and LLC signals
+
+        # comp_local_data should have u, x, y, control?
+
+        if component_name == "generation":
+            comp_local_data = self.unpack_generation()
+        elif component_name == "battery":
+            comp_local_data = self.unpack_battery()
+        elif component_name == "thermal_energy_storage":
+            comp_local_data = self.unpack_thermal_energy_storage()
+        else:
+            comp_local_data = {"uct": [], "x": [], "y": []}
+
+        component_data = {
+            "passthrough": passthrough,
+            "input_curtail": input_curtail,
+            "split_curtail": split_curtail,
+            "disturbance": disturbance,
+            "in_edges": list(in_edges),
+            "in_data": in_edge_data,
+            "out_edges": list(out_edges),
+            "out_data": out_edge_data,
+            "uct": comp_local_data["uct"],
+            "x": comp_local_data["x"],
+            "y": comp_local_data["y"],
+        }
+
+        if make_plot:
+            self.plot_component(component_name, component_data)
+
+        pass
+
+    def plot_component(self, component_name, component_data):
+
+        fig, ax = plt.subplots(
+            4, 1, sharex="all", layout="constrained", figsize=(10, 4)
+        )
+
+        fig.suptitle(component_name)
+
+        ax[0].plot(component_data["disturbance"], label="d")
+        ax[0].fill_between(
+            np.arange(0, len(component_data["disturbance"]), 1),
+            component_data["disturbance"][:, 0],
+            component_data["disturbance"][:, 0] - component_data["input_curtail"],
+            label="input curtail",
+        )
+        ax[0].fill_between(
+            np.arange(0, len(component_data["disturbance"]), 1),
+            component_data["disturbance"][:, 0] - component_data["input_curtail"],
+            component_data["disturbance"][:, 0]
+            - component_data["input_curtail"]
+            - component_data["passthrough"],
+            label="passthrough",
+        )
+        ax[0].fill_between(
+            np.arange(0, len(component_data["disturbance"]), 1),
+            component_data["disturbance"][:, 0]
+            - component_data["input_curtail"]
+            - component_data["passthrough"],
+            np.zeros(len(component_data["disturbance"])),
+            label="model input",
+        )
+
+        # ax[0] plot incoming edges
+
+        ax[0].legend()
+
+        ax[1].plot(component_data["x"], label="x")
+
+        # ax[2].plot(component_data["y"], label="y")
+
+        for i in range(len(component_data["out_edges"])):
+            ax[2].plot(
+                component_data["out_data"][i, :],
+                label=str(component_data["out_edges"][i]),
+            )
+        ax[2].fill_between(
+            np.arange(0, len(component_data["disturbance"]), 1),
+            np.zeros(len(component_data["disturbance"])),
+            component_data["split_curtail"],
+            label="split curtail",
+        )
+
+        ax[2].legend()
+
+        if self.stop_index < 8760:
+            ax[0].set_xlim([0, self.stop_index])
+
+        pass
+
+    def plot_component_with_control(self, component_name, component_data):
+        pass
+
+    def unpack_thermal_energy_storage(self):
+
+        generation_local_data = {
+            "uct": [],
+            "x": self.G.nodes["thermal_energy_storage"]["ionode"].model.M_hot_store,
+            "y": [],
+        }
+
+        return generation_local_data
+
+    def unpack_battery(self):
+
+        generation_local_data = {
+            "uct": self.G.nodes["battery"]["ionode"].model.store_charge_power,
+            "x": self.G.nodes["battery"]["ionode"].model.store_storage_state,
+            "y": [],
+        }
+
+        return generation_local_data
+
+    def unpack_generation(self):
+        uct = []
+        x = []
+        y = []
+
+        generation_local_data = {"uct": uct, "x": x, "y": y}
+        return generation_local_data
 
 
 class RealTimeSimulationOutput:
@@ -801,219 +840,3 @@ class StandinNode:
         u_curtail = dispatch
         output = self.output - u_curtail
         return output, u_passthrough, u_curtail
-
-
-class IONode:
-    # Splitting and throw away should happen here in IONODE
-
-    def __init__(
-        self,
-        name,
-        model,
-        expected_inputs,
-        expected_outputs,
-        splitting_node,
-        in_degree=None,
-        out_degree=None,
-    ):
-        self.inputs = expected_inputs
-        self.input_list = [
-            self.inputs["power"],
-            self.inputs["Qdot"],
-            self.inputs["mdot"],
-            self.inputs["T"],
-        ]
-
-        self.outputs = expected_outputs
-        self.input_list = [
-            self.outputs["power"],
-            self.outputs["Qdot"],
-            self.outputs["mdot"],
-            self.outputs["T"],
-        ]
-
-        self.name = name
-        self.model = model
-        self.splitting_node = splitting_node
-        if self.name == "generation":
-            self.in_degree = 1
-        else:
-            self.in_degree = in_degree
-
-        if (self.name == "output") or (self.name == "steel"):
-            self.out_degree = 1
-        else:
-            self.out_degree = out_degree
-
-        if out_degree == 0:
-            self.out_degree = 1
-
-        # NOTE Dont forget this
-        # if hasattr(self.model, "control_model") and (self.out_degree > 1):
-        #     self.model.control_model.make_splitting_node(self.out_degree)
-
-        # self.make_fake_state_space()
-
-    def step(
-        self,
-        graph_input,
-        graph_dispatch,
-        step_index,
-        node_dispatch_split=None,
-        node_dispatch_ctrl=None,
-    ):
-
-        # model_dispatch = self.consolidate_dispatch(graph_dispatch)
-
-        model_input = self.consolidate_inputs(graph_input)
-        model_dispatch_ctrl = self.model_dispatch_ctrl(model_input, node_dispatch_ctrl)
-        model_output, u_passthrough, u_curtail = self.model.step(
-            model_input, model_dispatch_ctrl, step_index
-        )
-
-        # TODO send u_passthrough downstream
-
-        if self.name == "electrolyzer":
-            model_output = [model_output, 80]
-        elif self.name == "hydrogen_storage":
-            model_output = [model_output, 20]
-        # elif self.name == "heat_exchanger":
-        #     model_output = (model_output, 900)
-
-        graph_output = self.consolidate_output(model_output, node_dispatch_split)
-
-        return graph_output
-
-    def model_dispatch_ctrl(self, model_input, node_dispatch_ctrl=None):
-        if node_dispatch_ctrl is not None:
-            # model_dispatch_ctrl = node_dispatch_ctrl * model_input
-
-            if isinstance(node_dispatch_ctrl, np.ndarray):
-                if len(node_dispatch_ctrl) == 1:
-                    model_dispatch_ctrl = node_dispatch_ctrl[0]
-                else:
-                    model_dispatch_ctrl = node_dispatch_ctrl
-            else:
-                model_dispatch_ctrl = node_dispatch_ctrl
-        else:
-            model_dispatch_ctrl = None
-
-        return model_dispatch_ctrl
-
-    def consolidate_inputs(self, graph_input):
-        if graph_input.size == 0:
-            return 0
-
-        graph_input = np.atleast_2d(np.array(graph_input))
-        Pin = np.sum(graph_input[:, 0])
-        Qin = np.sum(graph_input[:, 1])
-        mdotin = np.sum(graph_input[:, 2])
-        Tin = np.nan_to_num(
-            np.dot(graph_input[:, 2], graph_input[:, 3]) / np.sum(graph_input[:, 2])
-        )
-
-        inputs_dict = {"power": Pin, "Qdot": Qin, "mdot": mdotin, "T": Tin}
-
-        model_input = []
-        for key in self.inputs.keys():
-            if self.inputs[key]:
-                model_input.append(inputs_dict[key])
-
-        if len(model_input) == 1:
-            model_input = model_input[0]
-
-        return model_input
-
-    def consolidate_dispatch(self, graph_dispatch):
-        if graph_dispatch.size == 0:
-            return 0
-
-        graph_dispatch = np.atleast_2d(np.array(graph_dispatch))
-        Pin = np.sum(graph_dispatch[:, 0])
-        Qin = np.sum(graph_dispatch[:, 1])
-        mdotin = np.sum(graph_dispatch[:, 2])
-        Tin = np.nan_to_num(
-            np.dot(graph_dispatch[:, 2], graph_dispatch[:, 3])
-            / np.sum(graph_dispatch[:, 2])
-        )
-
-        dispatch_dict = {"power": Pin, "Qdot": Qin, "mdot": mdotin, "T": Tin}
-
-        model_dispatch = []
-        for key in self.outputs.keys():
-            if self.outputs[key]:
-                model_dispatch.append(dispatch_dict[key])
-
-        if len(model_dispatch) == 1:
-            model_dispatch = model_dispatch[0]
-
-        return model_dispatch
-
-    def consolidate_output(self, model_output, node_dispatch_split=None):
-
-        if len(node_dispatch_split) == 1:
-            graph_output = np.zeros((4, 1))
-            graph_output[np.where(self.input_list)[0], 0] = (
-                node_dispatch_split * model_output
-            )
-
-        elif len(node_dispatch_split) >= 1:
-            # if node_dispatch_split is not None:
-
-            # TODO check that the dimensions of model_output are compatable with node_dispatch
-
-            graph_output = np.zeros((4, len(node_dispatch_split)))
-            graph_output[np.where(self.input_list)[0], :] = (
-                np.array([model_output]).T
-                @ np.array([node_dispatch_split])
-                # node_dispatch_split * model_output
-            )
-
-            # if self.outputs["T"]:
-            if self.name == "electrolyzer":
-                graph_output[3, :] = model_output[1]
-
-        else:
-
-            graph_output = np.array([[0, 0, 0, 0]], dtype=float).T
-
-            count = 0
-            for i, key in enumerate(self.outputs.keys()):
-                if self.outputs[key]:
-                    if isinstance(model_output, float):
-                        graph_output[i] = model_output
-                    else:
-                        graph_output[i] = model_output[count]
-                    count += 1
-
-        # TODO add check here so that the splitting doesn't output more than the model output
-
-        return graph_output
-
-    def make_fake_state_space(self):
-        if self.splitting_node:
-            m = self.out_degree
-            n = 0
-            o = self.in_degree
-            p = self.out_degree
-
-            self.A = np.zeros((n, n))
-            self.B = np.zeros((n, m))
-            self.E = np.zeros((n, o))
-            self.C = np.zeros((p, n))
-            self.D = np.zeros((p, m))
-            self.D = np.eye(p)
-            self.F = np.zeros((p, o))
-        else:
-
-            self.A = np.array([[0.39698364, -1.68707227], [0.06748289, 0.90310532]])
-            self.B = np.array([[0.06748289], [0.00387579]])
-            self.C = np.array([[0.0, 25.0]])
-            self.D = np.array([[0.0]])
-            self.E = np.array([[0.06748289], [0.00387579]])
-            self.F = np.array([[0.0]])
-
-            self.m = self.B.shape[1]
-            self.n = self.A.shape[0]
-            self.p = self.C.shape[0]
-            self.o = self.E.shape[1]

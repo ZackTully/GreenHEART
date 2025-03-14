@@ -34,7 +34,7 @@ class GreenheartDispatch:
             self.uc_mpc = None
             self.us_mpc = None
             self.previous_update = 0
-            self.controller = DispatchModelPredictiveController(GHconfig, simulator.G)
+            self.controller = DispatchModelPredictiveController(GHconfig, simulator.G, simulator.node_order, simulator.edge_order)
 
         self.validation = False
         if self.validation:
