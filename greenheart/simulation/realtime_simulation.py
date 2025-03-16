@@ -1,6 +1,7 @@
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 import time
 
@@ -171,14 +172,6 @@ class RealTimeSimulation:
             self.G.nodes[node].update(
                 {"ionode": ionode, "is_source": is_source, "is_sink": is_sink}
             )
-
-        # nx.draw_networkx(G, with_labels=True)
-
-        # [edge for edge in nx.edge_bfs(G, "generation")]
-        # models = [G.nodes[node]["model"] for node in G.nodes]
-
-        # self.G = G
-        # self.G = G
 
         for node in list(self.G.nodes):
             # assert (
@@ -362,13 +355,13 @@ class RealTimeSimulation:
             # TODO improve this:
             # NOTE try to get the state from the x infromation in the dispatch MP from when it sets up the system
             # x0 = np.zeros( 2)
-            x0 = np.zeros(3)
+            x0 = np.zeros(2)
             x0[0] = self.G.nodes["battery"]["ionode"].model.storage_state
-            x0[2] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
-            x0[1] = (
-                self.G.nodes["thermal_energy_storage"]["ionode"].model._SOC()
-                * self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh
-            )
+            x0[1] = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
+            # x0[1] = (
+            #     self.G.nodes["thermal_energy_storage"]["ionode"].model._SOC()
+            #     * self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh
+            # )
             # x0[2] = self.G.nodes["thermal_energy_storage"]["ionode"].model.H_hot
 
             self.G = dispatcher.step(
@@ -386,38 +379,61 @@ class RealTimeSimulation:
                     end="",
                 )
 
-            # TODO update to use self.G not G_error
-            if error_feedback:
-
-                safety_count = 0
-                max_error = 1e6
-                allowable_error = 1e1
-
-                while (max_error > allowable_error) and (safety_count < 10):
-                    safety_count += 1
-
-                    max_error = 0
-                    G_error = G_simulated.copy()
-                    for edge in list(G_error.edges):
-                        error = (
-                            G_dispatch.edges[edge]["value"]
-                            - G_simulated.edges[edge]["value"]
-                        )
-
-                        max_error = np.max([max_error, np.max(np.abs(error))])
-
-                        G_error.edges[edge].update({"error": error})
-
-                    # nx.get_edge_attributes(G_error, "error")
-                    G_dispatch = dispatcher.step(G_dispatch, hybrid_profile[i], G_error)
-                    G_simulated = self.step_system_state_function(
-                        G_dispatch, hybrid_profile[i], i
-                    )
-
-                    []
-
             self.record_states(i, self.G)
+            # Check on the error
+
+            sim_edges_full = self.system_states[:, i, :]
+            sim_edges = np.zeros(sim_edges_full.shape[0])
+            for j in range(sim_edges_full.shape[0]):
+                sim_edges[j] = np.sum(sim_edges_full[j, 0:-1])
+
+            if not (i % self.dispatcher.update_period) or (i == 0):
+                mpc_edges = self.dispatcher.controller.ysp_store[
+                    np.where(
+                        np.array(self.dispatcher.controller.step_index_store) == i
+                    )[0][0]
+                ]
+            else:
+                mpc_edges = self.dispatcher.controller.ysp_store[
+                    np.where(
+                        np.array(self.dispatcher.controller.step_index_store)
+                        == self.dispatcher.previous_update
+                    )[0][0]
+                ]
+            mpc_edges = mpc_edges[0:-1, i - self.dispatcher.previous_update]
+
+            edge_error = sim_edges - mpc_edges
+
+            error_dict = {
+                str(self.edge_order[k]): edge_error[k]
+                for k in range(len(self.edge_order))
+            }
+
+            sim_u_curtail = {
+                node: self.G.nodes[node]["ionode"].u_curtail_store[i]
+                for node in self.node_order
+            }
+            sim_u_passthrough = {
+                node: self.G.nodes[node]["ionode"].u_passthrough_store[i]
+                for node in self.node_order
+            }
+
+            self.record_error(
+                error_dict, sim_u_curtail, sim_u_passthrough, step_index=i
+            )
+
+            []
         print("")
+        self.input_error = {}
+        for node in self.node_order:
+            self.input_error.update(
+                {
+                    node: {
+                        "curtail": self.G.nodes[node]["ionode"].u_curtail_store,
+                        "passthrough": self.G.nodes[node]["ionode"].u_passthrough_store,
+                    }
+                }
+            )
         for node in self.G.nodes:
             if hasattr(self.G.nodes[node]["ionode"].model, "consolidate_sim_outcome"):
                 self.G.nodes[node]["ionode"].model.consolidate_sim_outcome()
@@ -431,7 +447,23 @@ class RealTimeSimulation:
 
         self.index_dict = index_dict
         self.system_states = np.zeros((len(self.G.edges), duration, 4))
-        self.node_waste = np.zeros((len(self.G.nodes), duration, 4))
+        # self.node_waste = np.zeros((len(self.G.nodes), duration, 4))
+
+        self.edge_error_store = np.zeros((len(self.G.edges), duration))
+        # passthrough_dims = [self.G.nodes[node]["ionode"].u_passthrough_store.shape[1] for node in self.node_order]
+        # curtail_dims = [self.G.nodes[node]["ionode"].u_curtail_store.shape[1] for node in self.node_order]
+        # self.input_error = {self.node_order[i]: {curtail}}
+
+        self.curtail_store = np.zeros((len(self.G.nodes), duration))
+        self.passthrough_store = np.zeros((len(self.G.nodes), duration))
+
+    def record_error(
+        self, error_dict, node_curtail=None, node_passthrough=None, step_index=None
+    ):
+
+        self.edge_error_store[:, step_index] = list(error_dict.values())
+        # self.curtail_store[:, step_index] = np.concatenate(list(node_curtail.values()))
+        # self.passthrough_store[:, step_index] = np.concatenate(list(node_passthrough.values()))
 
     def record_states(self, time_step, simulated_IO):
 
@@ -439,12 +471,12 @@ class RealTimeSimulation:
         for key in values.keys():
             self.system_states[self.index_dict[key], time_step, :] = values[key]
 
-        for i, node in enumerate(list(simulated_IO.nodes)):
-            # self.node_waste[i, time_step, :] = simulated_IO.nodes[node]["wasted_output"]
-            # TODO come back to this it is messy
-            self.node_waste[i, time_step, :] = np.sum(
-                simulated_IO.nodes[node]["wasted_output"], axis=1
-            )
+        # for i, node in enumerate(list(simulated_IO.nodes)):
+        #     # self.node_waste[i, time_step, :] = simulated_IO.nodes[node]["wasted_output"]
+        #     # TODO come back to this it is messy
+        #     self.node_waste[i, time_step, :] = np.sum(
+        #         simulated_IO.nodes[node]["wasted_output"], axis=1
+        #     )
 
     def _setup_generation_node(self):
         inputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
@@ -630,7 +662,12 @@ class RealTimeSimulation:
         split_curtail = rt_node.u_curtail_split_store[
             :, np.where(rt_node.output_list)[0]
         ].T[0, :]
-        disturbance = rt_node.disturbance_store
+
+        if rt_node.inputs["T"]:
+
+            disturbance = rt_node.disturbance_store[:, 0:-1]
+        else:
+            disturbance = rt_node.disturbance_store
 
         in_edges = self.G.in_edges(component_name)
 
@@ -691,9 +728,11 @@ class RealTimeSimulation:
         if make_plot:
             self.plot_component(component_name, component_data)
 
-        pass
+        return component_data
 
     def plot_component(self, component_name, component_data):
+
+        # TODO make this flexible for components with multi-domain inputs
 
         fig, ax = plt.subplots(
             4, 1, sharex="all", layout="constrained", figsize=(10, 4)
@@ -705,22 +744,22 @@ class RealTimeSimulation:
         ax[0].fill_between(
             np.arange(0, len(component_data["disturbance"]), 1),
             component_data["disturbance"][:, 0],
-            component_data["disturbance"][:, 0] - component_data["input_curtail"],
+            component_data["disturbance"][:, 0] - component_data["input_curtail"][:, 0],
             label="input curtail",
         )
         ax[0].fill_between(
             np.arange(0, len(component_data["disturbance"]), 1),
-            component_data["disturbance"][:, 0] - component_data["input_curtail"],
+            component_data["disturbance"][:, 0] - component_data["input_curtail"][:, 0],
             component_data["disturbance"][:, 0]
-            - component_data["input_curtail"]
-            - component_data["passthrough"],
+            - component_data["input_curtail"][:, 0]
+            - component_data["passthrough"][:, 0],
             label="passthrough",
         )
         ax[0].fill_between(
             np.arange(0, len(component_data["disturbance"]), 1),
             component_data["disturbance"][:, 0]
-            - component_data["input_curtail"]
-            - component_data["passthrough"],
+            - component_data["input_curtail"][:, 0]
+            - component_data["passthrough"][:, 0],
             np.zeros(len(component_data["disturbance"])),
             label="model input",
         )
@@ -782,6 +821,236 @@ class RealTimeSimulation:
 
         generation_local_data = {"uct": uct, "x": x, "y": y}
         return generation_local_data
+
+    def plot_edges(self):
+        fig, ax = plt.subplots(
+            len(self.edge_order), 1, sharex="col", layout="constrained"
+        )
+        colors = ["black", "red", "blue"]
+        labels = ["power", "heat", "hydrogen"]
+        for i in range(len(self.edge_order)):
+            for j in range(3):
+                ax[i].fill_between(
+                    np.arange(0, self.system_states.shape[1], 1),
+                    np.zeros(self.system_states.shape[1]),
+                    self.system_states[i, :, j],
+                    step="post",
+                    color=colors[j],
+                    label=labels[j],
+                )
+                ylabel = f"{self.edge_order[i][0][0:4]} to {self.edge_order[i][1][0:4]}"
+                ax[i].set_ylabel(ylabel)
+
+            ax[i].set_ylim([0, ax[i].get_ylim()[1]])
+            ax[i].legend()
+
+        if self.stop_index < 8760:
+            ax[0].set_xlim([0, self.stop_index])
+
+        fig.align_ylabels()
+
+    def plot_nodes(self, data="edges"):
+        fig, ax = plt.subplots(
+            len(self.node_order), 1, sharex="all", sharey="col", layout="constrained"
+        )
+
+        ax = ax[:, None]
+
+        if data == "edges":
+
+            normalized_states = np.zeros(self.system_states.shape)
+            for i in range(self.system_states.shape[2]):
+                normalized_states[:, :, i] = np.nan_to_num(
+                    self.system_states[:, :, i] / np.max(self.system_states[:, :, i])
+                )
+
+            plot_states = normalized_states
+
+        elif data == "curtail":
+            normalized_states = np.zeros(self.curtail_store.shape)
+            for i in range(self.curtail_store.shape[2]):
+                normalized_states[:, :, i] = np.nan_to_num(
+                    self.curtail_store[:, :, i] / np.max(self.curtail_store[:, :, i])
+                )
+
+            plot_states = normalized_states
+        elif data == "passthrough":
+            normalized_states = np.zeros(self.passthrough_store.shape)
+            for i in range(self.curtail_store.shape[2]):
+                normalized_states[:, :, i] = np.nan_to_num(
+                    self.passthrough_store[:, :, i]
+                    / np.max(self.passthrough_store[:, :, i])
+                )
+
+            plot_states = normalized_states
+
+        colors = ["black", "red", "blue"]
+        cmaps = ["Greys", "Reds", "Blues"]
+        edgecolors = ["orange", "yellow", "cyan", "magenta", "green"]
+        labels = ["P", "Q", "H2"]
+        for i in range(len(self.node_order)):
+            node = self.node_order[i]
+
+            ax[i, 0].set_ylabel(node)
+
+            incoming = [
+                self.edge_order[k][0]
+                for k in range(len(self.edge_order))
+                if node == self.edge_order[k][1]
+            ]
+            outgoing = [
+                self.edge_order[k][1]
+                for k in range(len(self.edge_order))
+                if node == self.edge_order[k][0]
+            ]
+            in_index = np.array(
+                [
+                    k
+                    for k in range(len(self.edge_order))
+                    if node == self.edge_order[k][1]
+                ]
+            )
+            out_index = np.array(
+                [
+                    k
+                    for k in range(len(self.edge_order))
+                    if node == self.edge_order[k][0]
+                ]
+            )
+            for j in range(3):
+                # for j in [0]
+
+                j_ax = 0
+
+                plot_ax = ax[i, j_ax]
+
+                n_fills = len(in_index) + len(out_index)
+                cmap_level = 0.25
+
+                start = np.zeros(plot_states.shape[1])
+
+                if (node == "generation") and (j == 0):
+                    curtail = self.G.nodes[node]["ionode"].u_curtail_store / np.max(
+                        self.system_states[:, :, 0]
+                    )
+                    stop = -curtail[:, 0]
+                    ax[i, j_ax].fill_between(
+                        np.arange(0, plot_states.shape[1], 1),
+                        start,
+                        start + stop,
+                        step="post",
+                        alpha=1,
+                        linewidth=0,
+                        label=f"curtail",
+                        color=mpl.colormaps[cmaps[j]](cmap_level - 0.15),
+                    )
+                    start += stop
+
+                    # ax[i, j].step(np.arange(0, self.system_states.shape[1], 1), -self.hybrid_profile, color="black", linewidth=1)
+
+                if node == "battery":
+
+                    axt = ax[i, 0].twinx()
+
+                    axt.plot(
+                        self.G.nodes["battery"]["ionode"].model.store_storage_state
+                        / self.G.nodes["battery"]["ionode"].model.max_capacity_kWh,
+                        color="black",
+                        linewidth=1,
+                    )
+                    axt.set_ylim([0, 1])
+                    axt.set_yticks([])
+
+                if node == "hydrogen_storage":
+
+                    axt = ax[i, 0].twinx()
+
+                    axt.plot(
+                        self.G.nodes["hydrogen_storage"][
+                            "ionode"
+                        ].model.store_storage_state
+                        / self.G.nodes["hydrogen_storage"][
+                            "ionode"
+                        ].model.max_capacity_kg,
+                        color="blue",
+                        linewidth=1,
+                    )
+                    axt.set_ylim([0, 1])
+                    axt.set_yticks([])
+
+                for k in range(len(in_index)):
+                    stop = plot_states[in_index[k], :, j]
+                    if np.sum(stop) != 0:
+                        ax[i, j_ax].fill_between(
+                            np.arange(0, plot_states.shape[1], 1),
+                            start,
+                            start + stop,
+                            step="post",
+                            alpha=1,
+                            # edgecolor=edgecolors[k],
+                            linewidth=0,
+                            # facecolor=colors[j],
+                            # label=f"{labels[j]} in",
+                            label=f"from {incoming[k][0:4]}",
+                            color=mpl.colormaps[cmaps[j]](cmap_level),
+                        )
+
+                    cmap_level += 0.15
+                    start += stop
+
+                start = np.zeros(plot_states.shape[1])
+                for k in range(len(out_index)):
+                    stop = -plot_states[out_index[k], :, j]
+                    if np.sum(stop) != 0:
+                        ax[i, j_ax].fill_between(
+                            np.arange(0, plot_states.shape[1], 1),
+                            start,
+                            start + stop,
+                            step="post",
+                            alpha=1,
+                            # edgecolor=edgecolors[k],
+                            linewidth=0,
+                            # facecolor=colors[j],
+                            # label=f"{labels[j]} out",
+                            label=f"to {outgoing[k][0:4]}",
+                            color=mpl.colormaps[cmaps[j]](cmap_level),
+                        )
+
+                    start += stop
+                    cmap_level += 0.15
+
+                []
+
+        # ax[0, 0].set_title("Power")
+        # ax[0, 1].set_title("Heat")
+        # ax[0, 2].set_title("Hydrogen")
+
+        legend_kwargs = {
+            "fontsize": 10,
+            "borderpad": 0.2,
+            "handlelength": 1.2,
+            "handleheight": 0.6,
+            "handletextpad": 0.25,
+        }
+
+        for i in range(ax.shape[0]):
+            for j in range(ax.shape[1]):
+                # ax[i,j].set_ylim([0, ax[i,j].get_ylim()[1]])
+                ax[i, j].set_ylim(
+                    [
+                        -np.max(np.abs(ax[i, j].get_ylim())),
+                        np.max(np.abs(ax[i, j].get_ylim())),
+                    ]
+                )
+                if ax.shape[1] == 1:
+                    ax[i, j].set_yticks([])
+                ax[i, j].axhline(0, linewidth=0.5, color="black", alpha=0.5, zorder=0.5)
+                ax[i, j].legend(**legend_kwargs)
+
+        if self.stop_index < 8760:
+            ax[0, 0].set_xlim([0, self.stop_index])
+
+        []
 
 
 class RealTimeSimulationOutput:

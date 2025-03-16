@@ -44,12 +44,22 @@ class Node:
         if out_degree == 0:
             self.out_degree = 1
 
-        self.u_passthrough_store = np.zeros(8760)
-        self.u_curtail_store = np.zeros(8760)
-        if self.name == "generation":
-            self.disturbance_store = np.zeros((8760, 1))
-        else:
+        
+        if self.inputs["T"]:
+            self.u_curtail_store = np.zeros((8760, np.sum(self.input_list) - 1))
+            self.u_passthrough_store = np.zeros((8760, np.sum(self.input_list) - 1))
+            self.disturbance_store = np.zeros((8760, np.sum(self.input_list) - 1))
+        else: 
+            self.u_curtail_store = np.zeros((8760, np.sum(self.input_list)))
+            self.u_passthrough_store = np.zeros((8760, np.sum(self.input_list)))
             self.disturbance_store = np.zeros((8760, np.sum(self.input_list)))
+
+        if self.name == "generation":
+            self.u_curtail_store = np.zeros((8760, 1))
+            self.disturbance_store = np.zeros((8760, 1))
+            self.u_passthrough_store = np.zeros((8760, 1))
+        # else:
+        #     self.disturbance_store = np.zeros((8760, np.sum(self.input_list)))
         self.u_curtail_split_store = np.zeros((8760, 4))
 
 
@@ -92,6 +102,8 @@ class Node:
             model_disturbance, u_control, step_index
         )
 
+        assert y_model >= 0
+
 
         model_output = self.format_model_output(y_model, u_passthrough)
         outgoing_edges, split_curtail = self.splitting(model_output, u_split, step_index)
@@ -103,15 +115,18 @@ class Node:
 
     def store_disturbance(self, model_disturbance, step_index = 0):
         # if model_disturbance.shape[0] > 0:
-        self.disturbance_store[step_index, :] = model_disturbance
+        if self.inputs["T"]:
+            self.disturbance_store[step_index, :] = model_disturbance[0:-1]
+        else:
+            self.disturbance_store[step_index, :] = model_disturbance
 
     def store_passthrough(self, u_passthrough=None, step_index=0):
-        self.u_passthrough_store[step_index] = u_passthrough
+        self.u_passthrough_store[step_index, :] = u_passthrough
         
     def store_curtail(self, u_curtail=None, split_curtail=None,  step_index=0):
 
         
-        self.u_curtail_store[step_index] = u_curtail
+        self.u_curtail_store[step_index, :] = u_curtail
         self.u_curtail_split_store[step_index, :] = split_curtail
         
 

@@ -14,7 +14,7 @@ class Battery():
         # config = BatteryConfig(*battery_config)
 
 
-        self.roundtrip_efficiency = 1
+        self.roundtrip_efficiency = 0.82
     
         self.config = battery_config
 
@@ -79,6 +79,7 @@ class Battery():
 
         control_model.set_disturbance_domain([1, 0, 0])
         control_model.set_output_domain([1, 0, 0])
+        control_model.set_disturbance_reshape(np.array([[1, 0, 0]]))
 
         return control_model
 
@@ -223,7 +224,10 @@ class Battery():
         #     desired_power = 0 # TODO this might come back around to bite
 
         if isinstance(dispatch, (np.ndarray, list)):
-            desired_power = dispatch[0]
+            if len(dispatch) == 1:
+                desired_power = dispatch[0]
+            else:
+                desired_power = dispatch[0] - dispatch[1]
         else:
             desired_power = dispatch
 

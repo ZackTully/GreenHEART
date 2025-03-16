@@ -648,10 +648,11 @@ def run_simulation(config: GreenHeartSimulationConfig):
         )
 
         # NOTE This is where the power gets split between hydrogen and heat pathways
-        if True:
-
+        if "thermal_energy_storage" in config.greenheart_config:
             hopp_results_internal["energy_to_electrolyzer_kw"] = 0.93 * remaining_power_profile_in
             hopp_results_internal["energy_to_heating_kw"] = 0.07 * remaining_power_profile_in
+        else: 
+            hopp_results_internal["energy_to_electrolyzer_kw"] = remaining_power_profile_in
 
         # TODO come back and make this a more reliable cases test
         if not config.realtime_simulation:
@@ -739,13 +740,19 @@ def run_simulation(config: GreenHeartSimulationConfig):
             simulator = simulator
         )
 
-        # Do heat stuff here
-        h2_heating_results, tes_sizing_results, tes_cost_results,  TES = therm_man.run_h2_heating(
-            hopp_results_internal,
-            greenheart_config,
-            electrolyzer_physics_results,
-            h2_storage_results,
-        )
+
+        if "thermal_energy_storage" in config.greenheart_config:
+            # Do heat stuff here
+            h2_heating_results, tes_sizing_results, tes_cost_results,  TES = therm_man.run_h2_heating(
+                hopp_results_internal,
+                greenheart_config,
+                electrolyzer_physics_results,
+                h2_storage_results,
+            )
+
+        else: 
+            h2_heating_results = {}
+            tes_cost_results = {}
 
         if False:
             tes_cost_results = {
@@ -1190,8 +1197,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
     elif config.output_level == 7:
         return lcoe, lcoh, steel_finance, ammonia_finance
     elif config.output_level == 8:
-        return (
-            GreenHeartSimulationOutput(
+        
+        greenheart_output =     GreenHeartSimulationOutput(
                 config,
                 hi,
                 pf_lcoe,
@@ -1245,9 +1252,12 @@ def run_simulation(config: GreenHeartSimulationConfig):
                     else ammonia_finance
                 ),
                 platform_results=platform_results,
-            ),
-            simulator,
-        )
+            )
+        if config.realtime_simulation:
+            return greenheart_output, simulator
+        else:
+            return greenheart_output
+        
 
 
 def run_sweeps(

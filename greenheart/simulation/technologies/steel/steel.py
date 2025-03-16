@@ -1070,19 +1070,23 @@ class SteelModel:
         # )
 
         # From Bhaskar 2022 Figure 2
-        self.P_eaf_kwhptls = 571.67832 # [kWh tonne^-1] per tonne liquid steel out of EAF
-        self.P_DRI_kwhptls = 298.95104 # [kWh tonne^-1] per tonne liquid steel out of EAF
-        self.m_ht_kgptls = 59.56 # [kg tonne^-1] per tonne liquid steel out of EAF
+        self.P_eaf_kwhptls = (
+            571.67832  # [kWh tonne^-1] per tonne liquid steel out of EAF
+        )
+        self.P_DRI_kwhptls = (
+            298.95104  # [kWh tonne^-1] per tonne liquid steel out of EAF
+        )
+        self.m_h2_kgptls = 59.56  # [kg tonne^-1] per tonne liquid steel out of EAF
 
         self.setup_simulation_storage()
         self.create_control_model()
 
-    def create_control_model(self):
+    def create_control_model(self, separate_cm_constraint=True):
 
         m = 0
         n = 0
-        p = 1
-        o = 1
+        p = 2
+        o = 2
 
         A = np.zeros((n, n))
         B = np.zeros((n, m))
@@ -1091,27 +1095,39 @@ class SteelModel:
         E = np.zeros((n, o))
         F = np.array(
             [
-                [
-                    # 1 / self.feedstocks.electricity_consumption,
-                    1 / self.feedstocks.hydrogen_consumption,
-                ]
+                [0, 1 / self.m_h2_kgptls],
+                [1,  -(self.P_DRI_kwhptls + self.P_eaf_kwhptls) / self.m_h2_kgptls],
             ]
         )
+
+        # F = np.array(
+        #     [
+        #         [
+        #             # 1 / self.feedstocks.electricity_consumption,
+        #             1 / self.feedstocks.hydrogen_consumption,
+        #         ]
+        #     ]
+        # )
 
         bounds_dict = {
             "u_lb": np.array([]),
             "u_ub": np.array([]),
             "x_lb": np.array([]),
             "x_ub": np.array([]),
-            "y_lb": np.array([0]),
-            "y_ub": np.array([None]),
+            "y_lb": np.array([0, 0]),
+            "y_ub": np.array([None, None]),
         }
 
         self.control_model = ControlModel(
             A, B, C, D, E, F, bounds=bounds_dict, discrete=True
         )
-        self.control_model.set_disturbance_domain([1, 1, 1])
+
+        if separate_cm_constraint:
+            self.control_model.constraints(y_position=[1], constraint_type=["greater"])
+
+        self.control_model.set_disturbance_domain([1, 0, 1])
         self.control_model.set_output_domain([0, 0, 0])
+        self.control_model.set_disturbance_reshape(np.array([[1, 0, 0], [0, 0, 1]]))
 
     def setup_simulation_storage(self):
         self.fe2o3_store = np.zeros(8760)
@@ -1130,39 +1146,52 @@ class SteelModel:
         self.power_waste_store[step_index] = power_waste
         self.h2_waste_store[step_index] = h2_waste
 
-
     def step(self, DRI_inputs, dispatch, step_index=0):
 
         power_in = DRI_inputs[0]
         h2_in = DRI_inputs[1]
         h2_temp = DRI_inputs[2]
 
-        # The potential DRI that could be made with either input individually
-        potential_DRI = np.array(
-            [
-                power_in / self.feedstocks.electricity_consumption,
-                h2_in / self.feedstocks.hydrogen_consumption,
-            ]
+        # if h2_temp < 900:
+        #     assert False
+
+        potential_steel_power_tls = power_in / (self.P_DRI_kwhptls + self.P_eaf_kwhptls)
+        potential_steel_h2_tls = h2_in / self.m_h2_kgptls
+
+        steel_output = np.min([potential_steel_h2_tls, potential_steel_power_tls])
+        power_waste_kwh = (potential_steel_power_tls - steel_output) * (
+            self.P_DRI_kwhptls + self.P_eaf_kwhptls
         )
+        h2_waste_kg = (potential_steel_h2_tls - steel_output) * self.m_h2_kgptls
 
-        # actual DRI production
-        # DRI_produced = np.min(potential_DRI)
-        DRI_produced = potential_DRI[1]
+        # # The potential DRI that could be made with either input individually
+        # potential_DRI = np.array(
+        #     [
+        #         power_in / self.feedstocks.electricity_consumption,
+        #         h2_in / self.feedstocks.hydrogen_consumption,
+        #     ]
+        # )
 
-        unused_power = self.feedstocks.electricity_consumption * (
-            potential_DRI[0] - DRI_produced
-        )
-        unused_h2 = self.feedstocks.hydrogen_consumption * (
-            potential_DRI[1] - DRI_produced
-        )
+        # # actual DRI production
+        # # DRI_produced = np.min(potential_DRI)
+        # DRI_produced = potential_DRI[1]
 
-        self.store_step(DRI_produced, unused_power, unused_h2, step_index)
+        # unused_power = self.feedstocks.electricity_consumption * (
+        #     potential_DRI[0] - DRI_produced
+        # )
+        # unused_h2 = self.feedstocks.hydrogen_consumption * (
+        #     potential_DRI[1] - DRI_produced
+        # )
 
-
+        self.store_step(steel_output, power_waste_kwh, h2_waste_kg, step_index)
+        # self.store_step(DRI_produced, unused_power, unused_h2, step_index)
 
         # return (unused_power, unused_h2, h2_temp)
         # return (unused_power, unused_h2, 0)
-        return (DRI_produced, 0, 0)
+
+        passthrough = 0
+        input_curtail = [power_waste_kwh, h2_waste_kg]
+        return steel_output, passthrough, input_curtail
 
     def consolidate_sim_outcome(self):
 
@@ -1228,10 +1257,12 @@ if __name__ == "__main__":
 
     sm = SteelModel(config)
 
+    sm.create_control_model(separate_cm_constraint=False)
+
     n_p = 100
     n_h2 = 100
     P_in = np.linspace(0, 1000, n_p)
-    h2_in = np.linspace(0, 1000, n_h2)
+    h2_in = np.linspace(0, 100, n_h2)
 
     steel_out = np.zeros((n_p, n_h2))
     h2_waste = np.zeros((n_p, n_h2))
@@ -1243,21 +1274,20 @@ if __name__ == "__main__":
 
     for i in range(n_p):
         for j in range(n_h2):
-            so, h2w, pw = sm.step((P_in[i], h2_in[j], 900), 0,  step_index = 0)
+            so, pw, h2w = sm.step((P_in[i], h2_in[j], 900), 0, step_index=0)
 
-            steel_out[i,j] = so
-            h2_waste[i,j] = h2w
-            p_waste[i,j] = pw
+            steel_out[i, j] = so
+            h2_waste[i, j] = h2w
+            p_waste[i, j] = pw
 
-            # y_sm = sm.control_model.F @ np.array([[P_in[i], h2_in[j]]]).T
-            # cm_steel_out[i,j] = y_sm[0]
-            # cm_p_waste[i,j] = y_sm[1]
+            y_sm = sm.control_model.F @ np.array([[P_in[i], h2_in[j]]]).T
+            cm_steel_out[i, j] = y_sm[0]
+            cm_p_waste[i, j] = y_sm[1]
 
-
-
+    import matplotlib as mpl
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(2, 3 , sharex="all", sharey="all", layout="constrained")
+    fig, ax = plt.subplots(2, 3, sharex="all", sharey="all", layout="constrained")
 
     PIN, H2IN = np.meshgrid(P_in, h2_in)
 
@@ -1267,18 +1297,36 @@ if __name__ == "__main__":
     cm_contours = []
 
     for i in range(3):
-        contour = ax[0,i].contourf(PIN, H2IN, data[i])
+
+        data_min = np.min([np.min(data[i]), np.min(cm_data[i])])
+        data_max = np.max([np.max(data[i]), np.max(cm_data[i])])
+
+        n_levels = 20
+        levels = np.linspace(data_min, data_max, n_levels)
+
+        data_norm = mpl.colors.TwoSlopeNorm(0, data_min - 0.1, data_max)
+
+        contour = ax[0, i].contourf(
+            PIN, H2IN, data[i], levels=levels, norm=data_norm, cmap="seismic"
+        )
         contours.append(contour)
 
-        cm_contour = ax[1, i].contourf(PIN, H2IN, cm_data[i])
+        fig.colorbar(contour, ax=ax[0, i], location="bottom", ticks = [data_min, data_max])
+
+        cm_contour = ax[1, i].contourf(
+            PIN, H2IN, cm_data[i], levels=levels, norm=data_norm, cmap="seismic"
+        )
         cm_contours.append(cm_contour)
 
-    ax[0,0].set_ylabel("Power in [kWh h^-1]")
-    ax[1,0].set_ylabel("Power in [kWh h^-1]")
+    ax[0, 0].set_ylabel("H2 in [kg h^-1]")
+    ax[1, 0].set_ylabel("H2 in [kg h^-1]")
 
+    ax[1, 0].set_xlabel("Power in [kWh]")
+    ax[1, 1].set_xlabel("Power in [kWh]")
+    ax[1, 2].set_xlabel("Power in [kWh]")
 
-    ax[1, 0].set_xlabel("H2 in [kg h^-1]")
-    ax[1, 1].set_xlabel("H2 in [kg h^-1]")
-    ax[1, 2].set_xlabel("H2 in [kg h^-1]")
+    ax[0, 0].set_title("Steel out [tonne]")
+    ax[0, 1].set_title("H2 waste [kg]")
+    ax[0, 2].set_title("Power waste [kwh]")
 
     []

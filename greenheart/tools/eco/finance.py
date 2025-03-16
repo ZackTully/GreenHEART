@@ -448,9 +448,6 @@ def run_capex(
 
 
 
-    # TES capex information
-    tes_capex = tes_cost_results["capex_tes_usd"]
-
 
     # store capex component breakdown
     capex_breakdown = {
@@ -466,8 +463,14 @@ def run_capex(
         "h2_transport_compressor": h2_transport_compressor_capex,
         "h2_transport_pipeline": h2_transport_pipe_capex,
         "h2_storage": h2_storage_capex,
-        "thermal_energy_storage": tes_capex
+        # "thermal_energy_storage": tes_capex
     }
+
+    if "thermal_energy_storage" in greenheart_config:
+        # TES capex information
+        tes_capex = tes_cost_results["capex_tes_usd"]
+
+        capex_breakdown.update({"thermal_energy_storage": tes_capex})
 
     # discount capex to appropriate year for unified costing
     for key in capex_breakdown.keys():
@@ -579,7 +582,6 @@ def run_opex(
     annual_operating_cost_desal = desal_opex
 
 
-    tes_opex = tes_cost_results["opex_tes_usdpyr"]
 
     # store opex component breakdown
     opex_breakdown_annual = {
@@ -595,8 +597,12 @@ def run_opex(
         "h2_transport_compressor": h2_transport_compressor_opex,
         "h2_transport_pipeline": h2_transport_pipeline_opex,
         "h2_storage": storage_opex,
-        "thermal_energy_storage": tes_opex
+        # "thermal_energy_storage": tes_opex
     }
+
+    if "thermal_energy_storage" in greenheart_config:
+        tes_opex = tes_cost_results["opex_tes_usdpyr"]
+        opex_breakdown_annual.update({"thermal_energy_storage":tes_opex})
 
     # discount opex to appropriate year for unified costing
     for key in opex_breakdown_annual.keys():

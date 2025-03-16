@@ -5,15 +5,13 @@ from greenheart.simulation.technologies.dispatch.control_model import ControlMod
 class HydrogenStorage:
     def __init__(self):
 
-
-
-
         self.roundtrip_efficiency = 1
         self.max_capacity_kg = 812209.38400328 # kg
         # self.max_capacity_kg = 3e5 # kg
         self.min_capacity_kg = 0
         
-        self.max_charge_rate_kg_hr = 3e3
+        self.max_charge_rate_kg_hr = 1e3
+        # self.max_charge_rate_kg_hr = 3e3
         self.max_discharge_rate_kg_hr = self.max_charge_rate_kg_hr
 
         self.dt = 1 # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
@@ -31,25 +29,35 @@ class HydrogenStorage:
     def create_control_model(self):
 
         A = np.array([[1]])
-        B = np.array([[1]])
-        C = np.array([[0]])
-        D = np.array([[-1]])
+        B = np.array([[1, -1]])
         E = np.array([[0]])
-        F = np.array([[1]])
+        
+        C = np.array([[0], [0]])
+        D = np.array([[0, 1], [-1, 0]])
+        F = np.array([[0], [1]])
+
+
+        # A = np.array([[1]])
+        # B = np.array([[1]])
+        # C = np.array([[0]])
+        # D = np.array([[-1]])
+        # E = np.array([[0]])
+        # F = np.array([[1]])
 
         bounds_dict = {
-            "u_lb": np.array([-self.max_discharge_rate_kg_hr]),
-            "u_ub": np.array([self.max_charge_rate_kg_hr]),
+            "u_lb": np.array([0, 0]),
+            "u_ub": np.array([self.max_charge_rate_kg_hr, self.max_discharge_rate_kg_hr]),
             "x_lb": np.array([0]),
             "x_ub": np.array([self.max_capacity_kg]),
-            "y_lb": np.array([None]),
-            "y_ub": np.array([None]),
+            "y_lb": np.array([0, 0]),
+            "y_ub": np.array([None, None]),
         }
 
-
         self.control_model = ControlModel(A, B, C, D, E, F, bounds=bounds_dict, discrete=True)
+        self.control_model.constraints(y_position=[1], constraint_type=["greater"])
         self.control_model.set_disturbance_domain([0, 0, 1])
         self.control_model.set_output_domain([0, 0, 1])
+        self.control_model.set_disturbance_reshape(np.array([[0, 0, 1]]))
         []
 
 
@@ -57,22 +65,10 @@ class HydrogenStorage:
     def run(self):
         pass
 
-    # def input_output(self, available_massflow, desired_massflow):
-    #     # input is charging massflow must be >= 0
-    #     # dispatch signal is charging/discharging massflow + or -
-
-    #     actual_massflow = self.low_level_controller(available_massflow, desired_massflow)
-
-    #     self.update_storage_state(actual_massflow)
-    #     return actual_massflow
-        
 
     def update_storage_state(self, input_massflow):
         # Euler integration
         self.storage_state += input_massflow * self.dt
-
-
-
 
 
     def low_level_controller(self, available_massflow, desired_massflow):
@@ -134,22 +130,17 @@ class HydrogenStorage:
 
 
         if isinstance(dispatch, (np.ndarray, list)):
-            desired_massflow = dispatch[0]
-
+            # desired_massflow = dispatch[0]
+            desired_massflow = dispatch[0] - dispatch[1]
 
         available_massflow = h2_input[0]
         available_temperature = h2_input[1]
-
-
-
 
         # output = self.input_output(available_massflow, desired_massflow)
         model_output, u_model, u_passthrough, u_curtail = self.low_level_controller(available_massflow, desired_massflow)
 
         self.update_storage_state(u_model)
         self.store_step(step_index, u_model)
-
-    
 
         return model_output, u_passthrough, u_curtail
 

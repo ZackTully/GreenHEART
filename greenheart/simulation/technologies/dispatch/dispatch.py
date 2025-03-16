@@ -28,13 +28,29 @@ class GreenheartDispatch:
 
         self.use_MPC = True
 
-        self.update_period = 24 # Re-compute the trajectory every 24 hours
+        if dispatch_config is not None:
+            self.update_period = dispatch_config["update_period"]
+        else:
+
+            self.update_period = 1  # Re-compute the trajectory every 24 hours
 
         if self.use_MPC:
             self.uc_mpc = None
             self.us_mpc = None
             self.previous_update = 0
-            self.controller = DispatchModelPredictiveController(GHconfig, simulator.G, simulator.node_order, simulator.edge_order)
+
+            if "mpc" in dispatch_config:
+                mpc_config = dispatch_config["mpc"]
+            else:
+                mpc_config = {}
+
+            self.controller = DispatchModelPredictiveController(
+                GHconfig,
+                simulator.G,
+                simulator.node_order,
+                simulator.edge_order,
+                mpc_config=mpc_config,
+            )
 
         self.validation = False
         if self.validation:
@@ -102,7 +118,15 @@ class GreenheartDispatch:
         )
         self.validation_data = validation_data
 
-    def step(self, G, available_power, forecast = None, x_measured=None, feedback_error=None, step_index=None):
+    def step(
+        self,
+        G,
+        available_power,
+        forecast=None,
+        x_measured=None,
+        feedback_error=None,
+        step_index=None,
+    ):
 
         # G_dispatch = self.example_control_elec_storage_steel(G_dispatch, available_power)
         # G_dispatch = self.example_control_hydrogen_heat(G_dispatch, available_power)
@@ -173,7 +197,8 @@ class GreenheartDispatch:
             {
                 "dispatch_ctrl": np.array(
                     [
-                        self.validation_data["bes_charge"][step_index] - self.validation_data["bes_discharge"][step_index]
+                        self.validation_data["bes_charge"][step_index]
+                        - self.validation_data["bes_discharge"][step_index]
                     ]
                 )
             }
@@ -183,7 +208,8 @@ class GreenheartDispatch:
             {
                 "dispatch_ctrl": np.array(
                     [
-                        self.validation_data["h2s_charge"][step_index]                        - self.validation_data["h2s_discharge"][step_index]
+                        self.validation_data["h2s_charge"][step_index]
+                        - self.validation_data["h2s_discharge"][step_index]
                     ]
                 )
             }
@@ -212,8 +238,13 @@ class GreenheartDispatch:
             if G.out_degree[node] > 1:
                 G.nodes[node].update(
                     {
-                        "dispatch_split": np.nan_to_num(((available_power / G.out_degree[node])
-                        * np.ones(G.out_degree[node]) ) / available_power)
+                        "dispatch_split": np.nan_to_num(
+                            (
+                                (available_power / G.out_degree[node])
+                                * np.ones(G.out_degree[node])
+                            )
+                            / available_power
+                        )
                     }
                 )
             else:
@@ -227,13 +258,14 @@ class GreenheartDispatch:
             # else:
             #     G.nodes[node].update({"dispatch_ctrl": []})
 
-
             G.nodes[node].update({"dispatch_ctrl": np.array([0])})
 
-        G.nodes["battery"].update({"dispatch_ctrl": np.array([available_power - mean_generation])})
-        G.nodes["hydrogen_storage"].update({"dispatch_ctrl": np.array([1/55 * (available_power - mean_generation)])})
-
-
+        G.nodes["battery"].update(
+            {"dispatch_ctrl": np.array([available_power - mean_generation])}
+        )
+        G.nodes["hydrogen_storage"].update(
+            {"dispatch_ctrl": np.array([1 / 55 * (available_power - mean_generation)])}
+        )
 
         return G
 
@@ -246,8 +278,10 @@ class GreenheartDispatch:
         # forecast = np.ones(self.controller.horizon)
 
         # u_mpc = self.controller.compute_trajectory(x0, forecast)
-        if not(step_index % self.update_period) or (step_index == 0):
-            uc_mpc_traj, us_mpc_traj, curtail_mpc_traj= self.controller.compute_trajectory(x0, forecast, step_index)
+        if not (step_index % self.update_period) or (step_index == 0):
+            uc_mpc_traj, us_mpc_traj, curtail_mpc_traj = (
+                self.controller.compute_trajectory(x0, forecast, step_index)
+            )
             self.uc_mpc_traj = np.atleast_2d(uc_mpc_traj)
             self.us_mpc_traj = np.atleast_2d(us_mpc_traj)
             self.curtail_mpc_traj = np.atleast_2d(curtail_mpc_traj)
@@ -257,9 +291,6 @@ class GreenheartDispatch:
         us_mpc = self.us_mpc_traj[:, step_index - self.previous_update]
         curtail_mpc = self.curtail_mpc_traj[:, step_index - self.previous_update]
 
-
-
-
         for node in list(G.nodes):
             # G.nodes[node].update({"dispatch_split": np.array([1])})
             G.nodes[node].update({"dispatch_split": np.array([[1]])})
@@ -268,28 +299,17 @@ class GreenheartDispatch:
         for edge in list(G_dispatch.edges):
             G_dispatch.edges[edge].update({"dispatch": 0})
 
-
         G.nodes["generation"].update({"dispatch_ctrl": curtail_mpc})
-
-
 
         for node in self.controller.uct_order.keys():
             if len(self.controller.uct_order[node]) > 0:
                 G.nodes[node]["dispatch_ctrl"] = uc_mpc[self.controller.uct_order[node]]
-        
+
         for node in self.controller.usp_order.keys():
             if len(self.controller.usp_order[node]) >= 1:
-                G.nodes[node]["dispatch_split"] = us_mpc[self.controller.usp_order[node]]
-
-
-        # for i in range(len(u_mpc)):
-        #     if i in self.controller.splitting_sort.keys():
-        #         G.nodes[self.controller.splitting_sort[i]]["dispatch_split"].append(
-        #             u_mpc[i]
-        #         )
-        #     elif i in self.controller.ctrl_sort.keys():
-        #         G.nodes[self.controller.ctrl_sort[i]]["dispatch_ctrl"].append(u_mpc[i])
-
+                G.nodes[node]["dispatch_split"] = us_mpc[
+                    self.controller.usp_order[node]
+                ]
 
         return G
 
