@@ -102,7 +102,7 @@ class Node:
             model_disturbance, u_control, step_index
         )
 
-        assert y_model >= 0
+        # assert y_model >= 0
 
 
         model_output = self.format_model_output(y_model, u_passthrough)

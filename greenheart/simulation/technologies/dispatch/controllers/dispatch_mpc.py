@@ -67,7 +67,9 @@ class DispatchModelPredictiveController:
         self.de_store = []
         self.dco_store = []
 
-    def store_solution(self, step_index, uc, us, x, yex, ysp, forecast, curtail, dex, dco):
+    def store_solution(
+        self, step_index, uc, us, x, yex, ysp, forecast, curtail, dex, dco
+    ):
         self.step_index_store.append(step_index)
         self.uct_store.append(np.atleast_2d(uc))
         self.usp_store.append(np.atleast_2d(us))
@@ -658,7 +660,6 @@ class DispatchModelPredictiveController:
 
         self.solve_steady_reference()
 
-
         []
 
     def solve_steady_reference(self):
@@ -668,28 +669,37 @@ class DispatchModelPredictiveController:
         ref_yex = 35
 
         dex_ref = np.array([[142e3]])
-        xy_vec = np.concatenate([np.zeros((self.n, 1)), np.array([[ref_yex]]), np.zeros((self.pze, 1)), np.zeros((self.pgt, 1))])
-        b = xy_vec -  np.concatenate([
-            self.Eex @ dex_ref, 
-            self.Fexex @ dex_ref, 
-            self.Fzeex @ dex_ref,
-            self.Fgtex @ dex_ref
-        ])
-        
-        A = np.block([
-            [self.A - np.eye(self.n), self.Bsp],
-            [self.Cex, self.Dexsp],
-            [self.Cze, self.Dzesp],
-            [self.Cgt, self.Dgtsp]
-        ])
+        xy_vec = np.concatenate(
+            [
+                np.zeros((self.n, 1)),
+                np.array([[ref_yex]]),
+                np.zeros((self.pze, 1)),
+                np.zeros((self.pgt, 1)),
+            ]
+        )
+        b = xy_vec - np.concatenate(
+            [
+                self.Eex @ dex_ref,
+                self.Fexex @ dex_ref,
+                self.Fzeex @ dex_ref,
+                self.Fgtex @ dex_ref,
+            ]
+        )
+
+        A = np.block(
+            [
+                [self.A - np.eye(self.n), self.Bsp],
+                [self.Cex, self.Dexsp],
+                [self.Cze, self.Dzesp],
+                [self.Cgt, self.Dgtsp],
+            ]
+        )
         # A = np.block([
         #     [self.A - np.eye(self.n), self.Bct, self.Bsp],
         #     [self.Cex, self.Dexct, self.Dexsp],
         #     [self.Cze, self.Dzect, self.Dzesp],
         #     [self.Cgt, self.Dgtct, self.Dgtsp]
         # ])
-
-
 
         []
 
@@ -827,7 +837,6 @@ class DispatchModelPredictiveController:
             # opti.subject_to(uct_var[0,i] <= yco[0])
             # opti.subject_to(uct_var[2,i] <= yco[4])
 
-
         if self.allow_curtail_forecast:
             opti.subject_to(curtail <= dex_param)
             opti.subject_to(curtail >= np.zeros(curtail.shape))
@@ -861,36 +870,32 @@ class DispatchModelPredictiveController:
         # ==                                                                         ==
         # =============================================================================
 
-
-
         # ref_steel = 45.48e3
         ref_steel = 35
         self.reference = ref_steel
-        output_tracking = 1e3*(ref_steel - yex) ** 2
+        output_tracking =  (ref_steel - yex) ** 2
         # h2_tracking = 1e-3 *(2084.6 - (yco[5] + yco[6]))**2
-        h2_tracking = 1e-3 *(2084.6 - (yco[6] + yco[7]))**2
-
+        h2_tracking = (2084.6 - (yco[6] + yco[7])) ** 2
 
         BES_local_curtail = (yco[0] - uct[0]) ** 2
         BES_simultaneous = 1 * uct[0] * uct[1]
-        BES_state = 1e-1 * (x[0] - (2e6 - 4e5) / 2)**2
+        BES_state =  (x[0] - (2e6 - 4e5) / 2) ** 2
 
         # H2S_local_curtail =  (yco[4] - uct[2]) ** 2
-        H2S_local_curtail =  (yco[5] - uct[2]) ** 2
+        H2S_local_curtail = (yco[5] - uct[2]) ** 2
         H2S_simultaneous = 1 * uct[2] * uct[3]
-        H2s_state = 1e-1 * (x[1] - (812209 / 2)) ** 2
-
+        H2s_state =  (x[1] - (812209 / 2)) ** 2
 
         obj_value = (
-            output_tracking
-            + h2_tracking
-            + BES_simultaneous
-            + BES_local_curtail
-            # + BES_state
-            + H2S_simultaneous
-            + H2S_local_curtail
-            # + H2s_state
-            + 1e-4 * curtail ** 2
+            1e5 * output_tracking
+            + 1e0 * h2_tracking
+            + 1e0 * BES_simultaneous
+            + 1e0 * BES_local_curtail
+            + 1e-4 * BES_state
+            + 1e0 * H2S_simultaneous
+            + 1e0 * H2S_local_curtail
+            + 1e-4 * H2s_state
+            # + 1e-4 * curtail ** 2
         )
         return obj_value
 
@@ -991,10 +996,14 @@ class DispatchModelPredictiveController:
                     violation = float(num_description.split("viol ")[1].split(")")[0])
 
                     if violation >= 1e-9:
+                        if "opti.subject" in code_description:
+                            code_desc = code_description.split("opti.subject_to(")[1][:-1]
+                        else:
+                            code_desc = "" 
 
                         print_line = (
                             str(num_description).ljust(45)
-                            + code_description.split("opti.subject_to(")[1][:-1].ljust(
+                            + code_desc.ljust(
                                 130
                             )
                             + at_description
@@ -1009,6 +1018,7 @@ class DispatchModelPredictiveController:
             uc_db = self.opti.debug.value(self.opt_vars["uct"])  # [None, :]
             us_db = self.opti.debug.value(self.opt_vars["usp"])
             ys_db = self.opti.debug.value(self.opt_vars["yex"])[None, :]
+            curtail_db = self.opti.debug.value(self.opt_vars["curtail"])
 
             fig, ax = plt.subplots(
                 np.max([uc_db.shape[0], us_db.shape[0], x_db.shape[0], ys_db.shape[0]]),
@@ -1033,10 +1043,14 @@ class DispatchModelPredictiveController:
                             lb = self.bounds["u_lb"]
                             ub = self.bounds["u_ub"]
 
-                        ylim = ax[j,i].get_ylim()
-                        ax[j,i].axhline(lb[j], color="black", linewidth=.75)
-                        ax[j,i].axhline(ub[j], color="black", linewidth=.75)
-                        ax[j,i].set_ylim(ylim)
+                        ylim = ax[j, i].get_ylim()
+                        ax[j, i].axhline(lb[j], color="black", linewidth=0.75)
+                        ax[j, i].axhline(ub[j], color="black", linewidth=0.75)
+                        ax[j, i].set_ylim(ylim)
+
+            ax[-1, 0].set_title("Forecast and curtail")
+            ax[-1, 0].plot(forecast)
+            ax[-1, 0].plot(forecast - curtail_db)
 
             np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
@@ -1057,8 +1071,6 @@ class DispatchModelPredictiveController:
         jac_x = sol.value(ca.jacobian(self.opti.f, self.opt_vars["x"]))
         jac_yex = sol.value(ca.jacobian(self.opti.f, self.opt_vars["yex"]))
         # jac_yco = sol.value(ca.jacobian(self.opti.f, self.opt_vars["uct"]))
-
-
 
         jac = sol.value(ca.jacobian(sol.opti.f, sol.opti.x)).toarray()[0]
         # jac = self.opti.debug.value(ca.jacobian(self.opti.debug.f, self.opti.debug.x)).toarray()[0]
@@ -1141,7 +1153,7 @@ class DispatchModelPredictiveController:
             x=x,
             yex=yex,
             ysp=ysp,
-            forecast = forecast, 
+            forecast=forecast,
             curtail=curtail,
             dex=dex,
             dco=dco,
@@ -1193,21 +1205,33 @@ class DispatchModelPredictiveController:
         fig, ax = plt.subplots(2, 2, sharex="all", layout="constrained")
 
         ax[0, 0].plot(self.forecast_store[idx].T)
-        ax[0 ,0].fill_between(np.arange(0, self.horizon, 1), self.forecast_store[idx][0, :], self.forecast_store[idx][0,:] - self.curtail_store[idx][0,:] )
+        ax[0, 0].fill_between(
+            np.arange(0, self.horizon, 1),
+            self.forecast_store[idx][0, :],
+            self.forecast_store[idx][0, :] - self.curtail_store[idx][0, :],
+        )
 
-        gen_split_index = [i for i in range(self.msp) if self.msp_label[i].split(" ")[2] == "generation"]
+        gen_split_index = [
+            i
+            for i in range(self.msp)
+            if self.msp_label[i].split(" ")[2] == "generation"
+        ]
         start = np.zeros(self.horizon)
         time = np.arange(0, self.horizon, 1)
         for k in gen_split_index:
-            stop = self.usp_store[idx][k,:]
-            ax[0,0].fill_between(time, start, stop, edgecolor=None, label = self.msp_label[gen_split_index[k]])
+            stop = self.usp_store[idx][k, :]
+            ax[0, 0].fill_between(
+                time,
+                start,
+                stop,
+                edgecolor=None,
+                label=self.msp_label[gen_split_index[k]],
+            )
             start += stop
 
-        ax[0,0].legend()
-
+        ax[0, 0].legend()
 
         pass
-
 
     def plot_solution(self, uct, usp, x, ysp, forecast):
 
