@@ -1387,6 +1387,7 @@ def visualize_plant(
 def save_energy_flows(
     hybrid_plant: HoppInterface.system, 
     electrolyzer_physics_results, 
+    h2_heating_results,
     solver_results, 
     hours, 
     h2_storage_results,
@@ -1433,6 +1434,12 @@ def save_energy_flows(
     if "hydrogen_storage_soc" in h2_storage_results:
         output.update({"hydrogen storage SOC [kg]": h2_storage_results["hydrogen_storage_soc"]})
     
+    if len(h2_heating_results) > 0:
+        output.update({"tes charge [kW]": h2_heating_results['tes_charging_kwh']})
+        output.update({"tes discharge [kW]": h2_heating_results['tes_discharging_kwh']})
+        output.update({"tes soc": h2_heating_results['tes_soc']})
+
+
     df = pd.DataFrame.from_dict(output)
 
     filepath = os.path.abspath(output_dir + "data/production/")
@@ -1466,6 +1473,8 @@ def post_process_simulation(
     design_scenario,
     plant_design_number,
     incentive_option,
+    tes_cost_results = {},
+    h2_heating_results = {},
     solver_results=[],
     show_plots=False,
     save_plots=False,
@@ -1699,6 +1708,7 @@ def post_process_simulation(
     hourly_energy_breakdown = save_energy_flows(
         hopp_results["hybrid_plant"],
         electrolyzer_physics_results,
+        h2_heating_results,
         solver_results,
         hours,
         h2_storage_results,

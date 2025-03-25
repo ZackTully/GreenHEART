@@ -15,6 +15,9 @@ class run_PEM_clusters_step(run_PEM_clusters):
 
         self.max_power_kW = self.num_clusters * self.cluster_max_power
 
+        self.power_in_store = np.zeros(8760)
+        self.h2_out_store = np.zeros(8760)
+
         self.create_control_model()
 
     def create_control_model(self):
@@ -29,8 +32,9 @@ class run_PEM_clusters_step(run_PEM_clusters):
         C = np.zeros((p, n))
         D = np.zeros((p, m))
         E = np.zeros((n, o))
-        F = np.array([[1 / 46.99]]) # kg H2 / kWh
-        # F = np.array([[1 / 55]]) # kg H2 / kWh
+        # F = np.array([[1 / 51.6685]]) # kg H2 / kWh
+        # F = np.array([[1 / 46.99]]) # kg H2 / kWh
+        F = np.array([[1 / 55]]) # kg H2 / kWh
 
         bounds_dict = {
             "u_lb": np.array([]),
@@ -116,6 +120,8 @@ class run_PEM_clusters_step(run_PEM_clusters):
             dispatch = dispatch[0]
 
 
+        self.power_in_store[step_index] = input_power
+
         input_power, u_passthrough, u_curtail = self.low_level_controller(input_power)
 
 
@@ -131,6 +137,7 @@ class run_PEM_clusters_step(run_PEM_clusters):
             total_h2_kg_hr += h2_kg_hr
         
         output = total_h2_kg_hr
+        self.h2_out_store[step_index] = total_h2_kg_hr
 
         return output, u_passthrough, u_curtail
 

@@ -35,6 +35,9 @@ class ShomateEquation:
             self.kelvin = False
             self.kelvin_offset = 273.15  # [C]
 
+        self.T_previous_index = 0
+        self.T_previous = self.T[self.T_previous_index]
+
         self.a_interp = scipy.interpolate.interp1d(self.T, self.a, kind="previous")
         self.b_interp = scipy.interpolate.interp1d(self.T, self.b, kind="previous")
         self.c_interp = scipy.interpolate.interp1d(self.T, self.c, kind="previous")
@@ -44,17 +47,46 @@ class ShomateEquation:
         self.g_interp = scipy.interpolate.interp1d(self.T, self.g, kind="previous")
         self.h_interp = scipy.interpolate.interp1d(self.T, self.h, kind="previous")
 
+        self.a_val = self.a_interp(self.T_previous)
+        self.b_val = self.b_interp(self.T_previous)
+        self.c_val = self.c_interp(self.T_previous)
+        self.d_val = self.d_interp(self.T_previous)
+        self.e_val = self.e_interp(self.T_previous)
+        self.f_val = self.f_interp(self.T_previous)
+        self.g_val = self.g_interp(self.T_previous)
+        self.h_val = self.h_interp(self.T_previous)
+
+
+    def update_params(self, temperature):
+
+        if temperature < self.T[0]:
+            temperature = self.T[0]
+
+        current_T_index = np.where(temperature >= self.T)[0][-1]
+        if current_T_index != self.T_previous_index:
+
+            # Update the parameters
+            self.a_val = self.a_interp(temperature)
+            self.b_val = self.b_interp(temperature)
+            self.c_val = self.c_interp(temperature)
+            self.d_val = self.d_interp(temperature)
+            self.e_val = self.e_interp(temperature)
+            self.f_val = self.f_interp(temperature)
+            self.g_val = self.g_interp(temperature)
+            self.h_val = self.h_interp(temperature)
+   
+
     def Cp(self, temperature):
         # return heat capacity [j mol^-1 K^-1]
-
+        self.update_params(temperature)
         t = temperature / 1000
 
         Cp = (
-            self.a_interp(temperature)
-            + self.b_interp(temperature) * t
-            + self.c_interp(temperature) * t**2
-            + self.d_interp(temperature) * t**3
-            + self.e_interp(temperature) / (t**2)
+            self.a_val
+            + self.b_val * t
+            + self.c_val * t**2
+            + self.d_val * t**3
+            + self.e_val / (t**2)
         )
 
         return Cp
@@ -63,16 +95,18 @@ class ShomateEquation:
         # Return standard enthalpy [kJ mol^-1]
         # Return H^circle - H^circle_298.15
 
+        self.update_params(temperature)
+
         t = temperature / 1000
 
         H = (
-            self.a_interp(temperature) * t
-            + self.b_interp(temperature) * t**2 / 2
-            + self.c_interp(temperature) * t**3 / 3
-            + self.d_interp(temperature) * t**4 / 4
-            - self.e_interp(temperature) / t
-            + self.f_interp(temperature)
-            - self.h_interp(temperature)
+            self.a_val * t
+            + self.b_val * t**2 / 2
+            + self.c_val * t**3 / 3
+            + self.d_val * t**4 / 4
+            - self.e_val / t
+            + self.f_val
+            - self.h_val
         )
 
         return H
@@ -90,16 +124,16 @@ class ShomateEquation:
     def S(self, temperature):
 
         # Return standard entropy [J mol^-1 K^-1]
-
+        self.update_params(temperature)
         t = temperature / 1000
 
         S = (
-            self.a_interp(temperature) * np.log(t)
-            + self.b_interp(temperature) * t
-            + self.c_interp(temperature) * t**2 / 2
-            + self.d_interp(temperature) * t**3 / 3
-            - self.e_interp(temperature) / (2 * t**2)
-            + self.g_interp(temperature)
+            self.a_val * np.log(t)
+            + self.b_val * t
+            + self.c_val * t**2 / 2
+            + self.d_val * t**3 / 3
+            - self.e_val / (2 * t**2)
+            + self.g_val
         )
 
         return S
@@ -288,3 +322,16 @@ class Quartz(Solid):
     h = np.array([-910.8568, -910.8568, -910.8568])
 
     molar_mass = 60.0843  # [g mol^-1]
+
+
+
+
+if __name__ == "__main__":
+
+    quartz = Quartz()
+
+
+    quartz.H(600)
+    quartz.H(1200)
+
+    []

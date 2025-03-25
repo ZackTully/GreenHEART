@@ -5,6 +5,7 @@ import pprint
 from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import (
     DispatchModelPredictiveController,
 )
+from greenheart.simulation.technologies.dispatch.controllers.dispatch_heuristic import DispatchHeuristicController
 
 
 class GreenheartDispatchConfig:
@@ -32,7 +33,9 @@ class GreenheartDispatch:
             self.update_period = dispatch_config["update_period"]
         else:
 
-            self.update_period = 1  # Re-compute the trajectory every 24 hours
+            self.update_period = 14  # Re-compute the trajectory every 24 hours
+            dispatch_config = {}
+
 
         if self.use_MPC:
             self.uc_mpc = None
@@ -42,7 +45,7 @@ class GreenheartDispatch:
             if "mpc" in dispatch_config:
                 mpc_config = dispatch_config["mpc"]
             else:
-                mpc_config = {}
+                mpc_config = {"horizon" : 48}
 
             self.controller = DispatchModelPredictiveController(
                 GHconfig,
@@ -51,6 +54,8 @@ class GreenheartDispatch:
                 simulator.edge_order,
                 mpc_config=mpc_config,
             )
+        else: 
+            self.controller = DispatchHeuristicController()
 
         self.validation = False
         if self.validation:
@@ -141,9 +146,17 @@ class GreenheartDispatch:
         elif self.validation:
             G = self.step_validation(G, available_power, step_index)
         else:
-            G = self.step_heuristic_case3(G, available_power)
+            # G = self.step_heuristic_case3(G, available_power)
+            G = self.step_heuristic(G, available_power, forecast, x_measured, step_index)
 
         return G
+
+
+    def step_heuristic(self, G, available_power, forecast, x_measured, step_index):
+        G = self.controller.step(G, available_power, forecast, x_measured, step_index)
+        return G
+
+
 
     def step_validation(self, G, available_power, step_index):
 
@@ -279,17 +292,19 @@ class GreenheartDispatch:
 
         # u_mpc = self.controller.compute_trajectory(x0, forecast)
         if not (step_index % self.update_period) or (step_index == 0):
-            uc_mpc_traj, us_mpc_traj, curtail_mpc_traj = (
+            uc_mpc_traj, us_mpc_traj, curtail_mpc_traj, grid_mpc_traj = (
                 self.controller.compute_trajectory(x0, forecast, step_index)
             )
             self.uc_mpc_traj = np.atleast_2d(uc_mpc_traj)
             self.us_mpc_traj = np.atleast_2d(us_mpc_traj)
             self.curtail_mpc_traj = np.atleast_2d(curtail_mpc_traj)
+            self.grid_mpc_traj = np.atleast_2d(grid_mpc_traj)
             self.previous_update = step_index
 
         uc_mpc = self.uc_mpc_traj[:, step_index - self.previous_update]
         us_mpc = self.us_mpc_traj[:, step_index - self.previous_update]
         curtail_mpc = self.curtail_mpc_traj[:, step_index - self.previous_update]
+        grid_mpc = self.grid_mpc_traj[:, step_index - self.previous_update]
 
         for node in list(G.nodes):
             # G.nodes[node].update({"dispatch_split": np.array([1])})
@@ -300,6 +315,8 @@ class GreenheartDispatch:
             G_dispatch.edges[edge].update({"dispatch": 0})
 
         G.nodes["generation"].update({"dispatch_ctrl": curtail_mpc})
+        G.nodes["generation"].update({"grid_purchase": grid_mpc})
+
 
         for node in self.controller.uct_order.keys():
             if len(self.controller.uct_order[node]) > 0:

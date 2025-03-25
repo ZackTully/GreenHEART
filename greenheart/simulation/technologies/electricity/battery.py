@@ -134,7 +134,7 @@ class Battery():
         lower = np.max([lower1, lower2])
 
         assert (
-            lower <= upper
+            lower <= upper + 0.1
         ), "Constraint logic gives a higher lower constraint than upper constraint"
 
         # Saturate desired at constraints

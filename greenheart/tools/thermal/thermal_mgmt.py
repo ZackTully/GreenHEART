@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import cProfile
 
 from greenheart.simulation.technologies.heat.heat_exchange.heat_exchanger import (
     HeatExchanger,
@@ -11,7 +13,7 @@ from greenheart.simulation.technologies.heat.heat_storage.thermal_energy_storage
     EnduringParticleHoist,
     EnduringParticleSilo,
     EnduringPipeline,
-    EnduringGeneral
+    EnduringGeneral,
 )
 
 from greenheart.simulation.technologies.heat.materials import Quartz, Hydrogen
@@ -38,8 +40,11 @@ def run_h2_heating(
     h2_storage_kgphr = np.diff(h2_storage_soc)
     # NOTE this might not be good in all cases:
     h2_storage_kgphr = np.concatenate(
-        [[np.sum(h2_storage_kgphr)], h2_storage_kgphr],
+        [[0], h2_storage_kgphr],
     )
+    # h2_storage_kgphr = np.concatenate(
+    #     [[np.sum(h2_storage_kgphr)], h2_storage_kgphr],
+    # )
 
     if "energy_to_heating_kw" in hopp_results:
         energy_to_heat_kw = np.asarray(hopp_results["energy_to_heating_kw"])
@@ -48,7 +53,7 @@ def run_h2_heating(
             len(hopp_results["combined_hybrid_power_production_hopp"])
         )
 
-    Q_to_h2_heating_kw, P_to_h2_heating_kw, TES, sizing_results = (
+    Q_to_h2_heating_kw, P_to_h2_heating_kw, TES, sizing_results, tes_sim_results = (
         run_thermal_energy_storage(energy_to_heat_kw)
     )
 
@@ -57,7 +62,72 @@ def run_h2_heating(
     )
     cost_results = thermal_energy_storage_costs(sizing_results, TES)
 
+
+    h2_heating_results.update({"Q to h2 heating kw": Q_to_h2_heating_kw, "P to h2 heating kw": P_to_h2_heating_kw})
+    for key in tes_sim_results.keys():
+        h2_heating_results.update({key: tes_sim_results[key]})
+
+
+    # plot_h2_heating_results(h2_heating_results)
+
     return h2_heating_results, sizing_results, cost_results, TES
+
+
+def plot_h2_heating_results(h2_heating_results):
+
+    fig, ax = plt.subplots(2, 2, sharex="all", layout="constrained")
+
+    t = np.arange(0, len(h2_heating_results["heating_available_kwh"]), 1)
+
+    # ax[0,0].fill_between(t, np.zeros(len(t)), h2_heating_results["heating_available_kwh"], step="post")
+    ax[0, 0].fill_between(
+        t, np.zeros(len(t)), h2_heating_results["heating_used_kwh"], step="post"
+    )
+    ax[0, 0].fill_between(
+        t,
+        h2_heating_results["heating_used_kwh"],
+        h2_heating_results["heating_used_kwh"]
+        + h2_heating_results["heating_wasted_kwh"],
+        step="post",
+    )
+
+    ax[1, 0].fill_between(
+        t,
+        np.zeros(len(t)),
+        h2_heating_results["heating_wasted_kwh"]
+        / h2_heating_results["heating_available_kwh"],
+        step="post"
+    )
+
+    ax[0, 1].fill_between(
+        t, np.zeros(len(t)), h2_heating_results["hydrogen_heated_kgphr"], step="post"
+    )
+    ax[0, 1].fill_between(
+        t,
+        h2_heating_results["hydrogen_heated_kgphr"],
+        h2_heating_results["hydrogen_heated_kgphr"]
+        + h2_heating_results["hydrogen_wasted_kgphr"],
+        step="post",
+    )
+
+    ax[1, 1].fill_between(
+        t,
+        np.zeros(len(t)),
+        h2_heating_results["hydrogen_wasted_kgphr"]
+        / (h2_heating_results["hydrogen_heated_kgphr"]+ h2_heating_results["hydrogen_wasted_kgphr"]),
+        step="post"
+    )
+
+    for i in range(ax.shape[0]):
+        for j in range(ax.shape[1]):
+            ax[i,j].set_ylim([0, ax[i,j].get_ylim()[1]])
+            ax[i,j].set_xlim([0, 8760])
+
+
+    print(f"Total heat energy wasted [kwh]: {np.sum(h2_heating_results['heating_wasted_kwh']) : .2f}")
+    print(f"Total hydrogen wasted [kg]: {np.sum(h2_heating_results['hydrogen_wasted_kgphr']) : .2f}")
+
+    []
 
 
 def thermal_energy_storage_costs(sizing_results, TES):
@@ -81,13 +151,22 @@ def thermal_energy_storage_costs(sizing_results, TES):
         EnduringLockHopper.single_unit_capital_cost_USD * sizing_results["n_hoppers"]
     )
 
-    Q_tes_kwhth = EnduringParticleSilo.single_unit_capacity_GWhth * 1e6 * sizing_results["n_silos"]
+    Q_tes_kwhth = (
+        EnduringParticleSilo.single_unit_capacity_GWhth
+        * 1e6
+        * sizing_results["n_silos"]
+    )
 
     cost_results = {
-        "capex_tes_usd": capex_silo_usd + capex_skip_hoist_usd + capex_PFBHX + capex_particle_heater + capex_lockhopper,
-        "opex_tes_usdpyr": EnduringGeneral.operation_and_maintenance_usdpkwhth * Q_tes_kwhth
+        "capex_tes_usd": capex_silo_usd
+        + capex_skip_hoist_usd
+        + capex_PFBHX
+        + capex_particle_heater
+        + capex_lockhopper,
+        "opex_tes_usdpyr": EnduringGeneral.operation_and_maintenance_usdpkwhth
+        * Q_tes_kwhth,
     }
- 
+
     return cost_results
 
 
@@ -106,11 +185,18 @@ def hydrogen_heating(heat_energy_kw, power_kw, h2_elec_kgphr, h2_storage_kgphr):
         + T_storage * storage_to_h2heating_kgphr
     ) / (electrolyzer_to_h2heating_kgphr + storage_to_h2heating_kgphr)
 
+    
+
+    T_h2 = np.nan_to_num(T_h2)
+    T_h2 = np.where(T_h2 != 0, T_h2, 298.15)
+
     H2 = Hydrogen()
 
     T_DRI = 900 + 273.15  # [K]
 
-    H_cold_kJ = H2.H(T_h2) / H2.molar_mass * 1000
+    H_cold_kJ = np.array([H2.H(T) for T in T_h2]) / H2.molar_mass * 1000
+    # H_cold_kJ = H2.H(T_h2) / H2.molar_mass * 1000
+    # H_hot_kJ = np.array([H2.H(T) for T in T_DRI]) / H2.molar_mass * 1000 * np.ones(len(T_h2))
     H_hot_kJ = H2.H(T_DRI) / H2.molar_mass * 1000 * np.ones(len(T_h2))
 
     h2_heating_energy_kwhpkg = (H_hot_kJ - H_cold_kJ) / 3600
@@ -157,12 +243,17 @@ def run_thermal_energy_storage(energy_to_heat_kw):
     energy_to_heat_mean = np.mean(energy_to_heat_kw)
 
     tes_charging_kw = energy_to_heat_kw - energy_to_heat_mean
+    
 
     tes_max_charging_kw = np.max(tes_charging_kw)
     tes_min_charging_kw = np.min(tes_charging_kw)
 
     tes_charge_kwh = np.cumsum(tes_charging_kw)
     tes_charge_kwh -= np.min(tes_charge_kwh)
+
+    # correct for heat loss
+    tes_charging_kw += np.mean(tes_charge_kwh * (0.01 / 24))
+
 
     tes_max_charge_kwh = np.max(tes_charge_kwh)
     tes_min_charge_kwh = np.min(tes_charge_kwh)
@@ -171,13 +262,17 @@ def run_thermal_energy_storage(energy_to_heat_kw):
         tes_min_charging_kw, tes_max_charging_kw, tes_min_charge_kwh, tes_max_charge_kwh
     )
 
-    Q_to_h2_heating_kw, P_to_h2_heating_kw, TES = simulate_thermal_energy_storage(
+
+    # cProfile.run("simulate_thermal_energy_storage(sizing_results, energy_to_heat_kw, tes_charging_kw)", "/Users/ztully/Documents/hybrids_code/GH_scripts/profiling_test/profiles/TES_sim")
+    # cProfile.run("Q_to_h2_heating_kw, P_to_h2_heating_kw, TES = simulate_thermal_energy_storage(sizing_results, energy_to_heat_kw, tes_charging_kw)", "/Users/ztully/Documents/hybrids_code/GH_scripts/profiling_test/profiles/TES_sim")
+
+    Q_to_h2_heating_kw, P_to_h2_heating_kw, tes_sim_results, TES = simulate_thermal_energy_storage(
         sizing_results, energy_to_heat_kw, tes_charging_kw
     )
 
     # import cProfile
     # cProfile.runctx("simulate_thermal_energy_storage(sizing_results, energy_to_heat_kw, tes_charging_kw)", globals(), locals(),  "/Users/ztully/Documents/hybrids_code/GH_scripts/profiling_test/profiles/TES_sim")
-    return Q_to_h2_heating_kw, P_to_h2_heating_kw, TES, sizing_results
+    return Q_to_h2_heating_kw, P_to_h2_heating_kw, TES, sizing_results, tes_sim_results
 
 
 def size_thermal_energy_storage(min_kw, max_kw, min_kwh, max_kwh):
@@ -263,7 +358,14 @@ def size_thermal_energy_storage(min_kw, max_kw, min_kwh, max_kwh):
     n_hoppers = np.ceil(n_hoppers_frac)
 
     # Don't know how to size the PFBHX - come back to this later
-    n_PFBHX = 1
+    # assume ENDURING system with 1 PFBHX is designed for 135 MWe turbine
+    # assume RTE = 50% comes from the gas turbine cycle since charging is 98% efficient
+    # 135 / .5 = 270 MWth is the equivalent rating for the the heating output from the PFBHX
+    PFBHX_rating_kwth = 135 / 0.5 * 1e3
+    PFBHX_rating_kwhth = PFBHX_rating_kwth / dt
+
+    n_PFBHX_frac = -min_kw / PFBHX_rating_kwth
+    n_PFBHX = np.ceil(n_PFBHX_frac)
 
     sizing_results = {
         "T_sand_cold_K": T_cold,
@@ -272,13 +374,18 @@ def size_thermal_energy_storage(min_kw, max_kw, min_kwh, max_kwh):
         "Q_sand_cooling_kwhpkg": Q_discharging_heating_kwhpkg,
         "sand_capacity_kg": sand_kg,
         "n_silos": n_silos,
+        "n_silos_fraction": n_silos_frac,
         "eta_electric_heating": eta_electric_heating,
         "n_heaters": n_heaters,
+        "n_heaters_fraction": n_heaters_frac,
         "n_hoists": n_hoists,
+        "n_hoists_fraction": n_hoists_frac,
         "hoist_rated_massflow": hoist_rated_sand_kgph,
         "n_hoppers": n_hoppers,
+        "n_hoppers_fraction": n_hoppers_frac,
         "hopper_rated_massflow": lock_hopper_sand_flow_rate_kgph,
         "n_PFBHX": n_PFBHX,
+        "n_PFBHX_fraction": n_PFBHX_frac,
     }
 
     return sizing_results
@@ -293,14 +400,20 @@ def simulate_thermal_energy_storage(sizing_results, energy_to_heat_kw, tes_charg
 
     Q_out_store = np.zeros(len(energy_to_heat_kw))
 
+    tes_charge = np.where(tes_charging_kw >= 0, tes_charging_kw, 0)
+    tes_discharge = np.where(tes_charging_kw < 0, -tes_charging_kw, 0)
+
+
     import time
 
     t0 = time.time()
 
     for step_index in range(len(energy_to_heat_kw)):
-        Q_out = TES.step(
-            available_power=energy_to_heat_kw[step_index],
-            dispatch=tes_charging_kw[step_index],
+
+        Q_out, P_passthrough, P_curtail = TES.step(
+            available_power=energy_to_heat_kw[step_index, None],
+            # dispatch=tes_charging_kw[step_index, None],
+            dispatch=np.array([tes_charge[step_index], tes_discharge[step_index]]),
             step_index=step_index,
         )
         Q_out_store[step_index] = Q_out
@@ -308,9 +421,17 @@ def simulate_thermal_energy_storage(sizing_results, energy_to_heat_kw, tes_charg
     duration = time.time() - t0
 
     Q_to_h2_heating_kwh = Q_out_store
-    P_to_h2_heating_kwh = energy_to_heat_kw - TES.P_used_store / 3600
+    P_to_h2_heating_kwh = energy_to_heat_kw - TES.P_used_store # / 3600
 
-    return Q_to_h2_heating_kwh, P_to_h2_heating_kwh, TES
+
+    tes_sim_results = {
+        "tes_soc": TES.SOC_store,
+        "tes_charging_kwh": tes_charge, 
+        "tes_discharging_kwh": tes_discharge
+    }
+
+
+    return Q_to_h2_heating_kwh, P_to_h2_heating_kwh, tes_sim_results, TES
 
 
 def create_thermal_energy_storage_config(sizing_results):
@@ -330,12 +451,13 @@ def create_thermal_energy_storage_config(sizing_results):
 
     tes_config = {
         "M_hot_capacity": M_hot_capacity_kg,
-        "M_cold_capacity": M_cold_capacity_kg,
+        "M_buffer_capacity": M_cold_capacity_kg,
         "mdot_max_charge": max_sand_flow_charging_kgph,
         "mdot_max_discharge": max_sand_flow_discharging_kgph,
         "T_hot_target": sizing_results["T_sand_hot_K"] - 273.15,
-        "T_cold_target": sizing_results["T_sand_cold_K"] - 273.15,
+        "T_buffer_target": sizing_results["T_sand_cold_K"] - 273.15,
         "initial_SOC": 0.5,
+        "M_total": sizing_results["sand_capacity_kg"],
     }
 
     return tes_config

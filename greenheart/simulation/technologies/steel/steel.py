@@ -1042,6 +1042,31 @@ def run_steel_full_model(
     return (steel_capacity, steel_costs, steel_finance)
 
 
+
+def calculate_power_split(energy_profile):
+    
+    feedstocks = Feedstocks(None)
+
+    power_kwhptls = feedstocks.electricity_consumption * 1e3
+    h2_kgptls = feedstocks.hydrogen_consumption * 1e3
+
+    electrolyzer_efficiency_kwhpkw = 51.31
+    power_h2_kwhptls = h2_kgptls * electrolyzer_efficiency_kwhpkw
+    
+    h2_heating_kwhpkg = 3.67
+    power_heating_kwhptls = h2_kgptls * h2_heating_kwhpkg
+
+    power_total = power_kwhptls + power_h2_kwhptls + power_heating_kwhptls
+
+
+
+    P_to_h2_generation_kwh = (power_h2_kwhptls / power_total) * energy_profile
+    P_to_h2_heating_kwh = (power_heating_kwhptls / power_total) * energy_profile
+    P_to_steel_plant = (power_kwhptls / power_total) * energy_profile
+
+    return P_to_h2_generation_kwh, P_to_h2_heating_kwh, P_to_steel_plant
+
+
 import numpy as np
 from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
@@ -1069,17 +1094,32 @@ class SteelModel:
         #     0.4838920225624497  # [kg h2o (kg fe)^-1] mass ratio of water out to DRI out
         # )
 
-        # From Bhaskar 2022 Figure 2
-        self.P_eaf_kwhptls = (
-            571.67832  # [kWh tonne^-1] per tonne liquid steel out of EAF
-        )
-        self.P_DRI_kwhptls = (
-            298.95104  # [kWh tonne^-1] per tonne liquid steel out of EAF
-        )
-        self.m_h2_kgptls = 59.56  # [kg tonne^-1] per tonne liquid steel out of EAF
+
+        self.use_feedstock_values = True
+
+        if self.use_feedstock_values:
+            self.P_eaf_kwhptls = self.feedstocks.electricity_consumption * 1e3 # [kWh]
+            self.P_DRI_kwhptls = 0 # [kWh] assume all power is captured in the eaf value
+            self.m_h2_kgptls = self.feedstocks.hydrogen_consumption * 1e3 # [kg]
+
+        else:
+            # From Bhaskar 2022 Figure 2
+            self.P_eaf_kwhptls = (
+                571.67832  # [kWh tonne^-1] per tonne liquid steel out of EAF
+            )
+            self.P_DRI_kwhptls = (
+                298.95104  # [kWh tonne^-1] per tonne liquid steel out of EAF
+            )
+            self.m_h2_kgptls = 59.56  # [kg tonne^-1] per tonne liquid steel out of EAF
 
         self.setup_simulation_storage()
         self.create_control_model()
+
+        # From MN reference plant sequential run
+        # Tracking goal : 1492190.5364954409 mt per year
+        # = 170.3413 tonne/ hour
+
+        # hydrogen per year kg = 109360986.43026587
 
     def create_control_model(self, separate_cm_constraint=True):
 
@@ -1130,21 +1170,50 @@ class SteelModel:
         self.control_model.set_disturbance_reshape(np.array([[1, 0, 0], [0, 0, 1]]))
 
     def setup_simulation_storage(self):
-        self.fe2o3_store = np.zeros(8760)
-        self.h2_store = np.zeros(8760)
-        self.iron_store = np.zeros(8760)
-        self.h2o_store = np.zeros(8760)
+        # self.fe2o3_store = np.zeros(8760)
+        # self.h2_store = np.zeros(8760)
+        # self.iron_store = np.zeros(8760)
+        # self.h2o_store = np.zeros(8760)
 
-        self.power_waste_store = np.zeros(8760)
-        self.h2_waste_store = np.zeros(8760)
+        # self.power_waste_store = np.zeros(8760)
+        # self.h2_waste_store = np.zeros(8760)
 
-    def store_step(self, DRI_out, power_waste, h2_waste, step_index=0):
-        self.fe2o3_store[step_index] = self.fe2o3_ratio * DRI_out
-        self.h2_store[step_index] = self.h2_ratio * DRI_out
-        self.iron_store[step_index] = DRI_out
-        self.h2o_store[step_index] = self.h2o_ratio * DRI_out
-        self.power_waste_store[step_index] = power_waste
-        self.h2_waste_store[step_index] = h2_waste
+        self.steel_store_tonne = np.zeros(8760)
+        self.h2_store_kg = np.zeros(8760)
+        self.power_store_kwh = np.zeros(8760)
+        self.h2_waste_kg = np.zeros(8760)
+        self.power_waste_kwh = np.zeros(8760)
+
+    # def store_step(self, DRI_out, power_waste, h2_waste, step_index=0):
+    #     self.fe2o3_store[step_index] = self.fe2o3_ratio * DRI_out
+    #     self.h2_store[step_index] = self.h2_ratio * DRI_out
+    #     self.iron_store[step_index] = DRI_out
+    #     self.h2o_store[step_index] = self.h2o_ratio * DRI_out
+    #     self.power_waste_store[step_index] = power_waste
+    #     self.h2_waste_store[step_index] = h2_waste
+
+    def store_step(
+        self,
+        steel_out,
+        h2_used_kg,
+        power_used_kwh,
+        h2_waste_kg,
+        power_waste_kwh,
+        step_index=0,
+    ):
+
+        self.steel_store_tonne[step_index] = steel_out
+        self.h2_store_kg[step_index] = h2_used_kg
+        self.power_store_kwh[step_index] = power_used_kwh
+        self.h2_waste_kg[step_index] = h2_waste_kg
+        self.power_waste_kwh[step_index] = power_waste_kwh
+
+        # self.fe2o3_store[step_index] = self.fe2o3_ratio * DRI_out
+        # self.h2_store[step_index] = self.h2_ratio * DRI_out
+        # self.iron_store[step_index] = DRI_out
+        # self.h2o_store[step_index] = self.h2o_ratio * DRI_out
+        # self.power_waste_store[step_index] = power_waste
+        # self.h2_waste_store[step_index] = h2_waste
 
     def step(self, DRI_inputs, dispatch, step_index=0):
 
@@ -1155,60 +1224,40 @@ class SteelModel:
         # if h2_temp < 900:
         #     assert False
 
-        potential_steel_power_tls = power_in / (self.P_DRI_kwhptls + self.P_eaf_kwhptls)
-        potential_steel_h2_tls = h2_in / self.m_h2_kgptls
-
-        steel_output = np.min([potential_steel_h2_tls, potential_steel_power_tls])
-        power_waste_kwh = (potential_steel_power_tls - steel_output) * (
-            self.P_DRI_kwhptls + self.P_eaf_kwhptls
+        potential_steel = np.array(
+            [
+                power_in / (self.P_DRI_kwhptls + self.P_eaf_kwhptls),
+                h2_in / self.m_h2_kgptls,
+            ]
         )
-        h2_waste_kg = (potential_steel_h2_tls - steel_output) * self.m_h2_kgptls
 
-        # # The potential DRI that could be made with either input individually
-        # potential_DRI = np.array(
-        #     [
-        #         power_in / self.feedstocks.electricity_consumption,
-        #         h2_in / self.feedstocks.hydrogen_consumption,
-        #     ]
-        # )
+        steel_output_tonne = np.min(potential_steel)
+        power_used_kwh = steel_output_tonne * (self.P_DRI_kwhptls + self.P_eaf_kwhptls)
+        h2_used_kg = steel_output_tonne * self.m_h2_kgptls
+        power_waste_kwh = power_in - power_used_kwh
+        h2_waste_kg = h2_in - h2_used_kg
 
-        # # actual DRI production
-        # # DRI_produced = np.min(potential_DRI)
-        # DRI_produced = potential_DRI[1]
-
-        # unused_power = self.feedstocks.electricity_consumption * (
-        #     potential_DRI[0] - DRI_produced
-        # )
-        # unused_h2 = self.feedstocks.hydrogen_consumption * (
-        #     potential_DRI[1] - DRI_produced
-        # )
-
-        self.store_step(steel_output, power_waste_kwh, h2_waste_kg, step_index)
-        # self.store_step(DRI_produced, unused_power, unused_h2, step_index)
-
-        # return (unused_power, unused_h2, h2_temp)
-        # return (unused_power, unused_h2, 0)
+        self.store_step(steel_output_tonne, h2_used_kg, power_used_kwh, h2_waste_kg,  power_waste_kwh, step_index)
 
         passthrough = 0
         input_curtail = [power_waste_kwh, h2_waste_kg]
-        return steel_output, passthrough, input_curtail
+        return steel_output_tonne, passthrough, input_curtail
 
     def consolidate_sim_outcome(self):
 
         self.input_capacity_factor_estimate = 0.9
 
-        steel_mtpy = np.sum(self.iron_store) / (1e3)
-        h2_kgpy = np.sum(self.h2_store)
+        steel_mtpy = np.sum(self.steel_store_tonne)
+        h2_kgpy = np.sum(self.h2_store_kg)
 
         self.steel_capacity = SteelCapacityModelOutputs(
             steel_plant_capacity_mtpy=steel_mtpy, hydrogen_amount_kgpy=h2_kgpy
         )
 
-        self.capacity_factor = np.sum(self.iron_store) / (
-            np.max(self.iron_store * len(self.iron_store))
+        self.capacity_factor = np.sum(self.steel_store_tonne) / (
+            np.max(self.steel_store_tonne) * len(self.steel_store_tonne)
         )
 
-        []
 
 
 if __name__ == "__main__":

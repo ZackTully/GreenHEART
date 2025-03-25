@@ -6,18 +6,21 @@ class HydrogenStorage:
     def __init__(self):
 
         self.roundtrip_efficiency = 1
-        self.max_capacity_kg = 812209.38400328 # kg
+        self.max_capacity_kg = 3345172.1687337956 # kg
+        # self.max_capacity_kg = 812209.38400328 # kg for original comparison runs
         # self.max_capacity_kg = 3e5 # kg
         self.min_capacity_kg = 0
         
-        self.max_charge_rate_kg_hr = 1e3
+        self.max_charge_rate_kg_hr = 20710.174804159713
+        # self.max_charge_rate_kg_hr = 1e3
         # self.max_charge_rate_kg_hr = 3e3
         self.max_discharge_rate_kg_hr = self.max_charge_rate_kg_hr
 
         self.dt = 1 # [hr] TODO initialize this timestep from elswhere in greenheart for consistency
 
 
-        self.storage_state = 1.541e5
+        self.storage_state = 686837.3294581077
+        # self.storage_state = 1.541e5
 
         sim_duration = 8760
 

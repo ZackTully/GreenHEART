@@ -23,6 +23,7 @@ from greenheart.simulation.technologies.steel.steel import (
     SteelCostModelOutputs,
     SteelFinanceModelOutputs,
     SteelCapacityModelOutputs,
+    calculate_power_split
 )
 
 from greenheart.simulation.technologies.dispatch.dispatch import (
@@ -239,6 +240,8 @@ class GreenHeartSimulationOutput:
     h2_storage_max_fill_rate_kg_hr: Optional[dict] = field(default=None)
     h2_storage_capacity_kg: Optional[dict] = field(default=None)
     hydrogen_storage_state_of_charge_kg: Optional[dict] = field(default=None)
+
+    thermal_results: Optional[dict] = field(default=None)
 
     steel_capacity: Optional[SteelCapacityModelOutputs] = field(default=None)
     steel_costs: Optional[SteelCostModelOutputs] = field(default=None)
@@ -543,7 +546,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
 
     if config.realtime_simulation:
         simulator = RealTimeSimulation(config, hi)
-        dispatcher = GreenheartDispatch(hi, config, simulator, dispatch_config=None)
+        dispatcher = GreenheartDispatch(hi, config, simulator, dispatch_config=config.greenheart_config["realtime_simulation"]["dispatch"])
         hi.hopp.system.dispatch_builder.dispatcher = dispatcher
     else:
         simulator = None
@@ -649,8 +652,20 @@ def run_simulation(config: GreenHeartSimulationConfig):
 
         # NOTE This is where the power gets split between hydrogen and heat pathways
         if "thermal_energy_storage" in config.greenheart_config:
-            hopp_results_internal["energy_to_electrolyzer_kw"] = 0.93 * remaining_power_profile_in
-            hopp_results_internal["energy_to_heating_kw"] = 0.07 * remaining_power_profile_in
+
+            # Is this really kwh? why is it called energy if it's kw?
+            (
+                energy_to_electrolyzer_kwh,
+                energy_to_h2_heating_kwh,
+                energy_to_steel_plant_kwh,
+            ) = calculate_power_split(remaining_power_profile_in)
+
+            hopp_results_internal["energy_to_electrolyzer_kw"] = energy_to_electrolyzer_kwh
+            hopp_results_internal["energy_to_heating_kw"] = energy_to_h2_heating_kwh
+            hopp_results_internal["energy_to_steel_kw"] = energy_to_steel_plant_kwh
+
+            # hopp_results_internal["energy_to_electrolyzer_kw"] = 0.93 * remaining_power_profile_in
+            # hopp_results_internal["energy_to_heating_kw"] = 0.07 * remaining_power_profile_in
         else: 
             hopp_results_internal["energy_to_electrolyzer_kw"] = remaining_power_profile_in
 
@@ -726,8 +741,6 @@ def run_simulation(config: GreenHeartSimulationConfig):
                 "annual operating cost [$]": [0.0],
             }
 
-    
-
         # pressure vessel storage
         pipe_storage, h2_storage_results = he_h2.run_h2_storage(
             hopp_config,
@@ -740,14 +753,15 @@ def run_simulation(config: GreenHeartSimulationConfig):
             simulator = simulator
         )
 
-
         if "thermal_energy_storage" in config.greenheart_config:
             # Do heat stuff here
-            h2_heating_results, tes_sizing_results, tes_cost_results,  TES = therm_man.run_h2_heating(
-                hopp_results_internal,
-                greenheart_config,
-                electrolyzer_physics_results,
-                h2_storage_results,
+            h2_heating_results, tes_sizing_results, tes_cost_results, TES = (
+                therm_man.run_h2_heating(
+                    hopp_results_internal,
+                    greenheart_config,
+                    electrolyzer_physics_results,
+                    h2_storage_results,
+                )
             )
 
         else: 
@@ -914,7 +928,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
             h2_transport_compressor_power_kw,
             h2_storage_power_kw,
             electrolyzer_bop_kw,
-            h2_heating_results
+            # h2_heating_results
         )
 
     #################### solving for energy needed for non-electrolyzer components ####################################
@@ -1155,6 +1169,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
                 config.design_scenario,
                 config.plant_design_scenario,
                 config.incentive_option,
+                tes_cost_results = tes_cost_results, 
+                h2_heating_results = h2_heating_results,
                 solver_results=solver_results,
                 show_plots=config.show_plots,
                 save_plots=config.save_plots,
@@ -1197,67 +1213,67 @@ def run_simulation(config: GreenHeartSimulationConfig):
     elif config.output_level == 7:
         return lcoe, lcoh, steel_finance, ammonia_finance
     elif config.output_level == 8:
-        
-        greenheart_output =     GreenHeartSimulationOutput(
-                config,
-                hi,
-                pf_lcoe,
-                pf_lcoh,
-                pf_grid_only,
-                lcoe,
-                lcoh,
-                lcoh_grid_only,
-                hopp_results,
-                electrolyzer_physics_results,
-                capex_breakdown,
-                opex_breakdown_annual,
-                annual_energy_breakdown,
-                hourly_energy_breakdown,
-                remaining_power_profile,
-                h2_storage_max_fill_rate_kg_hr=(
-                    None
-                    if "h2_storage_max_fill_rate_kg_hr" not in h2_storage_results
-                    else h2_storage_results["h2_storage_max_fill_rate_kg_hr"]
-                ),
-                h2_storage_capacity_kg=(
-                    None
-                    if "h2_storage_capacity_kg" not in h2_storage_results
-                    else h2_storage_results["h2_storage_capacity_kg"]
-                ),
-                hydrogen_storage_state_of_charge_kg=(
-                    None
-                    if "hydrogen_storage_soc" not in h2_storage_results
-                    else h2_storage_results["hydrogen_storage_soc"]
-                ),
-                steel_capacity=(
-                    None if "steel" not in config.greenheart_config else steel_capacity
-                ),
-                steel_costs=(
-                    None if "steel" not in config.greenheart_config else steel_costs
-                ),
-                steel_finance=(
-                    None if "steel" not in config.greenheart_config else steel_finance
-                ),
-                ammonia_capacity=(
-                    None
-                    if "ammonia" not in config.greenheart_config
-                    else ammonia_capacity
-                ),
-                ammonia_costs=(
-                    None if "ammonia" not in config.greenheart_config else ammonia_costs
-                ),
-                ammonia_finance=(
-                    None
-                    if "ammonia" not in config.greenheart_config
-                    else ammonia_finance
-                ),
-                platform_results=platform_results,
-            )
+
+        greenheart_output = GreenHeartSimulationOutput(
+            config,
+            hi,
+            pf_lcoe,
+            pf_lcoh,
+            pf_grid_only,
+            lcoe,
+            lcoh,
+            lcoh_grid_only,
+            hopp_results,
+            electrolyzer_physics_results,
+            capex_breakdown,
+            opex_breakdown_annual,
+            annual_energy_breakdown,
+            hourly_energy_breakdown,
+            remaining_power_profile,
+            h2_storage_max_fill_rate_kg_hr=(
+                None
+                if "h2_storage_max_fill_rate_kg_hr" not in h2_storage_results
+                else h2_storage_results["h2_storage_max_fill_rate_kg_hr"]
+            ),
+            h2_storage_capacity_kg=(
+                None
+                if "h2_storage_capacity_kg" not in h2_storage_results
+                else h2_storage_results["h2_storage_capacity_kg"]
+            ),
+            hydrogen_storage_state_of_charge_kg=(
+                None
+                if "hydrogen_storage_soc" not in h2_storage_results
+                else h2_storage_results["hydrogen_storage_soc"]
+            ),
+            thermal_results=(
+                None
+                if "hydrogen_heated_kgphr" not in h2_heating_results
+                else h2_heating_results
+            ),
+            steel_capacity=(
+                None if "steel" not in config.greenheart_config else steel_capacity
+            ),
+            steel_costs=(
+                None if "steel" not in config.greenheart_config else steel_costs
+            ),
+            steel_finance=(
+                None if "steel" not in config.greenheart_config else steel_finance
+            ),
+            ammonia_capacity=(
+                None if "ammonia" not in config.greenheart_config else ammonia_capacity
+            ),
+            ammonia_costs=(
+                None if "ammonia" not in config.greenheart_config else ammonia_costs
+            ),
+            ammonia_finance=(
+                None if "ammonia" not in config.greenheart_config else ammonia_finance
+            ),
+            platform_results=platform_results,
+        )
         if config.realtime_simulation:
             return greenheart_output, simulator
         else:
             return greenheart_output
-        
 
 
 def run_sweeps(

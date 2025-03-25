@@ -136,7 +136,14 @@ class ThermalEnergyStorage:
     def step(self, available_power, dispatch, step_index=None):
 
         if dispatch.ndim > 0:
-            dispatch = dispatch[0]
+            if len(dispatch) == 1:
+                dispatch = dispatch[0]
+
+            elif len(dispatch) == 2:
+
+                dispatch = dispatch[0] - dispatch[1]
+            else:
+                assert False, "Bad dispatch command"
 
         if available_power.ndim > 0:
             available_power = available_power[0]
@@ -166,6 +173,9 @@ class ThermalEnergyStorage:
         else:
             unused_power = available_power - P_charge_desired_kWh
 
+        self.P_used = P_charge_desired_kWh
+
+
         # P_charge_desired_kWh = np.min([available_power, P_charge_desired_kWh])
 
         m_charge = (self.eta_electric_heater * P_charge_desired_kWh) / (
@@ -176,8 +186,7 @@ class ThermalEnergyStorage:
             [m_charge, self.m_charge_max_kgphr, self.M_buffer - self.M_buffer_min]
         )
 
-        # assert m_charge <= self.m_charge_max_kgphr
-        # assert m_charge <= self.M_buffer
+        assert m_charge_sat >= 0
 
         # Choose m_discharge
 
@@ -190,8 +199,7 @@ class ThermalEnergyStorage:
             [m_discharge, self.m_discharge_max_kgphr, self.M_hot - self.M_hot_min]
         )
 
-        # assert m_discharge <= self.m_discharge_max_kgphr
-        # assert m_discharge <= self.M_hot
+        assert m_discharge_sat >= 0
 
         return m_charge_sat, m_discharge_sat, unused_power
 
@@ -235,6 +243,8 @@ class ThermalEnergyStorage:
 
         Q_out_kWh = -self.delta_H(self.T_hot, self.T_buffer_target) * m_discharge
 
+        self.Q_out_kWh = Q_out_kWh
+
         self.M_hot += delta_M_hot
         self.M_buffer += delta_M_buffer
 
@@ -264,6 +274,9 @@ class ThermalEnergyStorage:
 
         self.SOC_store = np.zeros(duration)
 
+        self.Q_out_store = np.zeros(duration)
+        self.P_used_store = np.zeros(duration)
+
     def store_step(self, step_index):
 
         self.M_hot_store[step_index] = self.M_hot
@@ -274,27 +287,45 @@ class ThermalEnergyStorage:
 
         self.SOC_store[step_index] = self._SOC()
 
+        self.Q_out_store[step_index] = self.Q_out_kWh
+        self.P_used_store[step_index] = self.P_used
+
     def create_control_model(self):
-        m = 1
+        m = 2
         n = 1
         p = 1
         o = 1
 
         A = np.array([[1]])
-        B = np.array([[1]])
+        B = np.array([[1, -1]])
         E = np.array([[0]])
-        C = np.array([[0, 0]]).T
-        D = np.array([[-1, -1]]).T
-        F = np.array([[0, 1]]).T
+        C = np.array([[0], [0]])
+        D = np.array([[0, 1], [-1, 0]])
+        F = np.array([[0], [1]])
+        
+        # A = np.array([[1]])
+        # B = np.array([[1]])
+        # E = np.array([[0]])
+        # C = np.array([[0, 0]]).T
+        # D = np.array([[-1, -1]]).T
+        # F = np.array([[0, 1]]).T
 
         bounds_dict = {
-            "u_lb": np.array([-self.max_discharge_kWhphr]),
-            "u_ub": np.array([self.max_charge_kWhphr]),
+            "u_lb": np.array([0, 0]),
+            "u_ub": np.array([self.max_charge_kWhphr, self.max_discharge_kWhphr]),
             "x_lb": np.array([0]),
             "x_ub": np.array([self.H_capacity_kWh]),
             "y_lb": np.array([None, None]),
             "y_ub": np.array([None, None]),
         }
+        # bounds_dict = {
+        #     "u_lb": np.array([-self.max_discharge_kWhphr]),
+        #     "u_ub": np.array([self.max_charge_kWhphr]),
+        #     "x_lb": np.array([0]),
+        #     "x_ub": np.array([self.H_capacity_kWh]),
+        #     "y_lb": np.array([None, None]),
+        #     "y_ub": np.array([None, None]),
+        # }
 
         control_model = ControlModel(
             A, B, C, D, E, F, bounds=bounds_dict, discrete=True
@@ -302,9 +333,9 @@ class ThermalEnergyStorage:
 
         control_model.set_disturbance_domain([1, 0, 0])
         control_model.set_output_domain([0, 1, 0])
+        control_model.set_disturbance_reshape([1, 0, 0])
 
         control_model.constraints(y_position=[1], constraint_type=["greater"])
-
 
         return control_model
 
