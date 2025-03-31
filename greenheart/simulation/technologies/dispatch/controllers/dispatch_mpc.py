@@ -8,6 +8,8 @@ import sys
 from io import StringIO
 import pickle
 
+import time
+
 from hopp.utilities import load_yaml
 
 
@@ -22,100 +24,114 @@ class DispatchModelPredictiveController:
         self,
         config,
         simulation_graph,
+        saved_state = None,
         node_order=None,
         edge_order=None,
         mpc_config=None,
+        debug_mode=False,
     ):
 
-        system_graph = load_yaml(
-            config.greenheart_config["realtime_simulation"]["system"][
-                "system_graph_config"
-            ]
-        )
-
-        nodes = system_graph["traversal_order"]
-        traversal_order = system_graph["traversal_order"]
-
-        self.node_order = node_order
-        self.edge_order = edge_order
-
-        if mpc_config is not None:
-            self.horizon = mpc_config["horizon"]
-
-        else:
-            self.horizon = 5
-        self.G = simulation_graph
-
-
-        if "reference" in mpc_config:
-            self.reference = mpc_config["reference"]
-        else:
-            # ref_steel = 45.48e3
-            # ref_steel = 50
-            # ref_steel = 35
-            # ref_steel = 170.3413
-            ref_steel = 165
-            self.reference = ref_steel
-
-
-
-        if "weights" in mpc_config:
-            self.use_config_weights = True
-            self.weights = mpc_config["weights"]
-
-        if "battery" in self.node_order:
-            self.ref_bes_state = (
-                0.7 * simulation_graph.nodes["battery"]["ionode"].model.max_capacity_kWh
-            )
-            self.weight_bes_state = 1e-4 / self.ref_bes_state
-
-        if "hydrogen_storage" in self.node_order:
-            self.ref_h2s_state = (
-                0.7
-                * simulation_graph.nodes["hydrogen_storage"][
-                    "ionode"
-                ].model.max_capacity_kg
-            )
-            self.weight_h2s_state = 1e-1 / self.ref_h2s_state
-
-        if "thermal_energy_storage" in self.node_order:
-            self.ref_tes_state = (
-                0.7
-                * simulation_graph.nodes["thermal_energy_storage"][
-                    "ionode"
-                ].model.H_capacity_kWh
-            )
-            self.weight_tes_state = 1e-4 / self.ref_tes_state
-
-        self.traversal_order = traversal_order
 
         self.allow_curtail_forecast = True
         self.allow_grid_purchase = True
         self.include_edges = True
         self.use_sparsity_constraint = False
 
-        self.use_saved_solution = (
-            "use_saved_solution"
-            in config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
-        )
-        if self.use_saved_solution:
-            self.load_stored_values(
-                config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"][
-                    "use_saved_solution"
+        self.debug_mode = debug_mode
+
+        if self.debug_mode:
+            self.load_state_for_debug(saved_state)
+            self.use_saved_solution = False
+            self.setup_optimization()
+            self.setup_solution_storage()
+        else:
+
+
+
+
+
+            system_graph = load_yaml(
+                config.greenheart_config["realtime_simulation"]["system"][
+                    "system_graph_config"
                 ]
             )
 
+            self.config = config
+
+            nodes = system_graph["traversal_order"]
+            traversal_order = system_graph["traversal_order"]
+
+            self.traversal_order = traversal_order
+            self.node_order = node_order
+            self.edge_order = edge_order
+
+            if mpc_config is not None:
+                self.horizon = mpc_config["horizon"]
+            else:
+                self.horizon = 5
+            self.G = simulation_graph
+
+            if "reference" in mpc_config:
+                self.reference = mpc_config["reference"]
+            else:
+                # ref_steel = 45.48e3
+                # ref_steel = 50
+                # ref_steel = 35
+                # ref_steel = 170.3413
+                ref_steel = 165
+                self.reference = ref_steel
+
+            if "weights" in mpc_config:
+                self.use_config_weights = True
+                self.weights = mpc_config["weights"]
+
+            if "battery" in self.node_order:
+                self.ref_bes_state = (
+                    0.7 * simulation_graph.nodes["battery"]["ionode"].model.max_capacity_kWh
+                )
+                self.weight_bes_state = 1e-4 / self.ref_bes_state
+
+            if "hydrogen_storage" in self.node_order:
+                self.ref_h2s_state = (
+                    0.7
+                    * simulation_graph.nodes["hydrogen_storage"][
+                        "ionode"
+                    ].model.max_capacity_kg
+                )
+                self.weight_h2s_state = 1e-1 / self.ref_h2s_state
+
+            if "thermal_energy_storage" in self.node_order:
+                self.ref_tes_state = (
+                    0.7
+                    * simulation_graph.nodes["thermal_energy_storage"][
+                        "ionode"
+                    ].model.H_capacity_kWh
+                )
+                self.weight_tes_state = 1e-4 / self.ref_tes_state
+
+
+            self.use_saved_solution = (
+                "use_saved_solution"
+                in config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
+            )
+            if self.use_saved_solution:
+                self.load_stored_values(
+                    config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"][
+                        "use_saved_solution"
+                    ]
+                )
+
+
+            # self.build_control_model(traversal_order, simulation_graph)
+            self.collect_system_matrices(traversal_order, simulation_graph)
+            self.setup_optimization()
+            self.setup_solution_storage()
         self.curtail_storage = np.zeros(8760 + self.horizon)
 
         self.bad_solve_count = 0
         self.bad_solve_step = []
         self.bad_solve_violation = []
         self.prev_sol = None
-
-        # self.build_control_model(traversal_order, simulation_graph)
-        self.collect_system_matrices(traversal_order, simulation_graph)
-        self.setup_optimization()
-        self.setup_solution_storage()
 
     def setup_solution_storage(self):
         self.step_index_store = []
@@ -204,25 +220,52 @@ class DispatchModelPredictiveController:
         s_opts = {
             "print_level": 0,
             # "linear_solver": "ma27",
-            # "max_iter": 2000,
+            # "max_iter": 10000,
             # "tol": 1e-3
             # "jac_c_constant": "yes",
             # "jac_d_constant": "yes",
+            # "acceptable_compl_inf_tol": 0.5,
+            # "print_user_options": "yes",
+            # "print_options_documentation": "yes",
+            # "print_timing_statistics": "yes"
         }
+        self.s_opts = s_opts
         opti.solver(
             "ipopt",
             p_opts,
             s_opts,
         )
 
-        # Variables
+        # Variables and bounds
         uct_var = opti.variable(self.mct, self.horizon)
         usp_var = opti.variable(self.msp, self.horizon)
         x_var = opti.variable(self.n, self.horizon + 1)
         yex_var = opti.variable(self.pex, self.horizon)
         # e_var = opti.variable(self.q + 2, self.horizon)
+
+        # for k in range(self.horizon+1):
+        for k in range(self.horizon):
+            opti.subject_to(x_var[:, k] >= self.bounds["x_lb"][:, None])
+            opti.subject_to(x_var[:, k] <= self.bounds["x_ub"][:, None])
+
+        for k in range(self.horizon):
+            opti.subject_to(uct_var[:, k] >= self.bounds["u_lb"][:, None])
+            opti.subject_to(uct_var[:, k] <= self.bounds["u_ub"][:, None])
+
+            # opti.subject_to(yex_var[:,k] >= self.bounds["y_lb"][:, None])
+            # opti.subject_to(yex_var[:,k] <= self.bounds["y_ub"][:, None])
+            opti.subject_to(yex_var[:, k] >= 0)
+
+            opti.subject_to(usp_var[:, k] >= np.zeros(self.msp))
+
+        dex_param = opti.parameter(self.oex, self.horizon)
+        # e_src_param = opti.parameter(1, self.horizon)
+        x0_param = opti.parameter(self.n, 1)
+
         if self.allow_curtail_forecast:
             curtail = opti.variable(self.oex, self.horizon)
+            opti.subject_to(curtail <= dex_param)
+            opti.subject_to(curtail >= np.zeros(curtail.shape))
         else:
             curtail = opti.parameter(self.oex, self.horizon)
 
@@ -233,9 +276,6 @@ class DispatchModelPredictiveController:
             grid_purchase = opti.parameter(self.oex, self.horizon)
 
         # Parameters
-        dex_param = opti.parameter(self.oex, self.horizon)
-        # e_src_param = opti.parameter(1, self.horizon)
-        x0_param = opti.parameter(self.n, 1)
 
         # Initial conditions and forecasted disturbance
         opti.subject_to(x_var[:, 0] == x0_param)
@@ -358,13 +398,13 @@ class DispatchModelPredictiveController:
             if self.pet > 0:
                 opti.subject_to(yet == np.zeros((self.pet, 1)))
 
-            if self.use_sparsity_constraint:
-                opti.subject_to(
-                    usp_var[2, i] == ca.if_else(uct_var[1, i] >= 0, uct_var[1, i], 0)
-                )
-                opti.subject_to(
-                    usp_var[0, i] == ca.if_else(uct_var[0, i] >= 0, uct_var[0, i], 0)
-                )
+            # if self.use_sparsity_constraint:
+            #     opti.subject_to(
+            #         usp_var[2, i] == ca.if_else(uct_var[1, i] >= 0, uct_var[1, i], 0)
+            #     )
+            #     opti.subject_to(
+            #         usp_var[0, i] == ca.if_else(uct_var[0, i] >= 0, uct_var[0, i], 0)
+            #     )
 
             step_obj, step_obj_terms = self.objective_step(
                 x_var[:, i],
@@ -381,14 +421,14 @@ class DispatchModelPredictiveController:
 
             # opti.subject_to(us_var[2, i] <= ca.fabs(uc_var[1,i]))
 
-            opti.subject_to(usp_var[:, i] >= np.zeros(self.msp))
+            # opti.subject_to(usp_var[:, i] >= np.zeros(self.msp))
             # opti.subject_to(e_var[:, i] >= np.zeros(self.q + 2))
 
-            opti.subject_to(uct_var[:, i] >= self.bounds["u_lb"])
-            opti.subject_to(uct_var[:, i] <= self.bounds["u_ub"])
+            # opti.subject_to(uct_var[:, i] >= self.bounds["u_lb"])
+            # opti.subject_to(uct_var[:, i] <= self.bounds["u_ub"])
 
-            opti.subject_to(x_var[:, i] >= self.bounds["x_lb"])
-            opti.subject_to(x_var[:, i] <= self.bounds["x_ub"])
+            # opti.subject_to(x_var[:, i] >= self.bounds["x_lb"])
+            # opti.subject_to(x_var[:, i] <= self.bounds["x_ub"])
             # opti.subject_to(uct_var[:, i] >= self.u_lb_list)
             # opti.subject_to(uct_var[:, i] <= self.u_ub_list)
 
@@ -406,9 +446,9 @@ class DispatchModelPredictiveController:
             # opti.subject_to(uct_var[0,i] <= yco[0])
             # opti.subject_to(uct_var[2,i] <= yco[4])
 
-        if self.allow_curtail_forecast:
-            opti.subject_to(curtail <= dex_param)
-            opti.subject_to(curtail >= np.zeros(curtail.shape))
+        # if self.allow_curtail_forecast:
+        # opti.subject_to(curtail <= dex_param)
+        # opti.subject_to(curtail >= np.zeros(curtail.shape))
 
         # Bounds
         # Add constraint
@@ -476,18 +516,37 @@ class DispatchModelPredictiveController:
             "grid_purchase",
         ]
 
-        
         # output_tracking = (ref_steel - yex) ** 2
         obj_terms.update(
             {"output_tracking": {"w": 1e9, "expr": (self.reference - yex) ** 2}}
         )
 
-        # h2_tracking = 1e-3 *(2084.6 - (yco[5] + yco[6]))**2
-        # h2_tracking = (2084.6 - (yco[6] + yco[7])) ** 2
-
         # obj_terms.update({"curtail": {"w": 1e-4, "expr": curtail**2}})
         # grid_purchase = grid
         obj_terms.update({"grid_purchase": {"w": 1e-4, "expr": grid**2}})
+
+        # Sloppy terms for better tracking
+        # h2_ref = (
+        #     self.reference / self.G.nodes["steel"]["ionode"].model.control_model.F
+        # )[0, 1]
+        # P_ref = -self.G.nodes["steel"]["ionode"].model.control_model.F_gt[0, 1] * h2_ref
+        # Q_ref = (
+        #     -self.G.nodes["heat_exchanger"]["ionode"].model.control_model.F_gt[0, 0]
+        #     * h2_ref
+        # )
+
+        # obj_terms.update(
+        #     {"h2_ref": {"w": 1e0, "expr": ((usp[8] + uct[5]) - h2_ref) ** 2}}
+        # )
+        # term_keys.append("h2_ref")
+
+        # obj_terms.update(
+        #     {"P_ref": {"w": 1e0, "expr": ((usp[3] + usp[6]) - P_ref) ** 2}}
+        # )
+        # term_keys.append("P_ref")
+
+        # obj_terms.update({"Q_ref": {"w": 1e0, "expr": (uct[3] - h2_ref) ** 2}})
+        # term_keys.append("Q_ref")
 
         if "battery" in self.node_order:
             simu = uct[var_inds["uct_charge_bes"]] * uct[var_inds["uct_discharge_bes"]]
@@ -522,12 +581,14 @@ class DispatchModelPredictiveController:
             # state = (x[var_inds["x_tes"]] - 6.4e6 / 2) ** 2
             # obj_terms.update({"tes_state": {"w": 1e-9, "expr": state}})
 
-            term_keys.append("tes_simultaneous")
+            if self.weights["tes_simultaneous"] > 0:
+                term_keys.append("tes_simultaneous")
             # term_keys.append("tes_state")
 
         if self.use_config_weights:
             for term in term_keys:
-                obj_terms[term]["w"] = self.weights[term]
+                if term in self.weights.keys():
+                    obj_terms[term]["w"] = self.weights[term]
 
         objective = 0
         for term in term_keys:
@@ -789,7 +850,13 @@ class DispatchModelPredictiveController:
 
             try:
 
+                # t0 = time.time()
+
                 sol = self.opti.solve()
+
+                # t1 = time.time()
+                # print(self.s_opts)
+                # print(f"Solution took: {t1-t0:.4f} seconds")
 
             except:
 
@@ -881,7 +948,9 @@ class DispatchModelPredictiveController:
 
                 np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
-                # assert False, self.opti.debug
+     
+                if not self.debug_mode:
+                    self.save_state_for_debug(x0, forecast, step_index)
 
                 assert np.max(np.abs(violations)) <= 1e-3
 
@@ -942,6 +1011,8 @@ class DispatchModelPredictiveController:
             # self.opti.debug.arg()
             # self.opti.debug.constraints()
             # self.opti.debug.show_infeasibilities()
+
+           
 
             uct = sol.value(self.opt_vars["uct"])
             usp = sol.value(self.opt_vars["usp"])
@@ -1037,9 +1108,120 @@ class DispatchModelPredictiveController:
 
             # self.plot_trajectory(step_index)
 
-            u_split = usp[:, 0]
-
+            # u_split = usp[:, 0]
+            self.save_state_for_debug(x0, forecast, step_index)
             return uct, usp, curtail, grid
+
+    def save_state_for_debug(self, x0, forecast, step_index):
+
+        import datetime
+        from pathlib import Path
+        import json
+
+
+        datetime_string = datetime.datetime.now().strftime("%Y_%m_%d--%H_%M_%S")
+        dir_path = "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/saved_data/optimization_data"
+        dir = f"{dir_path}/mpcstate_{datetime_string}_step{step_index}"
+        Path(dir).mkdir(parents=True, exist_ok=True)
+        fpath = f"{dir}/mpc_data.json"
+
+        js_kw = dict(ensure_ascii=True, indent=4)
+
+
+        with open(fpath, "w", encoding="utf-8") as f:
+
+            plant_SS = [
+                [self.A, self.Bct, self.Bsp, self.Eex],
+                [self.Cco, self.Dcoct, self.Dcosp, self.Fcoex],
+                [self.Cex, self.Dexct, self.Dexsp, self.Fexex],
+                [self.Cze, self.Dzect, self.Dzesp, self.Fzeex],
+                [self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex],
+                [self.Cet, self.Detct, self.Detsp, self.Fetex],
+            ]
+
+            save_dict = dict(
+                horizon=self.horizon,
+                statespace= [[mat.tolist() for mat in row] for row in plant_SS],
+                x0=x0.tolist(),
+                forecast=forecast.tolist(),
+                step_index=step_index,
+                bounds = {key: self.bounds[key].tolist() for key in self.bounds.keys()}, 
+                dimensions = self.dims, 
+                labels = self.labels,
+                node_order = self.node_order,
+                edge_order = self.edge_order,
+                weights = self.weights,
+                reference = self.reference,
+                ref_bes_state = self.ref_bes_state,
+                weight_bes_state = self.weight_bes_state,
+                ref_h2s_state = self.ref_h2s_state,
+                weight_h2s_state = self.weight_h2s_state,
+                ref_tes_state = self.ref_tes_state,
+                weight_tes_state = self.weight_tes_state,
+            )
+
+            json.dump(save_dict, f, **js_kw)
+        
+        pass
+
+
+    def load_state_for_debug(self, state_dict):
+        self.horizon = state_dict["horizon"]
+
+
+
+        self.bounds = {key: np.array(state_dict["bounds"][key]) for key in state_dict["bounds"].keys()}
+
+        for key in state_dict["labels"].keys():
+            setattr(self, f"{key}_label", state_dict["labels"][key])
+            
+        for key in state_dict["dimensions"].keys():
+            setattr(self, key, np.sum(state_dict["dimensions"][key]))
+
+        self.node_order = state_dict["node_order"]
+        self.edge_order = state_dict["edge_order"]
+
+
+        self.reference = state_dict["reference"]
+        self.weights = state_dict["weights"]
+
+
+        self.ref_bes_state = state_dict["ref_bes_state"]
+        self.weight_bes_state = state_dict["weight_bes_state"]
+        self.ref_h2s_state = state_dict["ref_h2s_state"]
+        self.weight_h2s_state = state_dict["weight_h2s_state"]
+        self.ref_tes_state = state_dict["ref_tes_state"]
+        self.weight_tes_state = state_dict["weight_tes_state"]
+
+        combined_mat = state_dict["statespace"]
+
+        out_dims = np.array([self.n, self.pco, self.pex, self.pze, self.pgt, self.pet])
+        in_dims = np.array([self.n, self.mct, self.msp, self.oex])
+
+
+        for i, row in enumerate(combined_mat):
+            for j, mat in enumerate(row):
+                if (out_dims[i] >0) and (in_dims[j] >0):
+                    combined_mat[i][j] = np.array(combined_mat[i][j])
+                else:
+                    combined_mat[i][j] = np.zeros((out_dims[i], in_dims[j]))
+
+
+
+
+        # combined_mat = [[np.array(mat) for mat in row] for row in combined_mat]
+
+        self.A, self.Bct, self.Bsp, self.Eex = combined_mat[0]
+        self.Cco, self.Dcoct, self.Dcosp, self.Fcoex = combined_mat[1]
+        self.Cex, self.Dexct, self.Dexsp, self.Fexex = combined_mat[2]
+        self.Cze, self.Dzect, self.Dzesp, self.Fzeex = combined_mat[3]
+        self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex = combined_mat[4]
+        self.Cet, self.Detct, self.Detsp, self.Fetex = combined_mat[5]
+
+
+
+
+        []
 
     def plot_trajectory(self, step_index=None):
 
@@ -1506,6 +1688,9 @@ class DispatchModelPredictiveController:
         for key in labels.keys():
             setattr(self, f"{key}_label", labels[key])
 
+        self.labels = labels
+        self.dims = dims
+
         # Make indices and reduce the order of the verbose statespace
 
         # extended incidence matrix
@@ -1628,11 +1813,12 @@ class DispatchModelPredictiveController:
             for i in range(len(uncoupled_mat))
         ]
 
-        # self.print_block_matrices(
-        #     [combined_mat[i] for i in [0, 2, 3, 4, 5]],
-        #     in_labels=["x", "uct", "usp", "dex"],
-        #     out_labels=["x+", "yex", "yze", "ygt", "yet"],
-        # )
+        self.print_block_matrices(
+            [combined_mat[i] for i in [0, 2, 3, 4, 5]],
+            in_labels=["x", "uct", "usp", "dex"],
+            out_labels=["x+", "yex", "yze", "ygt", "yet"],
+            save_description=True,
+        )
         # self.print_block_matrices(
         #     combined_mat,
         #     in_labels=["x", "uct", "usp", "dex"],
@@ -1646,6 +1832,10 @@ class DispatchModelPredictiveController:
         self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex = combined_mat[4]
         self.Cet, self.Detct, self.Detsp, self.Fetex = combined_mat[5]
 
+        # TODO apply scaling here
+
+        # self.calculate_minimal_inputs()
+
         self.E_inc = E_inc
         self.P_in = P_in
         self.P_out = P_out
@@ -1657,7 +1847,7 @@ class DispatchModelPredictiveController:
         self.uct_order = uct_order
         self.usp_order = usp_order
 
-        self.solve_steady_reference()
+        # self.solve_steady_reference()
 
         []
 
@@ -1769,48 +1959,198 @@ class DispatchModelPredictiveController:
             for j in range(ax.shape[1]):
                 ax[i, j].legend()
 
-    def print_block_matrices(self, mat, in_labels, out_labels, no_space=False):
+    def print_block_matrices(
+        self, mat, in_labels, out_labels, no_space=False, save_description=False
+    ):
 
         try:
             np.block(mat)
         except:
             AssertionError("bad matrix")
 
+        rounding_tol = -9
+        rounded_flag = False
+
         block_mat = np.block(mat)
+
+        col_widths = np.zeros(block_mat.shape[1], dtype=int)
+        for i in range(block_mat.shape[1]):
+            col_widths[i] = int(
+                np.max(
+                    [len(f"{block_mat[j,i]:.4g}") for j in range(block_mat.shape[0])]
+                )
+                + 2
+            )
+
         # block_cols = block_mat.shape[1]
         # block_rows = block_mat.shape[0]
 
         out_label_width = int(np.max([len(label) for label in out_labels]))
         num_col_width = 10
 
+        print_str = ""
+
         for row_num, row_mat in enumerate(mat):
             if not no_space:
-                print("")
+                # print("")
+                print_str += "\n"
 
             row_mat_lens = [matr.shape[1] for matr in row_mat]
             if row_num == 0:
                 line = " " * (out_label_width + 5)
-                line2 = " " * (out_label_width + 5 + 4)
+                # line2 = " " * (out_label_width + 5 + 4)
+                line2 = " " * (out_label_width + 3)
+                col_count = 0
                 for coli, col_label in enumerate(in_labels):
-                    line += f"{col_label}".ljust(row_mat_lens[coli] * num_col_width + 3)
+                    label_pad = 0
                     for j in range(row_mat_lens[coli]):
-                        line2 += f"{j}".ljust(num_col_width)
-                    line2 += " " * 3
+                        # line2 += f"{j}".ljust(num_col_width)
+                        line2 += f"{j}".rjust(col_widths[col_count])
+                        label_pad += col_widths[col_count]
+                        col_count += 1
 
-                print(line)
-                print(line2)
+                    line += f"{col_label}".ljust(label_pad + 2)
+                    line2 += " " * 2
+
+                # print(line)
+                # print(line2)
+                print_str += line + "\n"
+                print_str += line2 + "\n"
+
             n_rows = row_mat[0].shape[0]
             for i in range(n_rows):
                 line = f"{out_labels[row_num]}".ljust(out_label_width + 3)
-                line += "["
+                line += "[ "
+                col_count = 0
+
                 for col_mat in row_mat:
                     for j in range(col_mat.shape[1]):
-                        line += f"{col_mat[i,j] :.4g}, ".rjust(num_col_width)
+                        if np.abs(col_mat[i, j]) < 10 ** (rounding_tol):
+                            num = 0
+                            rounded_flag = True
+                        else:
+                            num = np.round(col_mat[i, j], -rounding_tol)
+
+                        # line += f"{col_mat[i,j] :.4g}, ".rjust(num_col_width)
+                        # line += f"{num :.4g}, ".rjust(num_col_width)
+                        line += f"{num :.4g}, ".rjust(col_widths[col_count])
+                        col_count += 1
 
                     line = line[0:-2]
-                    line += " ]  ["
+                    line += " ][ "
                 line = line[0:-2]
-                print(line)
+                # print(line)
+                print_str += line + "\n"
+
+        if rounded_flag:
+            print_str += (
+                f"some values were lower than 1e{rounding_tol} so they were set to 0\n"
+            )
+
+        if save_description:
+            self.state_space_string = print_str
+        else:
+            print(print_str)
+
+        []
+
+    def calculate_minimal_inputs(self):
+
+        Cze = np.block([[self.Cze], [self.Cgt], [self.Cet]])
+        Dzect = np.block([[self.Dzect], [self.Dgtct], [self.Detct]])
+        Dzesp = np.block([[self.Dzesp], [self.Dgtsp], [self.Detsp]])
+        Fzeex = np.block([[self.Fzeex], [self.Fgtex], [self.Fetex]])
+
+        n_constraints = Cze.shape[0]
+        n_variables = Dzect.shape[1] + Dzesp.shape[1]
+        n_inds = n_variables - n_constraints
+        n_deps = n_constraints
+
+        uct_inds = np.array([1, 2, 5])
+        usp_inds = np.array([1, 3, 5, 6])
+
+        uct_deps = np.array(
+            [i for i in range(self.mct) if i not in uct_inds], dtype=int
+        )
+        usp_deps = np.array(
+            [i for i in range(self.msp) if i not in usp_inds], dtype=int
+        )
+
+        Dze = np.block([Dzect, Dzesp])
+        inds_desired = np.concatenate([uct_inds, usp_inds + self.mct])
+        deps_desired = np.concatenate([uct_deps, usp_deps + self.mct])
+
+        # [(i, np.linalg.matrix_rank(Dze[:, np.delete(inds_desired, i)])) for i in range(len(inds_desired))]
+        # [(i, np.linalg.matrix_rank(Dze[:, np.delete(deps_desired, i)])) for i in range(len(deps_desired))]
+
+        inds = inds_desired
+        deps = np.array(
+            [i for i in range(self.mct + self.msp) if i not in inds], dtype=int
+        )
+
+        # inds_leftover = np.array(range(Dze.shape[1]))
+
+        # for ind in inds_desired:
+        #     _, index = sympy.Matrix(Dze[:, inds_leftover]).rref()
+        #     if ind in index:
+        #         inds_leftover = np.delete(inds_leftover, np.where(inds_leftover == ind)[0][0])
+
+        # import sympy
+        # _, index = sympy.Matrix(Dze).rref()
+        # deps = index
+        # inds = np.array([i for i in range(self.mct + self.msp) if i not in inds], dtype=int)
+
+        Dze_inv = np.linalg.inv(Dze[:, deps])
+
+        Dze_ind = Dze[:, inds]
+
+        ind_ct = [i for i in inds if i < self.mct]
+        ind_sp = [
+            i - self.mct for i in inds if (i >= self.mct) and (i < self.mct + self.msp)
+        ]
+
+        dep_ct = [i for i in inds if i < self.mct]
+        dep_sp = [
+            i - self.mct for i in deps if (i >= self.mct) and (i < self.mct + self.msp)
+        ]
+
+        ct_labels = [self.mct_label[i] for i in ind_ct]
+        sp_labels = [self.msp_label[i] for i in ind_sp]
+
+        ct_labels_dep = [self.mct_label[i] for i in dep_ct]
+        sp_labels_dep = [self.msp_label[i] for i in dep_sp]
+
+        Anew = self.A - np.block([self.Bct, self.Bsp])[:, deps] @ Dze_inv @ Cze
+        Bnew = (
+            np.block([self.Bct, self.Bsp])[:, inds]
+            - np.block([self.Bct, self.Bsp])[:, deps] @ Dze_inv @ Dze_ind
+        )
+        Enew = self.Eex - np.block([self.Bct, self.Bsp])[:, deps] @ Dze_inv @ Fzeex
+
+        Cnew = self.Cex - np.block([self.Dexct, self.Dexsp])[:, deps] @ Dze_inv @ Cze
+        Dnew = (
+            np.block([self.Dexct, self.Dexsp])[:, inds]
+            - np.block([self.Dexct, self.Dexsp])[:, deps] @ Dze_inv @ Dze_ind
+        )
+        Fnew = (
+            self.Fexex - np.block([self.Dexct, self.Dexsp])[:, deps] @ Dze_inv @ Fzeex
+        )
+
+        Cdep = Dze_inv @ Cze
+        Ddep = Dze_inv @ Dze_ind
+        Fdep = Dze_inv @ Fzeex
+
+        mat = [[Anew, Bnew, Enew], [Cnew, Dnew, Fnew], [Cdep, Ddep, Fdep]]
+
+        self.print_block_matrices(
+            mat,
+            in_labels=["x", "u", "dex"],
+            out_labels=["x+", "yex", "udep"],
+            save_description=False,
+        )
+        pprint.pprint(list(zip(range(n_inds), ct_labels + sp_labels)))
+
+        pprint.pprint(list(zip(range(n_deps), ct_labels_dep + sp_labels_dep)))
 
         []
 

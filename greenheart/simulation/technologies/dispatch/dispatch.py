@@ -50,8 +50,8 @@ class GreenheartDispatch:
             self.controller = DispatchModelPredictiveController(
                 GHconfig,
                 simulator.G,
-                simulator.node_order,
-                simulator.edge_order,
+                node_order=simulator.node_order,
+                edge_order=simulator.edge_order,
                 mpc_config=mpc_config,
             )
         else: 
