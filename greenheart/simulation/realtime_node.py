@@ -44,12 +44,11 @@ class Node:
         if out_degree == 0:
             self.out_degree = 1
 
-        
         if self.inputs["T"]:
             self.u_curtail_store = np.zeros((8760, np.sum(self.input_list) - 1))
             self.u_passthrough_store = np.zeros((8760, np.sum(self.input_list) - 1))
             self.disturbance_store = np.zeros((8760, np.sum(self.input_list) - 1))
-        else: 
+        else:
             self.u_curtail_store = np.zeros((8760, np.sum(self.input_list)))
             self.u_passthrough_store = np.zeros((8760, np.sum(self.input_list)))
             self.disturbance_store = np.zeros((8760, np.sum(self.input_list)))
@@ -62,8 +61,7 @@ class Node:
         #     self.disturbance_store = np.zeros((8760, np.sum(self.input_list)))
         self.u_curtail_split_store = np.zeros((8760, 4))
 
-
-        self.splitting_method = "fractional" # fractional or absolute
+        self.splitting_method = "fractional"  # fractional or absolute
 
     def __repr__(self):
         return self.name
@@ -96,7 +94,6 @@ class Node:
         if self.name == "generation":
             model_disturbance = self.model.output
 
-
         self.store_disturbance(model_disturbance, step_index=step_index)
         y_model, u_passthrough, u_curtail = self.model.step(
             model_disturbance, u_control, step_index
@@ -104,16 +101,18 @@ class Node:
 
         # assert y_model >= 0
 
-
         model_output = self.format_model_output(y_model, u_passthrough)
-        outgoing_edges, split_curtail = self.splitting(model_output, u_split, step_index)
+        outgoing_edges, split_curtail = self.splitting(
+            model_output, u_split, step_index
+        )
         self.store_passthrough(u_passthrough=u_passthrough, step_index=step_index)
-        self.store_curtail(u_curtail=u_curtail, split_curtail=split_curtail, step_index=step_index)
-
+        self.store_curtail(
+            u_curtail=u_curtail, split_curtail=split_curtail, step_index=step_index
+        )
 
         return outgoing_edges
 
-    def store_disturbance(self, model_disturbance, step_index = 0):
+    def store_disturbance(self, model_disturbance, step_index=0):
         # if model_disturbance.shape[0] > 0:
         if self.inputs["T"]:
             self.disturbance_store[step_index, :] = model_disturbance[0:-1]
@@ -122,13 +121,10 @@ class Node:
 
     def store_passthrough(self, u_passthrough=None, step_index=0):
         self.u_passthrough_store[step_index, :] = u_passthrough
-        
-    def store_curtail(self, u_curtail=None, split_curtail=None,  step_index=0):
 
-        
+    def store_curtail(self, u_curtail=None, split_curtail=None, step_index=0):
         self.u_curtail_store[step_index, :] = u_curtail
         self.u_curtail_split_store[step_index, :] = split_curtail
-        
 
     def format_model_output(self, y_model, u_passthrough):
         output_passthrough = np.zeros((1, 4))
@@ -139,10 +135,13 @@ class Node:
 
         if self.name == "electrolyzer":
             output_model[0, 3] = 80  # degree C
-            output_passthrough[0,3] = 80
+            output_passthrough[0, 3] = 80
         elif self.name == "hydrogen_storage":
             output_model[0, 3] = 20  # degree C
-            output_passthrough[0,3] = 20
+            output_passthrough[0, 3] = 20
+        elif self.name == "heat_exchanger":
+            output_model[0, 3] = self.model.Tout_desired
+            output_passthrough[0, 3] = self.model.Tout_desired
 
         model_output = output_model + output_passthrough
         model_output[0, 3] = np.nan_to_num(
@@ -163,7 +162,6 @@ class Node:
             assert np.min(u_split) >= -1
             u_split = np.where(u_split < 0, 0.0, u_split)
 
-            
         if self.splitting_method == "fractional":
             split = np.nan_to_num(u_split / np.sum(u_split))
         elif self.splitting_method == "absolute":
@@ -171,18 +169,13 @@ class Node:
         else:
             print("no splitting method")
 
-
-
-
-
         # Assuming u_split is fractional not absolute
         outgoing_edges = np.outer(split, model_output)
         outgoing_edges[:, 3] = model_output[0, 3]  # fix temperature
 
-
         split_curtail = model_output - np.sum(outgoing_edges, axis=0)
         # split_curtail = np.subtract(model_output, outgoing_edges)
- 
+
         # self.store_curtail(split_curtail=split_curtail, step_index=step_index)
 
         # Double check that splitting hasn't changed the total output

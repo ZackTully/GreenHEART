@@ -333,7 +333,7 @@ class HeatExchanger:
     def step(self, inputs, dispatch, step_index):
 
         Qdotin, mdotin, Tin = self.inputs(inputs)
-        Qdotin = Qdotin * 3600
+        # Qdotin = Qdotin 
 
         mdotout, mdotwaste, Qdotwaste = self.step_heating(mdotin, Qdotin, Tin)
         output = np.array([0, 0, mdotout, 900])

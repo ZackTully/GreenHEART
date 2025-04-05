@@ -295,8 +295,18 @@ class GreenheartDispatch:
             uc_mpc_traj, us_mpc_traj, curtail_mpc_traj, grid_mpc_traj = (
                 self.controller.compute_trajectory(x0, forecast, step_index)
             )
-            self.uc_mpc_traj = np.atleast_2d(uc_mpc_traj)
-            self.us_mpc_traj = np.atleast_2d(us_mpc_traj)
+
+            # if self.controller.horizon == 1: 
+            #     self.uc_mpc_traj = uc_mpc_traj
+            #     self.us_mpc_traj = us_mpc_traj
+            # else:
+            #     self.uc_mpc_traj = np.atleast_2d(uc_mpc_traj)
+            #     self.us_mpc_traj = np.atleast_2d(us_mpc_traj)
+
+            self.uc_mpc_traj = uc_mpc_traj
+            self.us_mpc_traj = us_mpc_traj
+
+
             self.curtail_mpc_traj = np.atleast_2d(curtail_mpc_traj)
             self.grid_mpc_traj = np.atleast_2d(grid_mpc_traj)
             self.previous_update = step_index

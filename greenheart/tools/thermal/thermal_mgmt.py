@@ -54,7 +54,7 @@ def run_h2_heating(
         )
 
     Q_to_h2_heating_kw, P_to_h2_heating_kw, TES, sizing_results, tes_sim_results = (
-        run_thermal_energy_storage(energy_to_heat_kw)
+        run_thermal_energy_storage(energy_to_heat_kw, simulator=simulator)
     )
 
     h2_heating_results = hydrogen_heating(
@@ -67,6 +67,8 @@ def run_h2_heating(
     for key in tes_sim_results.keys():
         h2_heating_results.update({key: tes_sim_results[key]})
 
+
+    h2_heating_results.update({"TES_sizing": sizing_results, "TES_costs": cost_results})
 
     # plot_h2_heating_results(h2_heating_results)
 
@@ -238,25 +240,34 @@ def hydrogen_heating(heat_energy_kw, power_kw, h2_elec_kgphr, h2_storage_kgphr):
     return h2_heating_results
 
 
-def run_thermal_energy_storage(energy_to_heat_kw):
+def run_thermal_energy_storage(energy_to_heat_kw, simulator=None):
 
-    energy_to_heat_mean = np.mean(energy_to_heat_kw)
+    if simulator is None:
 
-    tes_charging_kw = energy_to_heat_kw - energy_to_heat_mean
-    
+        energy_to_heat_mean = np.mean(energy_to_heat_kw)
 
-    tes_max_charging_kw = np.max(tes_charging_kw)
-    tes_min_charging_kw = np.min(tes_charging_kw)
+        tes_charging_kw = energy_to_heat_kw - energy_to_heat_mean
+        
+        tes_max_charging_kw = np.max(tes_charging_kw)
+        tes_min_charging_kw = np.min(tes_charging_kw)
 
-    tes_charge_kwh = np.cumsum(tes_charging_kw)
-    tes_charge_kwh -= np.min(tes_charge_kwh)
+        tes_charge_kwh = np.cumsum(tes_charging_kw)
+        tes_charge_kwh -= np.min(tes_charge_kwh)
 
-    # correct for heat loss
-    tes_charging_kw += np.mean(tes_charge_kwh * (0.01 / 24))
+        # correct for heat loss
+        tes_charging_kw += np.mean(tes_charge_kwh * (0.01 / 24))
 
 
-    tes_max_charge_kwh = np.max(tes_charge_kwh)
-    tes_min_charge_kwh = np.min(tes_charge_kwh)
+        tes_max_charge_kwh = np.max(tes_charge_kwh)
+        tes_min_charge_kwh = np.min(tes_charge_kwh)
+    else:
+        rts_tes = simulator.models["thermal_energy_storage"]
+        tes_min_charging_kw = rts_tes.max_charge_kWhphr
+        tes_max_charging_kw = rts_tes.max_discharge_kWhphr
+        tes_min_charge_kwh = rts_tes.H_capacity_kWh
+        tes_max_charge_kwh = 0
+
+        tes_charging_kw = np.stack([simulator.models["thermal_energy_storage"].P_used_store , simulator.models["thermal_energy_storage"].Q_out_store ]).T
 
     sizing_results = size_thermal_energy_storage(
         tes_min_charging_kw, tes_max_charging_kw, tes_min_charge_kwh, tes_max_charge_kwh
@@ -267,7 +278,7 @@ def run_thermal_energy_storage(energy_to_heat_kw):
     # cProfile.run("Q_to_h2_heating_kw, P_to_h2_heating_kw, TES = simulate_thermal_energy_storage(sizing_results, energy_to_heat_kw, tes_charging_kw)", "/Users/ztully/Documents/hybrids_code/GH_scripts/profiling_test/profiles/TES_sim")
 
     Q_to_h2_heating_kw, P_to_h2_heating_kw, tes_sim_results, TES = simulate_thermal_energy_storage(
-        sizing_results, energy_to_heat_kw, tes_charging_kw
+        sizing_results, energy_to_heat_kw, tes_charging_kw, simulator
     )
 
     # import cProfile
@@ -391,37 +402,46 @@ def size_thermal_energy_storage(min_kw, max_kw, min_kwh, max_kwh):
     return sizing_results
 
 
-def simulate_thermal_energy_storage(sizing_results, energy_to_heat_kw, tes_charging_kw):
+def simulate_thermal_energy_storage(sizing_results, energy_to_heat_kw, tes_charging_kw, simulator = None):
 
     # Initialize thermal energy storage from sizing results
+    if simulator is None: 
+        tes_config = create_thermal_energy_storage_config(sizing_results)
+        TES = ThermalEnergyStorage(**tes_config)
+        tes_charge = np.where(tes_charging_kw >= 0, tes_charging_kw, 0)
+        tes_discharge = np.where(tes_charging_kw < 0, -tes_charging_kw, 0)
 
-    tes_config = create_thermal_energy_storage_config(sizing_results)
-    TES = ThermalEnergyStorage(**tes_config)
+        Q_out_store = np.zeros(len(energy_to_heat_kw))
 
-    Q_out_store = np.zeros(len(energy_to_heat_kw))
+        import time
 
-    tes_charge = np.where(tes_charging_kw >= 0, tes_charging_kw, 0)
-    tes_discharge = np.where(tes_charging_kw < 0, -tes_charging_kw, 0)
+        t0 = time.time()
+
+        for step_index in range(len(energy_to_heat_kw)):
+
+            Q_out, P_passthrough, P_curtail = TES.step(
+                available_power=energy_to_heat_kw[step_index, None],
+                # dispatch=tes_charging_kw[step_index, None],
+                dispatch=np.array([tes_charge[step_index], tes_discharge[step_index]]),
+                step_index=step_index,
+            )
+            Q_out_store[step_index] = Q_out
+
+        duration = time.time() - t0
+
+        Q_to_h2_heating_kwh = Q_out_store
+        # TODO Double check on this - It shouldnt take any electrical power
+        print("Did you remove electrical heating option?")
+        P_to_h2_heating_kwh = energy_to_heat_kw - TES.P_used_store # / 3600
+
+    else:
+        TES = simulator.models["thermal_energy_storage"]
+        Q_to_h2_heating_kwh = TES.Q_out_store
+        P_to_h2_heating_kwh = np.zeros(Q_to_h2_heating_kwh.shape)
 
 
-    import time
-
-    t0 = time.time()
-
-    for step_index in range(len(energy_to_heat_kw)):
-
-        Q_out, P_passthrough, P_curtail = TES.step(
-            available_power=energy_to_heat_kw[step_index, None],
-            # dispatch=tes_charging_kw[step_index, None],
-            dispatch=np.array([tes_charge[step_index], tes_discharge[step_index]]),
-            step_index=step_index,
-        )
-        Q_out_store[step_index] = Q_out
-
-    duration = time.time() - t0
-
-    Q_to_h2_heating_kwh = Q_out_store
-    P_to_h2_heating_kwh = energy_to_heat_kw - TES.P_used_store # / 3600
+        tes_charge = TES.P_used_store
+        tes_discharge = TES.Q_out_store
 
 
     tes_sim_results = {

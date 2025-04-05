@@ -504,6 +504,9 @@ class RealTimeSimulation:
             node: self.G.nodes[node]["ionode"].model for node in self.node_order
         }
 
+
+
+
         []
 
     def setup_record_keeping(self):
@@ -626,7 +629,7 @@ class RealTimeSimulation:
         outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
         component_dict = {
             "battery": {
-                "model": Battery(self.config.hopp_config["technologies"]["battery"]),
+                "model": Battery(self.config.hopp_config["technologies"]["battery"], hopp_interface=self.hi),
                 "model_inputs": inputs,
                 "model_outputs": outputs,
             }
@@ -951,14 +954,14 @@ class RealTimeSimulation:
 
         fig.align_ylabels()
 
-    def plot_nodes(self, data="edges", fname=None):
+    def plot_nodes(self, data="edges", figsize = (15, 8), fname=None):
         fig, ax = plt.subplots(
             len(self.node_order),
             1,
             sharex="all",
             sharey="all",
             layout="constrained",
-            figsize=(15, 8),
+            figsize=figsize,
         )
 
         ax = ax[:, None]
@@ -976,6 +979,14 @@ class RealTimeSimulation:
             normalized_states[:, :, 2] = np.nan_to_num(self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2]))
 
             plot_states = normalized_states
+        elif data == "error":
+            normalized_states = np.zeros(self.system_states.shape)
+
+            normalized_states[:, :, 0] = np.nan_to_num(self.system_states[:, :, 0] / np.max(self.system_states[:, :, [0, 1]]))
+            normalized_states[:, :, 1] = np.nan_to_num(self.system_states[:, :, 1] / np.max(self.system_states[:, :, [0, 1]]))
+            normalized_states[:, :, 2] = np.nan_to_num(self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2]))
+
+            plot_states = normalized_states            
 
         colors = ["black", "red", "blue"]
         cmaps = ["Greys", "Reds", "Blues"]
@@ -1249,13 +1260,19 @@ class RealTimeSimulation:
         else:
             ax[0, 0].set_xlim([0, 8760])
 
-        # fig.savefig(f"{fname}{'_8760.pdf'}", format="pdf")
-
+        fig.savefig(f"{fname}{'_8760.pdf'}", format="pdf")
         # ax[0,0].set_xlim([2800, 3150])
-
         # fig.savefig(f"{fname}{'_zoom.pdf'}", format="pdf")
 
         []
+
+
+    def plot_edge_error(self):
+        pass
+
+    def plot_input_error(self):
+        # plot curtail or passthrough
+        pass
 
 
 class RealTimeSimulationOutput:
@@ -1314,3 +1331,10 @@ class StandinNode:
         u_curtail = dispatch
         output = self.output - u_curtail
         return output, u_passthrough, u_curtail
+
+
+class Forecaster:
+    def __init__(self):
+        pass
+
+    

@@ -33,7 +33,8 @@ class ThermalEnergyStorage:
         self.eta_electric_heater = 0.98
 
         self.Q_loss_flag = True
-        self.Q_loss_rate_kWhphr = 0.01 / 24  # 1% per day loss of heat energy
+        self.Q_loss_percpday = 0.01
+        self.Q_loss_rate_kWhphr = self.Q_loss_percpday / 24  # 1% per day loss of heat energy
 
         self.T_hot_target = T_hot_target  # [C]
         self.T_buffer_target = T_buffer_target  # [C]
@@ -141,15 +142,19 @@ class ThermalEnergyStorage:
 
             elif len(dispatch) == 2:
 
-                dispatch = dispatch[0] - dispatch[1]
+                # dispatch = dispatch[0] - dispatch[1]
+                dispatch_charge = dispatch[0]
+                dispatch_discharge = dispatch[1]
             else:
                 assert False, "Bad dispatch command"
 
         if available_power.ndim > 0:
             available_power = available_power[0]
 
-        P_charge_desired_kWh = np.max([dispatch, 0])
-        Q_discharge_desired_kWh = -np.min([dispatch, 0])
+        P_charge_desired_kWh = np.max([dispatch_charge, 0])
+        Q_discharge_desired_kWh = np.max([dispatch_discharge, 0])
+        # P_charge_desired_kWh = np.max([dispatch, 0])
+        # Q_discharge_desired_kWh = -np.min([dispatch, 0])
 
         m_charge, m_discharge, unused_power = self.low_level_controller(
             available_power, P_charge_desired_kWh, Q_discharge_desired_kWh, step_index
@@ -296,19 +301,14 @@ class ThermalEnergyStorage:
         p = 1
         o = 1
 
-        A = np.array([[1]])
+        A = np.array([[1 - self.Q_loss_rate_kWhphr]])
+        # A = np.array([[1]])
         B = np.array([[1, -1]])
         E = np.array([[0]])
         C = np.array([[0], [0]])
         D = np.array([[0, 1], [-1, 0]])
         F = np.array([[0], [1]])
         
-        # A = np.array([[1]])
-        # B = np.array([[1]])
-        # E = np.array([[0]])
-        # C = np.array([[0, 0]]).T
-        # D = np.array([[-1, -1]]).T
-        # F = np.array([[0, 1]]).T
 
         bounds_dict = {
             "u_lb": np.array([0, 0]),
@@ -318,14 +318,7 @@ class ThermalEnergyStorage:
             "y_lb": np.array([None, None]),
             "y_ub": np.array([None, None]),
         }
-        # bounds_dict = {
-        #     "u_lb": np.array([-self.max_discharge_kWhphr]),
-        #     "u_ub": np.array([self.max_charge_kWhphr]),
-        #     "x_lb": np.array([0]),
-        #     "x_ub": np.array([self.H_capacity_kWh]),
-        #     "y_lb": np.array([None, None]),
-        #     "y_ub": np.array([None, None]),
-        # }
+
 
         control_model = ControlModel(
             A, B, C, D, E, F, bounds=bounds_dict, discrete=True

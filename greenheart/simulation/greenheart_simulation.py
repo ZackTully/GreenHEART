@@ -184,6 +184,8 @@ class GreenHeartSimulationConfig:
                 )
 
 
+    
+
 @define
 class GreenHeartSimulationOutput:
     """This is a dataclass to contain the outputs from GreenHEART
@@ -761,6 +763,7 @@ def run_simulation(config: GreenHeartSimulationConfig):
                     greenheart_config,
                     electrolyzer_physics_results,
                     h2_storage_results,
+                    simulator=simulator
                 )
             )
 

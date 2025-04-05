@@ -7,14 +7,14 @@ from greenheart.simulation.technologies.dispatch.control_model import ControlMod
 
 class Battery():
 # class Battery(Battery_hopp):
-    def __init__(self, battery_config):
+    def __init__(self, battery_config, hopp_interface):
 
         # Need to get these from hopp config
 
         # config = BatteryConfig(*battery_config)
 
 
-        self.roundtrip_efficiency = 0.82
+        # self.roundtrip_efficiency = 0.82
     
         self.config = battery_config
 

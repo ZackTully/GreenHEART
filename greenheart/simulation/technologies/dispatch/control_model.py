@@ -1,5 +1,7 @@
 import numpy as np
 import scipy
+import casadi as ca
+
 
 class ControlModel:
     # linear state space with bounds model
@@ -55,6 +57,15 @@ class ControlModel:
         for bound in ["u_lb", "u_ub", "x_lb", "x_ub", "y_lb", "y_ub"]:
             if bound in bounds:
                 self_bound = self.parse_bound(bounds[bound], getattr(self, bound))
+                for i in range(len(self_bound)):
+                    if self_bound[i] is None:
+                        if "ub" in bound:
+                            self_bound[i] = np.inf
+                            # self_bound[i] = ca.inf
+                        else:
+                            self_bound[i] = -np.inf
+                            # self_bound[i] = -ca.inf
+                        []
                 setattr(self, bound, self_bound)
 
         self.constraints([], [])
@@ -66,6 +77,10 @@ class ControlModel:
 
 
     def constraints(self, y_position, constraint_type):
+
+        self.ycon_lb = -np.inf * np.ones(len(y_position))
+        self.ycon_ub = np.inf * np.ones(len(y_position))
+
 
         # attribute to self any constraints that need to be included in the plant model to make the component model work correctly
         # Like for stoichiometric components like heat exchanger with output > 0 type constraints
@@ -99,6 +114,10 @@ class ControlModel:
 
             self.p -= 1
 
+            self.ycon_lb[i] = self.y_lb[y_position[i]]
+            self.ycon_ub[i] = self.y_ub[y_position[i]]
+
+
             if constraint_type[i] == "greater":
                 self.C_gt.append(C_temp)
                 self.D_gt.append(D_temp)
@@ -117,6 +136,9 @@ class ControlModel:
         self.D_et = np.concatenate(self.D_et, axis=0)
         self.F_et = np.concatenate(self.F_et, axis=0)
 
+        self.y_lb = np.delete(self.y_lb, y_position)
+        self.y_ub = np.delete(self.y_ub, y_position)
+
 
     def set_disturbance_domain(self, domain_list):
         self.disturbance_domain = np.array(domain_list)
@@ -129,37 +151,6 @@ class ControlModel:
     def set_output_domain(self, domain_list):
         self.output_domain = np.array(domain_list)
 
-    # def set_disturbance_domain(self, domain_dict):
-    #     if "P" in domain_dict:
-    #         self.P_disturbance = domain_dict["P"]
-    #     else:
-    #         self.P_disturbance = []
-
-    #     if "Qdot" in domain_dict:
-    #         self.Qdot_disturbance = domain_dict["Qdot"]
-    #     else:
-    #         self.Qdot_disturbance = []
-        
-    #     if "mdot" in domain_dict:
-    #         self.mdot_disturbance = domain_dict["mdot"]
-    #     else:
-    #         self.mdot_disturbance = []
-
-    # def set_output_domain(self, domain_dict):
-    #     if "P" in domain_dict:
-    #         self.P_output = domain_dict["P"]
-    #     else:
-    #         self.P_output = []
-
-    #     if "Qdot" in domain_dict:
-    #         self.Qdot_output = domain_dict["Qdot"]
-    #     else:
-    #         self.Qdot_output = []
-        
-    #     if "mdot" in domain_dict:
-    #         self.mdot_output = domain_dict["mdot"]
-    #     else:
-    #         self.mdot_output = []
 
  
 
