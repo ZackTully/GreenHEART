@@ -47,9 +47,9 @@ class DispatchModelPredictiveController:
             self.p_opts = {"print_time": False, "verbose": False}
         else:
             self.p_opts = p_opts
-        
+
         if s_opts is None:
-            
+
             self.s_opts = {
                 "print_level": 0,
                 "compl_inf_tol": 1e-3,
@@ -65,7 +65,6 @@ class DispatchModelPredictiveController:
             }
         else:
             self.s_opts = s_opts
-
 
         if self.debug_mode:
             self.load_state_for_debug(saved_state)
@@ -244,11 +243,7 @@ class DispatchModelPredictiveController:
         # =============================================================================
 
         opti: ca.Opti = ca.Opti()
-        opti.solver(
-            "ipopt",
-            self.p_opts,
-            self.s_opts,
-        )
+        opti.solver("ipopt", self.p_opts, self.s_opts)
 
         # Variables and bounds
         uct_var = opti.variable(self.mct, self.horizon)
@@ -267,7 +262,6 @@ class DispatchModelPredictiveController:
             opti.subject_to(uct_var[:, k] >= self.bounds["u_lb"][:, None])
             opti.subject_to(uct_var[:, k] <= self.bounds["u_ub"][:, None])
 
-
             # opti.subject_to(yco_var[:, k] >= ca.MX(list(self.bounds["y_lb"][:, None])))
             # opti.subject_to(yco_var[:, k] <= ca.MX(list(self.bounds["y_ub"][:, None])))
 
@@ -276,7 +270,6 @@ class DispatchModelPredictiveController:
             opti.subject_to(yex_var[:, k] >= 0)
             opti.subject_to(usp_var[:, k] >= np.zeros(self.msp))
 
-
             for node in self.node_order:
 
                 node_idx = [i for i in range(self.pco) if self.pco_label[i].split(" ")[2] == node]
@@ -284,10 +277,6 @@ class DispatchModelPredictiveController:
                 if len(node_idx) > 0:
                     opti.subject_to(np.ones((1, len(node_idx))) @ yco_var[node_idx, k] <= self.bounds_verbose[node]["y_ub"])
                     opti.subject_to(np.ones((1, len(node_idx))) @ yco_var[node_idx, k] >= self.bounds_verbose[node]["y_lb"])
-
-
-
-
 
         dex_param = opti.parameter(self.oex, self.horizon)
         # e_src_param = opti.parameter(1, self.horizon)
@@ -754,57 +743,57 @@ class DispatchModelPredictiveController:
     #     }
     #     return obj_value, objective_terms
 
-    def objective(self, x, uc, us, ys, curtail):
+    # def objective(self, x, uc, us, ys, curtail):
 
-        ref_steel = 45.48e3
-        # ref_steel = 37.92e3
-        # ref_steel = 20e3
-        self.reference = ref_steel
+    #     ref_steel = 45.48e3
+    #     # ref_steel = 37.92e3
+    #     # ref_steel = 20e3
+    #     self.reference = ref_steel
 
-        bes_state_reference = 1200000
-        h2s_state_reference = 320467
+    #     bes_state_reference = 1200000
+    #     h2s_state_reference = 320467
 
-        objective_value = 0
-        for i in range(self.horizon):
+    #     objective_value = 0
+    #     for i in range(self.horizon):
 
-            # ysp = (
-            #     self.Csp @ x[:, i] + self.Dspc @ uc[:, i] + self.Dsps @ us[:, i]
-            # )  # + self.Fsp @ de
+    #         # ysp = (
+    #         #     self.Csp @ x[:, i] + self.Dspc @ uc[:, i] + self.Dsps @ us[:, i]
+    #         # )  # + self.Fsp @ de
 
-            tracking_term = (ref_steel - ys[0, i]) ** 2
+    #         tracking_term = (ref_steel - ys[0, i]) ** 2
 
-            # h2s_sparsity = 1e-5 * (ysp[3] ** 2 + ysp[5] ** 2) ** 2
-            # h2s_sparsity = 1e-5 * (ysp[3] * ysp[5] ) **2
-            # h2s_sparsity = 1e3 * ((ysp[3] +  ysp[5]) + ca.fabs(uc[1,i]) )
-            # h2s_sparsity = us[3,i] ** 2 - uc[1, i]**2
-            # h2s_sparsity = 1e3 * ca.if_else(
-            #     uc[1, i] >= 0, (uc[1, i] - us[3, i]) ** 2, 0
-            # )
-            # h2s_sparsity = (2 * us[3, i] - uc[1, i] - ca.fabs(uc[1, i]))
-            # h2s_sparsity = 1e3 * (ysp[3] -  uc[1,i] ) **2
-            # h2s_sparsity = 1e3 * (ysp[3] + ysp[5]) **2
-            # bes_sparsity = 1e-5 * (ysp[0] ** 2 + ysp[2] ** 2) ** 2
-            # bes_sparsity = 1e-5 * (ysp[0] * ysp[2]) ** 2
+    #         # h2s_sparsity = 1e-5 * (ysp[3] ** 2 + ysp[5] ** 2) ** 2
+    #         # h2s_sparsity = 1e-5 * (ysp[3] * ysp[5] ) **2
+    #         # h2s_sparsity = 1e3 * ((ysp[3] +  ysp[5]) + ca.fabs(uc[1,i]) )
+    #         # h2s_sparsity = us[3,i] ** 2 - uc[1, i]**2
+    #         # h2s_sparsity = 1e3 * ca.if_else(
+    #         #     uc[1, i] >= 0, (uc[1, i] - us[3, i]) ** 2, 0
+    #         # )
+    #         # h2s_sparsity = (2 * us[3, i] - uc[1, i] - ca.fabs(uc[1, i]))
+    #         # h2s_sparsity = 1e3 * (ysp[3] -  uc[1,i] ) **2
+    #         # h2s_sparsity = 1e3 * (ysp[3] + ysp[5]) **2
+    #         # bes_sparsity = 1e-5 * (ysp[0] ** 2 + ysp[2] ** 2) ** 2
+    #         # bes_sparsity = 1e-5 * (ysp[0] * ysp[2]) ** 2
 
-            # no_h2s_charge = 1e3 * uc[1, i] ** 2
+    #         # no_h2s_charge = 1e3 * uc[1, i] ** 2
 
-            # bes_state = 1e-5 * (x[0, i] - bes_state_reference) ** 2
-            # h2s_state = 1e-3 * (x[1, i] - h2s_state_reference) ** 2
+    #         # bes_state = 1e-5 * (x[0, i] - bes_state_reference) ** 2
+    #         # h2s_state = 1e-3 * (x[1, i] - h2s_state_reference) ** 2
 
-            # curtail_penalty = 1e-3 * curtail[0, i] ** 2
-            # storage_agreement = 1e-3 * (0.0218 * uc[0, i] - uc[1, i]) ** 2
+    #         # curtail_penalty = 1e-3 * curtail[0, i] ** 2
+    #         # storage_agreement = 1e-3 * (0.0218 * uc[0, i] - uc[1, i]) ** 2
 
-            objective_value += (
-                tracking_term
-                # + bes_state
-                # + h2s_state
-                # + storage_agreement
-                # + h2s_sparsity
-                # + bes_sparsity
-                # + curtail_penalty
-            )
+    #         objective_value += (
+    #             tracking_term
+    #             # + bes_state
+    #             # + h2s_state
+    #             # + storage_agreement
+    #             # + h2s_sparsity
+    #             # + bes_sparsity
+    #             # + curtail_penalty
+    #         )
 
-        return objective_value
+    #     return objective_value
 
     def update_optimization_parameters(self, x0, src_forecast):
         self.opti.set_value(self.opt_params["dex"], src_forecast)
@@ -833,7 +822,6 @@ class DispatchModelPredictiveController:
             val = prob.value(var)
             val = np.reshape(val, var.shape)
             return val
-
 
         if self.use_saved_solution:
 
@@ -954,7 +942,7 @@ class DispatchModelPredictiveController:
                         i += 4
                     i += 1
 
-                # if self.horizon == 1: 
+                # if self.horizon == 1:
                 #     x_db = self.opti.debug.value(self.opt_vars["x"])  # [None, :]
                 #     uc_db = np.atleast_2d(self.opti.debug.value(self.opt_vars["uct"])).T  # [None, :]
                 #     us_db = np.atleast_2d(self.opti.debug.value(self.opt_vars["usp"])).T
@@ -970,13 +958,11 @@ class DispatchModelPredictiveController:
                 #     yco_db = self.opti.debug.value(self.opt_vars["yco"])
                 #     curtail_db = self.opti.debug.value(self.opt_vars["curtail"])
                 #     grid_db = self.opti.debug.value(self.opt_vars["grid"])
-                    
 
                 # def get_sol_value(prob:ca.Opti, var):
                 #     val = prob.value(var)
                 #     val = np.reshape(val, var.shape)
                 #     return val
-
 
                 x_db = get_sol_value(self.opti.debug, self.opt_vars["x"]) 
                 uc_db = get_sol_value(self.opti.debug, self.opt_vars["uct"])
@@ -1104,9 +1090,6 @@ class DispatchModelPredictiveController:
             # self.opti.debug.constraints()
             # self.opti.debug.show_infeasibilities()
 
-
-
-
             uct = get_sol_value(sol, self.opt_vars["uct"])
             usp = get_sol_value(sol, self.opt_vars["usp"])
             x = get_sol_value(sol, self.opt_vars["x"])
@@ -1145,15 +1128,11 @@ class DispatchModelPredictiveController:
 
             self.curtail_storage[step_index : step_index + self.horizon] = curtail
 
-
             # def dimension_check(arr:np.ndarray):
             #     if arr.ndim != 2:
             #         return arr[:, None]
             #     else:
             #         return arr
-
-
-
 
             self.uc_init = uct
             self.us_init = usp
@@ -1245,7 +1224,7 @@ class DispatchModelPredictiveController:
             # u_split = usp[:, 0]
             # if not self.debug_mode:
             #     self.save_state_for_debug(x0, forecast, step_index)
-            
+
             return uct, usp, curtail, grid
 
     def save_state_for_debug(self, x0, forecast, step_index):
@@ -1298,7 +1277,6 @@ class DispatchModelPredictiveController:
                 M_dco_yco=self.M_dco_yco.tolist(),
             )
 
-
             if hasattr(self, "x_init"):  # then try to update initial guess
                 save_dict.update(dict(uct_init = self.uc_init.tolist(), usp_init = self.us_init.tolist(), x_init = self.x_init.tolist(), yex_init = self.ys_init.tolist()))
 
@@ -1306,7 +1284,6 @@ class DispatchModelPredictiveController:
                 # self.opti.set_initial(self.opt_vars["usp"], self.us_init)
                 # self.opti.set_initial(self.opt_vars["x"], self.x_init)
                 # self.opti.set_initial(self.opt_vars["yex"], self.ys_init)
-
 
             json.dump(save_dict, f, **js_kw)
 
@@ -1971,11 +1948,12 @@ class DispatchModelPredictiveController:
         ]
 
         self.print_block_matrices(
-            [combined_mat[i] for i in [0, 2, 3, 4, 5]],
+            [combined_mat[i] for i in [0, 1, 2, 3, 4, 5]],
             in_labels=["x", "uct", "usp", "dex"],
-            out_labels=["x+", "yex", "yze", "ygt", "yet"],
+            out_labels=["x+", "yco", "yex", "yze", "ygt", "yet"],
             save_description=True,
         )
+
         # self.print_block_matrices(
         #     combined_mat,
         #     in_labels=["x", "uct", "usp", "dex"],
@@ -1988,6 +1966,15 @@ class DispatchModelPredictiveController:
         self.Cze, self.Dzect, self.Dzesp, self.Fzeex = combined_mat[3]
         self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex = combined_mat[4]
         self.Cet, self.Detct, self.Detsp, self.Fetex = combined_mat[5]
+
+        mat_names = [
+            ["A", "Bct", "Bsp", "Eex"],
+            ["Cco", "Dcoct", "Dcosp", "Fcoex"],
+            ["Cex", "Dexct", "Dexsp", "Fexex"],
+            ["Cze", "Dzect", "Dzesp", "Fzeex"],
+            ["Cgt", "Dgtct", "Dgtsp", "Fgtex"],
+            ["Cet", "Detct", "Detsp", "Fetex"],
+        ]
 
         # TODO apply scaling here
 
@@ -2242,6 +2229,8 @@ class DispatchModelPredictiveController:
         # [(i, np.linalg.matrix_rank(Dze[:, np.delete(deps_desired, i)])) for i in range(len(deps_desired))]
 
         inds = inds_desired
+        # inds = np.array([0, 1, 2, 4, 6, 8, 9, 10, 11, 14, 16, 18])
+        # inds = np.array([1,  3,  5,  6,  7, 8, 11, 14])
         deps = np.array(
             [i for i in range(self.mct + self.msp) if i not in inds], dtype=int
         )

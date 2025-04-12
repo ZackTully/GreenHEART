@@ -580,7 +580,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
             save_plots=config.save_plots,
         )
 
-        hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = -simulator.G.nodes["battery"]["ionode"].model.store_charge_power / 1e3
+        # hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = -simulator.G.nodes["battery"]["ionode"].model.store_charge_power / 1e3
+        hi.system.dispatch_builder.power_sources["battery"].dispatch.external_fixed_dispatch = np.array(simulator.G.nodes["battery"]["ionode"].model.hopp_battery.outputs.dispatch_P)
 
         hopp_results = he_hopp.run_hopp(
             hi,
