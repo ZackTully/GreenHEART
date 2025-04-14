@@ -373,51 +373,54 @@ class DispatchModelPredictiveController:
             else:
                 grid_curtail = -curtail[:, i] + grid_purchase[:, i]
 
-            xkp1 = (
-                self.A @ x_var[:, i]
-                + self.Bct @ uct_var[:, i]
-                + self.Bsp @ usp_var[:, i]
-                + self.Eex @ (dex_param[:, i] + grid_curtail)
-            )
-            # external outputs
-            yexk = (
-                self.Cex @ x_var[:, i]
-                + self.Dexct @ uct_var[:, i]
-                + self.Dexsp @ usp_var[:, i]
-                + self.Fexex @ (dex_param[:, i] + grid_curtail)
-            )
+            xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(x_var[:, i], uct_var[:, i], usp_var[:, i], dex_param[:, i], grid_curtail)
 
-            # coupling outputs
-            yco = (
-                self.Cco @ x_var[:, i]
-                + self.Dcoct @ uct_var[:, i]
-                + self.Dcosp @ usp_var[:, i]
-                + self.Fcoex @ (dex_param[:, i] + grid_curtail)
-            )
 
-            # Splitting constraint zero outputs
-            yze = (
-                self.Cze @ x_var[:, i]
-                + self.Dzect @ uct_var[:, i]
-                + self.Dzesp @ usp_var[:, i]
-                + self.Fzeex @ (dex_param[:, i] + grid_curtail)
-            )
+            # xkp1 = (
+            #     self.A @ x_var[:, i]
+            #     + self.Bct @ uct_var[:, i]
+            #     + self.Bsp @ usp_var[:, i]
+            #     + self.Eex @ (dex_param[:, i] + grid_curtail)
+            # )
+            # # external outputs
+            # yexk = (
+            #     self.Cex @ x_var[:, i]
+            #     + self.Dexct @ uct_var[:, i]
+            #     + self.Dexsp @ usp_var[:, i]
+            #     + self.Fexex @ (dex_param[:, i] + grid_curtail)
+            # )
 
-            # greater than 0 constraint outputs
-            ygt = (
-                self.Cgt @ x_var[:, i]
-                + self.Dgtct @ uct_var[:, i]
-                + self.Dgtsp @ usp_var[:, i]
-                + self.Fgtex @ (dex_param[:, i] + grid_curtail)
-            )
+            # # coupling outputs
+            # yco = (
+            #     self.Cco @ x_var[:, i]
+            #     + self.Dcoct @ uct_var[:, i]
+            #     + self.Dcosp @ usp_var[:, i]
+            #     + self.Fcoex @ (dex_param[:, i] + grid_curtail)
+            # )
 
-            # equal to 0 constraint outputs
-            yet = (
-                self.Cet @ x_var[:, i]
-                + self.Detct @ uct_var[:, i]
-                + self.Detsp @ usp_var[:, i]
-                + self.Fetex @ (dex_param[:, i] + grid_curtail)
-            )
+            # # Splitting constraint zero outputs
+            # yze = (
+            #     self.Cze @ x_var[:, i]
+            #     + self.Dzect @ uct_var[:, i]
+            #     + self.Dzesp @ usp_var[:, i]
+            #     + self.Fzeex @ (dex_param[:, i] + grid_curtail)
+            # )
+
+            # # greater than 0 constraint outputs
+            # ygt = (
+            #     self.Cgt @ x_var[:, i]
+            #     + self.Dgtct @ uct_var[:, i]
+            #     + self.Dgtsp @ usp_var[:, i]
+            #     + self.Fgtex @ (dex_param[:, i] + grid_curtail)
+            # )
+
+            # # equal to 0 constraint outputs
+            # yet = (
+            #     self.Cet @ x_var[:, i]
+            #     + self.Detct @ uct_var[:, i]
+            #     + self.Detsp @ usp_var[:, i]
+            #     + self.Fetex @ (dex_param[:, i] + grid_curtail)
+            # )
 
             opti.subject_to(x_var[:, i + 1] == xkp1)
             opti.subject_to(yex_var[:, i] == yexk[0])
@@ -516,6 +519,75 @@ class DispatchModelPredictiveController:
                 self.opt_vars.update({"grid": grid_purchase})
             else:
                 self.opt_params.update({"grid": grid_purchase})
+
+    def step_control_model(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
+
+
+            xkp1 = (
+                self.A @ x_var
+                + self.Bct @ uct_var
+                + self.Bsp @ usp_var
+                + self.Eex @ (dex_param + grid_curtail)
+            )
+            # external outputs
+            yexk = (
+                self.Cex @ x_var
+                + self.Dexct @ uct_var
+                + self.Dexsp @ usp_var
+                + self.Fexex @ (dex_param + grid_curtail)
+            )
+
+            # coupling outputs
+            yco = (
+                self.Cco @ x_var
+                + self.Dcoct @ uct_var
+                + self.Dcosp @ usp_var
+                + self.Fcoex @ (dex_param + grid_curtail)
+            )
+
+            # Splitting constraint zero outputs
+            yze = (
+                self.Cze @ x_var
+                + self.Dzect @ uct_var
+                + self.Dzesp @ usp_var
+                + self.Fzeex @ (dex_param + grid_curtail)
+            )
+
+            # greater than 0 constraint outputs
+            ygt = (
+                self.Cgt @ x_var
+                + self.Dgtct @ uct_var
+                + self.Dgtsp @ usp_var
+                + self.Fgtex @ (dex_param + grid_curtail)
+            )
+
+            # equal to 0 constraint outputs
+            yet = (
+                self.Cet @ x_var
+                + self.Detct @ uct_var
+                + self.Detsp @ usp_var
+                + self.Fetex @ (dex_param + grid_curtail)
+            )
+
+            return self.step_control_model_NL(x_var, uct_var, usp_var, dex_param, grid_curtail)
+
+            return xkp1, yexk, yco, yze, ygt, yet
+
+    def step_control_model_NL(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
+
+
+        Y_block = self.block_ss @ ca.vertcat(x_var, uct_var, usp_var, dex_param+ grid_curtail)
+
+        row_inds = [self.n, self.pco, self.pex, self.pze, self.pgt, self.pet]
+        previous = 0
+        y_parts = []
+        for rows in row_inds: 
+            y_parts.append(Y_block[previous: previous + rows])
+            previous += rows
+
+        xkp1, yco, yexk, yze, ygt, yet = y_parts[0], y_parts[1], y_parts[2], y_parts[3], y_parts[4], y_parts[5] 
+        return xkp1, yexk, yco, yze, ygt, yet
+    
 
     def objective_step(self, x, uct, usp, yco, yex, curtail=None, grid=None, gridcurtail=None, var_inds=None):
 
@@ -877,6 +949,10 @@ class DispatchModelPredictiveController:
             return uct, usp, curtail, grid
 
         else:
+
+            if len(self.x_store) > 0:
+                # Error between where the MPC planned for the state to be and where the measure state is
+                state_error = x0 - self.x_store[-1][:, step_index - self.step_index_store[-1]]
 
             self.update_optimization_parameters(x0, forecast)
             if self.warm_start_with_previous_solution:
@@ -1966,6 +2042,8 @@ class DispatchModelPredictiveController:
         self.Cze, self.Dzect, self.Dzesp, self.Fzeex = combined_mat[3]
         self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex = combined_mat[4]
         self.Cet, self.Detct, self.Detsp, self.Fetex = combined_mat[5]
+
+        self.block_ss = np.block(combined_mat)
 
         mat_names = [
             ["A", "Bct", "Bsp", "Eex"],

@@ -155,8 +155,7 @@ class Node:
 
     def splitting(self, model_output, u_split, step_index):
 
-        # if np.isclose(u_split, np.zeros(len(u_split)), atol=1):
-        #     pass
+        
 
         if (u_split < 0).any():
             assert np.min(u_split) >= -1

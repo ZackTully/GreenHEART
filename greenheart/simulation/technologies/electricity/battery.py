@@ -81,13 +81,29 @@ class Battery:
 
     def create_control_model(self):
 
+        eta_bes = 0.98
+
         A = np.array([[1]])
-        B = np.array([[1, -1]])
+        B = np.array([[0.980876013779761, -0.9335137103501339]])
+        # B = np.array([[0.980876013779761, -1/(0.9335137103501339 + 0.05)]])
+        # B = np.array([[eta_bes, -1]])
         E = np.array([[0]])
 
         C = np.array([[0], [0]])
-        D = np.array([[0, 1], [-1, 0]])
+        D = np.array([[0, 0.9935416519391084], [-1, 0]])
+        # D = np.array([[0, eta_bes], [-1, 0]])
         F = np.array([[0], [1]])
+        # data_ss = np.array([[ 9.23946441e-01, -1.14887702e-02,  2.38266353e-01],
+        #     [ 1.07312790e-04, -1.29614042e-04,  9.98602962e-01]])
+
+
+        # A = np.array([data_ss[0,0, None]])
+        # B = np.array([data_ss[0, 1:]])
+        # E = np.array([data_ss[0, 1, None]])
+
+        # C = np.array([[data_ss[1, 0]], [0]])
+        # D = np.array([data_ss[1, 1:], [-1, 0]])
+        # F = np.array([[data_ss[1,1]], [1]])
 
         bounds_dict = {
             "u_lb": np.array([0, 0]),
@@ -196,7 +212,7 @@ class Battery:
         
         # self.hopp_battery.dispatch.external_fixed_dispatch = np.concatenate([np.array([ 338166.36,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36, -298530.5 , -195634.7 ,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36,        338166.36,  338166.36,  338166.36,  195363.4 ,  169832.9 ,  192293.9 ,  235234.6 ,  203020.6 ]) / 1e3, 100 * np.ones(8760 - 24)])
         self.hopp_battery.dispatch.external_fixed_dispatch[step_index] = -desired_power / 1e3
-        self.hopp_battery.dispatch.set_fixed_dispatch(gen=available_power * np.ones(24), grid_limit = 1e9 * np.ones(24), start_time=step_index)
+        self.hopp_battery.dispatch.set_fixed_dispatch(gen=1e-3 * available_power * np.ones(24), grid_limit = 1e9 * np.ones(24), start_time=step_index)
 
         self.hopp_battery.simulate_with_dispatch(n_periods=1, sim_start_time=step_index)
         
@@ -211,10 +227,15 @@ class Battery:
             else:
                 u_passthrough = -1e5
                 assert False, "This case shouldn't happen"
+            u_curtail = 0.0
         else:
-            u_passthrough = np.max([0, available_power]) - np.max([-P_battery, 0])
-
-        u_curtail = 0.0
+            if desired_power >= 0:
+                charging_error = desired_power + P_battery
+                u_passthrough = 0.0
+                u_curtail = np.max([0, available_power]) - np.max([-P_battery, 0])
+            else:
+                u_passthrough = np.max([0, available_power]) - np.max([-P_battery, 0])
+                u_curtail = 0.0
 
         return model_output, u_passthrough, u_curtail
         []

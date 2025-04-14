@@ -302,12 +302,26 @@ class ThermalEnergyStorage:
         o = 1
 
         A = np.array([[1 - self.Q_loss_rate_kWhphr]])
-        # A = np.array([[1]])
+        # A = np.array([[0.975562185090931]])
         B = np.array([[1, -1]])
         E = np.array([[0]])
         C = np.array([[0], [0]])
         D = np.array([[0, 1], [-1, 0]])
         F = np.array([[0], [1]])
+
+        # data_ss = np.array([[ 9.75562185e-01,  1.00363595e-01,  2.84716728e+00],
+        #     [-1.17146624e-06,  1.36263323e-06,  9.98524094e-01]])
+
+
+        # A = np.array([data_ss[0,0, None]])
+        # B = np.array([data_ss[0, 1:]])
+        # E = np.array([data_ss[0, 1, None]])
+
+        # C = np.array([[data_ss[1, 0]], [0]])
+        # D = np.array([data_ss[1, 1:], [-1, 0]])
+        # F = np.array([[data_ss[1,1]], [1]])
+
+
         
 
         bounds_dict = {

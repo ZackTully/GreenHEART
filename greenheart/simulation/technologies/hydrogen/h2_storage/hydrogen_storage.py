@@ -40,12 +40,18 @@ class HydrogenStorage:
         F = np.array([[0], [1]])
 
 
-        # A = np.array([[1]])
-        # B = np.array([[1]])
-        # C = np.array([[0]])
-        # D = np.array([[-1]])
-        # E = np.array([[0]])
-        # F = np.array([[1]])
+        # data_ss = np.array([[ 9.99346097e-01,  8.50780457e-01, -8.86130052e-01],
+        #     [ 5.28262401e-05,  1.25705226e-02,  9.97767518e-01]])
+        # A = np.array([data_ss[0,0, None]])
+        # B = np.array([data_ss[0, 1:]])
+        # E = np.array([data_ss[0, 1, None]])
+
+        # C = np.array([[data_ss[1, 0]], [0]])
+        # D = np.array([data_ss[1, 1:], [-1, 0]])
+        # F = np.array([[data_ss[1,1]], [1]])
+
+
+
 
         bounds_dict = {
             "u_lb": np.array([0, 0]),

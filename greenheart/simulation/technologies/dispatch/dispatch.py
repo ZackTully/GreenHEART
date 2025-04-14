@@ -285,13 +285,24 @@ class GreenheartDispatch:
     def step_MPC(self, G_dispatch, available_power, forecast, x_measured, step_index):
 
         G = G_dispatch
+        error_flag = False
+        if step_index > 0:
+            mpc_state = self.controller.x_store[-1][:, step_index - self.controller.step_index_store[-1]]
+            frac_error = (np.abs(x_measured - mpc_state) / (0.5 * (x_measured + mpc_state)))
+
+            if np.any(frac_error > 0.1):
+                self.uc_mpc_traj[[0, 1], 0:(step_index - self.previous_update)]
+                G.nodes["battery"]["ionode"].model.store_charge_power[self.previous_update:step_index]
+                step_index - self.previous_update
+                error_flag = True
+
 
         # x0 = np.ones((1, self.controller.n))
         x0 = x_measured
         # forecast = np.ones(self.controller.horizon)
 
         # u_mpc = self.controller.compute_trajectory(x0, forecast)
-        if not (step_index % self.update_period) or (step_index == 0):
+        if not (step_index % self.update_period) or (step_index == 0) or error_flag:
             uc_mpc_traj, us_mpc_traj, curtail_mpc_traj, grid_mpc_traj = (
                 self.controller.compute_trajectory(x0, forecast, step_index)
             )

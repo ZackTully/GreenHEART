@@ -394,6 +394,12 @@ class RealTimeSimulation:
                     x0.append(state)
             x0 = np.array(x0)
 
+            # if i > 0:
+            #     mpc_state = self.dispatcher.controller.x_store[-1][:, i - self.dispatcher.controller.step_index_store[-1]]
+            #     if np.any((np.abs(x0 - mpc_state) / (0.5 * (x0 + mpc_state))) > 0.1):
+            #         pass
+
+
             self.G = dispatcher.step(
                 self.G,
                 hybrid_profile[i],
@@ -401,6 +407,10 @@ class RealTimeSimulation:
                 x_measured=x0,
                 step_index=i,
             )
+
+
+            
+
 
             if "generation" in self.G.nodes:
                 if "grid_purchase" in self.G.nodes["generation"]:
@@ -411,6 +421,8 @@ class RealTimeSimulation:
             self.G = self.step_system_state_function(
                 self.G, hybrid_profile[i] + grid_power, i
             )
+
+
 
 
             if (not (i % 5)) and (self.verbose):
@@ -493,6 +505,13 @@ class RealTimeSimulation:
                     mpc_edges,
                     step_index=i,
                 )
+            
+            y_steel = self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]
+            ref = self.config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]["reference"]
+
+            if (i >= 1) and (np.abs(y_steel - ref) / ref >= 0.5):
+
+                pass
 
         # print("")
         # self.input_error = {}
