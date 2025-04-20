@@ -228,7 +228,8 @@ class HeatExchanger:
         o = 2
 
         # Assume the input is halfway between 20C from storage and 80C from electrolyzer
-        heating_ratio = self.calc_heating_ratio(50, 900)
+        # heating_ratio = self.calc_heating_ratio(50, 900)
+        heating_ratio = self.calc_heating_ratio(20, 900)
 
         A = np.zeros((n, n))
         B = np.zeros((n, m))

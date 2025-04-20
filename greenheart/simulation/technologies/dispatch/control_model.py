@@ -45,6 +45,24 @@ class ControlModel:
         self.p = self.C.shape[0]
         self.o = self.E.shape[1]
 
+        self.x_linear = [True] * self.n
+        self.u_linear = [True] * self.m
+        self.y_linear = [True] * self.p
+        self.d_linear = [True] * self.o
+
+
+        self.x_li = np.arange(self.n)
+        self.x_nl = np.arange(0)
+
+        self.u_li = np.arange(self.m)
+        self.u_nl = np.arange(0)
+        
+        self.y_li = np.arange(self.p)
+        self.y_nl = np.arange(0)
+        
+        self.d_li = np.arange(self.o)
+        self.d_nl = np.arange(0)
+
         self.u_lb = np.array([None] * self.m)
         self.u_ub = np.array([None] * self.m)
         self.x_lb = np.array([None] * self.n)
@@ -140,13 +158,18 @@ class ControlModel:
         self.y_ub = np.delete(self.y_ub, y_position)
 
 
+        self.update_control_model()
+
+    def update_control_model(self):
+        # Update the dimensions and such 
+        pass
+
+
     def set_disturbance_domain(self, domain_list):
         self.disturbance_domain = np.array(domain_list)
 
     def set_disturbance_reshape(self, reshape_mat):
-
         self.disturbance_permutation = reshape_mat
-
 
     def set_output_domain(self, domain_list):
         self.output_domain = np.array(domain_list)

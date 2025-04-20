@@ -42,6 +42,11 @@ class DispatchModelPredictiveController:
         self.debug_mode = debug_mode
         self.warm_start_with_previous_solution = False
         self.grid_curtail_mod = True
+        self.use_NL_electrolzyer = True
+        self.only_bounded_yco = True
+
+
+        print(f"{self.use_NL_electrolzyer = }")
 
         if p_opts is None:
             self.p_opts = {"print_time": False, "verbose": False}
@@ -250,7 +255,10 @@ class DispatchModelPredictiveController:
         usp_var = opti.variable(self.msp, self.horizon)
         x_var = opti.variable(self.n, self.horizon + 1)
         yex_var = opti.variable(self.pex, self.horizon)
-        yco_var = opti.variable(self.pco, self.horizon)
+        if self.only_bounded_yco:
+            yco_var = opti.variable(len(self.yco_ub_ind), self.horizon)
+        else:
+            yco_var = opti.variable(self.pco, self.horizon)
         # e_var = opti.variable(self.q + 2, self.horizon)
 
         # for k in range(self.horizon+1):
@@ -270,13 +278,25 @@ class DispatchModelPredictiveController:
             opti.subject_to(yex_var[:, k] >= 0)
             opti.subject_to(usp_var[:, k] >= np.zeros(self.msp))
 
-            for node in self.node_order:
+            if self.only_bounded_yco:
 
-                node_idx = [i for i in range(self.pco) if self.pco_label[i].split(" ")[2] == node]
+                assert self.yco_ub_node_ind.shape[0] == 1
 
-                if len(node_idx) > 0:
-                    opti.subject_to(np.ones((1, len(node_idx))) @ yco_var[node_idx, k] <= self.bounds_verbose[node]["y_ub"])
-                    opti.subject_to(np.ones((1, len(node_idx))) @ yco_var[node_idx, k] >= self.bounds_verbose[node]["y_lb"])
+                for node_idx in self.yco_ub_node_ind:
+                    np.ones((1, len(self.yco_ub_ind))) @ yco_var[:,k] <= self.bounds_verbose[self.node_order[node_idx]]["y_ub"]
+                    np.ones((1, len(self.yco_ub_ind))) @ yco_var[:,k] >= self.bounds_verbose[self.node_order[node_idx]]["y_lb"]
+                    
+
+
+            else:
+
+                for node in self.node_order:
+
+                    node_idx = [i for i in range(self.pco) if self.pco_label[i].split(" ")[2] == node]
+
+                    if len(node_idx) > 0:
+                        opti.subject_to(np.ones((1, len(node_idx))) @ yco_var[node_idx, k] <= self.bounds_verbose[node]["y_ub"])
+                        opti.subject_to(np.ones((1, len(node_idx))) @ yco_var[node_idx, k] >= self.bounds_verbose[node]["y_lb"])
 
         dex_param = opti.parameter(self.oex, self.horizon)
         # e_src_param = opti.parameter(1, self.horizon)
@@ -375,7 +395,6 @@ class DispatchModelPredictiveController:
 
             xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(x_var[:, i], uct_var[:, i], usp_var[:, i], dex_param[:, i], grid_curtail)
 
-
             # xkp1 = (
             #     self.A @ x_var[:, i]
             #     + self.Bct @ uct_var[:, i]
@@ -424,7 +443,11 @@ class DispatchModelPredictiveController:
 
             opti.subject_to(x_var[:, i + 1] == xkp1)
             opti.subject_to(yex_var[:, i] == yexk[0])
-            opti.subject_to(yco_var[:, i] == yco)
+            if self.only_bounded_yco:
+                opti.subject_to(yco_var[:,i] == yco[self.yco_ub_ind])
+            else: 
+
+                opti.subject_to(yco_var[:, i] == yco)
             if self.pze > 0:
                 opti.subject_to(yze == np.zeros((self.pze, 1)))
             if self.pgt > 0:
@@ -522,61 +545,104 @@ class DispatchModelPredictiveController:
 
     def step_control_model(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
 
-
-            xkp1 = (
+        xkp1 = (
                 self.A @ x_var
                 + self.Bct @ uct_var
                 + self.Bsp @ usp_var
                 + self.Eex @ (dex_param + grid_curtail)
             )
-            # external outputs
-            yexk = (
+        # external outputs
+        yexk = (
                 self.Cex @ x_var
                 + self.Dexct @ uct_var
                 + self.Dexsp @ usp_var
                 + self.Fexex @ (dex_param + grid_curtail)
             )
 
-            # coupling outputs
-            yco = (
+        # coupling outputs
+        yco = (
                 self.Cco @ x_var
                 + self.Dcoct @ uct_var
                 + self.Dcosp @ usp_var
                 + self.Fcoex @ (dex_param + grid_curtail)
             )
 
-            # Splitting constraint zero outputs
-            yze = (
+        # Splitting constraint zero outputs
+        yze = (
                 self.Cze @ x_var
                 + self.Dzect @ uct_var
                 + self.Dzesp @ usp_var
                 + self.Fzeex @ (dex_param + grid_curtail)
             )
 
-            # greater than 0 constraint outputs
-            ygt = (
+        # greater than 0 constraint outputs
+        ygt = (
                 self.Cgt @ x_var
                 + self.Dgtct @ uct_var
                 + self.Dgtsp @ usp_var
                 + self.Fgtex @ (dex_param + grid_curtail)
             )
 
-            # equal to 0 constraint outputs
-            yet = (
+        # equal to 0 constraint outputs
+        yet = (
                 self.Cet @ x_var
                 + self.Detct @ uct_var
                 + self.Detsp @ usp_var
                 + self.Fetex @ (dex_param + grid_curtail)
             )
 
-            return self.step_control_model_NL(x_var, uct_var, usp_var, dex_param, grid_curtail)
+        return self.step_control_model_NL(x_var, uct_var, usp_var, dex_param, grid_curtail)
 
-            return xkp1, yexk, yco, yze, ygt, yet
+        return xkp1, yexk, yco, yze, ygt, yet
+
+    def nonlinear_block(self, X):
+        
+        P_el = np.ones((1, 2)) @ X
+
+
+        # Hacky for electrolyzer only right now
+
+        # 1st order fit 
+        popt = np.array([0.01885931])
+        Y = popt[0] * P_el
+
+
+        # 2nd order fit
+        # popt = np.array([-2.28481418e-09,  2.08294629e-02])
+        # Y = popt[0] * P_el ** 2 + popt[1] * P_el
+        
+        # 3rd order fit 
+        # popt = np.array([ 1.28840632e-15, -4.33591254e-09,  2.15782895e-02])
+        # Y = popt[0] * P_el ** 3 + popt[1] * P_el**2 + popt[2] * P_el
+
+
+        return Y
+
+     
 
     def step_control_model_NL(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
 
+        X_block = ca.vertcat(x_var, uct_var, usp_var, dex_param+ grid_curtail)
+        X_block_li = X_block[self.cols_li]
+        X_block_nl = X_block[self.cols_nl]
 
-        Y_block = self.block_ss @ ca.vertcat(x_var, uct_var, usp_var, dex_param+ grid_curtail)
+        ss_lili = self.block_ss[self.rows_li, self.cols_li]
+        ss_linl = self.block_ss[self.rows_li, self.cols_nl]
+        ss_nlli = self.block_ss[self.rows_nl, self.cols_li]
+        ss_nlnl = self.block_ss[self.rows_nl, self.cols_nl]
+
+        Y_block_li = ss_lili @ X_block_li + ss_linl @ X_block_nl
+        if self.use_NL_electrolzyer:
+            Y_block_nl = ss_nlli @ X_block_li + self.nonlinear_block(X_block_nl)
+        else:
+            Y_block_nl = ss_nlli @ X_block_li + ss_nlnl @ X_block_nl
+
+        Y_block = ca.MX(len(self.rows_li) + len(self.rows_nl), 1)
+        Y_block[self.rows_li, :] = Y_block_li
+        Y_block[self.rows_nl, :] = Y_block_nl
+
+
+        # Y_block = self.block_ss @ ca.vertcat(x_var, uct_var, usp_var, dex_param+ grid_curtail)
 
         row_inds = [self.n, self.pco, self.pex, self.pze, self.pgt, self.pet]
         previous = 0
@@ -587,7 +653,6 @@ class DispatchModelPredictiveController:
 
         xkp1, yco, yexk, yze, ygt, yet = y_parts[0], y_parts[1], y_parts[2], y_parts[3], y_parts[4], y_parts[5] 
         return xkp1, yexk, yco, yze, ygt, yet
-    
 
     def objective_step(self, x, uct, usp, yco, yex, curtail=None, grid=None, gridcurtail=None, var_inds=None):
 
@@ -1515,6 +1580,16 @@ class DispatchModelPredictiveController:
         uct_order = {}
         usp_order = {}
 
+        # TODO linear and nonlinear columns
+
+        linear_cols = {"x": [], "uct": [], "usp": [], "dco": [], "dex": []}
+        nonlinear_cols = {"x": [], "uct": [], "usp": [], "dco": [], "dex": []}
+        linear_rows = {"x":[], "yex": [], "yco": [], "yze": [], "ygt": [], "yet":[]}
+        nonlinear_rows = {"x":[], "yex": [], "yco": [], "yze": [], "ygt": [], "yet":[]}
+
+        linear_vars = {}
+        nonlinear_vars = {}
+
         for node in traversal_order:
 
             cm = G.nodes[node]["ionode"].model.control_model
@@ -1532,8 +1607,18 @@ class DispatchModelPredictiveController:
 
             # create state labels
             x_labels = []
+            x_col_linear = []
+            x_row_linear = []
             for i in range(n):
-                x_labels.append(f"x {i} {node}")
+
+                if cm.x_linear[i]:
+                    linear_str = "linear"
+                else:
+                    linear_str = "nonlinear"
+                x_labels.append(f"x {i} {node} {linear_str}")
+
+                x_col_linear.append(cm.x_linear[i] )
+                x_row_linear.append(cm.x_linear[i] )
 
             mct = cm.B.shape[1]
             msp = usp_degree
@@ -1544,19 +1629,24 @@ class DispatchModelPredictiveController:
             uct_indices = []
 
             uct_labels = []
+            uct_col_linear = []
             for i in range(mct):
                 uct_indices.append(int(len(uct_labels) + np.sum(dims["dims"]["mct"])))
                 uct_labels.append(f"uct {i} {node}")
+
+                uct_col_linear.append(cm.u_linear[i])
 
             if len(uct_indices) > 0:
                 uct_order.update({node: uct_indices})
 
             usp_indices = []
             usp_labels = []
+            usp_col_linear = []
             for i in range(usp_degree):
                 usp_indices.append(int(len(usp_labels) + np.sum(dims["dims"]["msp"])))
                 out_edges = list(G.out_edges(node))
                 usp_labels.append(f"usp {i} {node} (to {out_edges[i][1]})")
+                usp_col_linear.append(True)
 
             if len(usp_indices) > 0:
                 usp_order.update({node: usp_indices})
@@ -1564,6 +1654,8 @@ class DispatchModelPredictiveController:
             # create uncontrollable input label lists
             dex_labels = []
             dco_labels = []
+            dex_col_linear = []
+            dco_col_linear = []
 
             if G.nodes[node]["is_source"]:
                 oex = cm.F.shape[1]
@@ -1572,6 +1664,7 @@ class DispatchModelPredictiveController:
 
                 for i in range(oex):
                     dex_labels.append(f"dex {i} {node}")
+                    dex_col_linear.append(cm.d_linear[i])
 
             else:
                 oex = 0
@@ -1580,6 +1673,9 @@ class DispatchModelPredictiveController:
                 for i in range(in_degree):
                     in_edges = list(G.in_edges(node))
                     dco_labels.append(f"dco {i} {node} (from {in_edges[i][0]})")
+                    dco_col_linear.append(cm.d_linear[0])
+                    # for j in range(cm.o):
+                    #     dco_col_linear.append(cm.d_linear[j])
 
             o = oex + oco
 
@@ -1591,21 +1687,29 @@ class DispatchModelPredictiveController:
             yet_labels = []
             ygt_labels = []
 
+            yex_row_linear = []
+            yco_row_linear = []
+            yze_row_linear = []
+            yet_row_linear = []
+            ygt_row_linear = []
+
             if G.nodes[node]["is_sink"]:
                 pex = cm.C.shape[0]
                 for i in range(pex):
                     yex_labels.append(f"yex {i} {node}")
+                    yex_row_linear.append(cm.y_linear[i])
             else:
                 pex = 0
 
             if usp_degree > 0:
+                # Splitting node so yze constraints are needed
                 pze = cm.C.shape[0]
                 assert pex == 0, "sink node should not be splitting"
                 pco = usp_degree
 
                 for i in range(pze):
                     yze_labels.append(f"yze {i} {node}")
-
+                    yze_row_linear.append(cm.y_linear[i])
             else:
                 pze = 0
                 pco = cm.C.shape[0] - pex
@@ -1614,15 +1718,21 @@ class DispatchModelPredictiveController:
                 for i in range(out_degree):
                     out_edges = list(G.out_edges(node))
                     yco_labels.append(f"yco {i} {node} (to {out_edges[i][1]})")
+                    # Splitting modification means these output rows are linear
+                    yco_row_linear.append(True)
 
             pet = cm.C_et.shape[0]
             pgt = cm.C_gt.shape[0]
 
             for i in range(pet):
                 yet_labels.append(f"yet {i} {node}")
+                # TODO double check if this is always true
+                yet_row_linear.append(True)
 
             for i in range(pgt):
                 ygt_labels.append(f"ygt {i} {node}")
+                # TODO double check if this is always true
+                ygt_row_linear.append(True)
 
             p = pex + pco
             pcons = pze + pet + pgt
@@ -1670,6 +1780,15 @@ class DispatchModelPredictiveController:
             for i, key in enumerate(dims["dims"].keys()):
                 dims["dims"][key].append(dim_list[i])
                 dims["labels"][key].append(labels_list[i])
+
+            linear_col_list = [x_col_linear, uct_col_linear, usp_col_linear, dco_col_linear, dex_col_linear]
+            linear_row_list = [x_row_linear, yex_row_linear, yco_row_linear, yze_row_linear, ygt_row_linear, yet_row_linear]
+
+            for i, key in enumerate(linear_cols.keys()):
+                linear_cols[key].append(linear_col_list[i])
+
+            for i, key in enumerate(linear_rows.keys()):
+                linear_rows[key].append(linear_row_list[i])
 
             # store bounds from the cm
 
@@ -1868,7 +1987,7 @@ class DispatchModelPredictiveController:
             scipy.linalg.block_diag(*mats6[key]) for key in mats6.keys()
         )
 
-        np.block(
+        ss_verbose = np.block(
             [
                 [A, Bct, Bsp, Eco, Eex],
                 [Cex, Dexct, Dexsp, Fexco, Fexex],
@@ -1900,6 +2019,19 @@ class DispatchModelPredictiveController:
 
         self.labels = labels
         self.dims = dims
+
+        linear_cols_verbose = {}
+        linear_rows_verbose = {}
+
+        for key in linear_cols.keys():
+            linear_cols_verbose.update({key: [boo for bool_list in linear_cols[key] for boo in bool_list]})
+
+        for key in linear_rows.keys():
+            linear_rows_verbose.update({key: [boo for bool_list in linear_rows[key] for boo in bool_list]})
+
+        np.sum([len(linear_cols_verbose[key]) for key in linear_cols_verbose.keys()])
+
+        np.sum([len(linear_rows_verbose[key]) for key in linear_rows_verbose.keys()])
 
         # Make indices and reduce the order of the verbose statespace
 
@@ -1982,7 +2114,12 @@ class DispatchModelPredictiveController:
         ]
 
         coupling_mat = [
-            [Eco @ MFi @ Cco, Eco @ MFi @ Dcoct, Eco @ MFi @ Dcosp, Eco @ MFi @ Fcoex],
+            [
+                Eco @ MFi @ Cco,
+                Eco @ MFi @ Dcoct,
+                Eco @ MFi @ Dcosp,
+                Eco @ MFi @ Fcoex,
+            ],
             [
                 Fcoco @ MFi @ Cco,
                 Fcoco @ MFi @ Dcoct,
@@ -2015,6 +2152,20 @@ class DispatchModelPredictiveController:
             ],
         ]
 
+        linear_cols_coupled = {}
+
+        # Find new nonlinear columns
+        coupling_dict = {"x": MFi @ Cco, "uct": MFi @ Dcoct, "usp": MFi @ Dcosp, "dex": MFi @ Fcoex}
+        for key in coupling_dict.keys():
+            coupled_nl = coupling_dict[key].T @ np.invert(linear_cols_verbose["dco"])
+            coupled_linear = np.invert(coupled_nl.astype(bool))
+
+            linear_cols_coupled.update({key: np.invert(np.invert(linear_cols_verbose[key]) + np.invert(coupled_linear))})
+
+            []
+
+        linear_rows_coupled = linear_rows_verbose
+
         combined_mat = [
             [
                 uncoupled_mat[i][j] + coupling_mat[i][j]
@@ -2033,7 +2184,7 @@ class DispatchModelPredictiveController:
         # self.print_block_matrices(
         #     combined_mat,
         #     in_labels=["x", "uct", "usp", "dex"],
-        #     out_labels=["x+", "yco", "yex", "yze", "ygt", "yet"],
+        #     out_labels=["x+", "yco", "yex", "yze", "ygt", "yet"]
         # )
 
         self.A, self.Bct, self.Bsp, self.Eex = combined_mat[0]
@@ -2067,8 +2218,53 @@ class DispatchModelPredictiveController:
 
         self.bounds = bounds
         self.bounds_verbose = verbose_bounds
+
+        # Separate out the yco indices that need to be there and the ones that dont
+        yco_ub = []
+
+        self.yco_ub_node_ind = np.where(self.bounds["y_ub"] != np.inf)[0]
+        for y_ind in np.where(self.bounds["y_ub"] != np.inf)[0]:
+            node = self.node_order[y_ind]
+            for j in range(self.pco):
+                if (self.pco_label[j].split(" ")[2] == node):
+                    yco_ub.append(j)
+        self.yco_ub_ind = np.sort(yco_ub)
+
+
         self.uct_order = uct_order
         self.usp_order = usp_order
+
+        self.linear_cols_dict = linear_cols_coupled
+        self.linear_rows_dict = linear_rows_coupled
+
+
+        cols_li = []
+        cols_nl = []
+        col_count = 0
+        for key in ["x", "uct", "usp", "dex"]:
+            for boo in linear_cols_coupled[key]:
+                if boo:
+                    cols_li.append(col_count)
+                else:
+                    cols_nl.append(col_count)
+                col_count += 1
+        self.cols_li = np.array(cols_li)[None, :]
+        self.cols_nl = np.array(cols_nl)[None, :]
+
+        rows_li = []
+        rows_nl = []
+        row_count = 0
+        for key in ["x", "yex", "yco", "yze", "ygt", "yet"]:
+            for boo in linear_rows_coupled[key]:
+                if boo:
+                    rows_li.append(row_count)
+                else:
+                    rows_nl.append(row_count)
+                row_count += 1
+        self.rows_li = np.array(rows_li)[:, None]
+        self.rows_nl = np.array(rows_nl)[:, None]
+
+
 
         # self.solve_steady_reference()
 

@@ -12,6 +12,13 @@ class Node:
         in_degree=None,
         out_degree=None,
     ):
+        
+        # self.T_electrolyzer_output = 80 # [C]
+        self.T_electrolyzer_output = 20 # [C]
+        # self.T_hydrogen_storage_output = 80 # [C]
+        self.T_hydrogen_storage_output = 20 # [C]
+        if name == "heat_exchanger":
+            print(f"{self.T_electrolyzer_output = }, {self.T_hydrogen_storage_output = }")
         self.inputs = expected_inputs
         self.input_list = [
             self.inputs["power"],
@@ -134,11 +141,11 @@ class Node:
         output_model[0, np.where(self.output_list)] = y_model
 
         if self.name == "electrolyzer":
-            output_model[0, 3] = 80  # degree C
-            output_passthrough[0, 3] = 80
+            output_model[0, 3] = self.T_electrolyzer_output  # degree C
+            output_passthrough[0, 3] = self.T_electrolyzer_output
         elif self.name == "hydrogen_storage":
-            output_model[0, 3] = 20  # degree C
-            output_passthrough[0, 3] = 20
+            output_model[0, 3] = self.T_hydrogen_storage_output  # degree C
+            output_passthrough[0, 3] = self.T_hydrogen_storage_output
         elif self.name == "heat_exchanger":
             output_model[0, 3] = self.model.Tout_desired
             output_passthrough[0, 3] = self.model.Tout_desired

@@ -580,7 +580,7 @@ class RealTimeSimulation:
 
         # states
         for label in self.dispatcher.controller.n_label:
-            node_name = label.split(" ")[-1]
+            node_name = label.split(" ")[2]
             if node_name == "battery":
                 state = self.G.nodes["battery"]["ionode"].model.storage_state
             elif node_name == "thermal_energy_storage":
@@ -595,7 +595,7 @@ class RealTimeSimulation:
         # control inputs
                 
         for label in self.dispatcher.controller.mct_label:
-            node_name = label.split(" ")[-1]
+            node_name = label.split(" ")[2]
             uct_index = int(label.split(" ")[1])
             self.sysid[label][step_index] = self.G.nodes[node_name]["dispatch_ctrl"][uct_index]
 

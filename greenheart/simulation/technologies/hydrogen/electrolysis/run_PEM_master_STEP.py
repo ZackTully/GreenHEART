@@ -51,7 +51,8 @@ class run_PEM_clusters_step(run_PEM_clusters):
         self.control_model.set_output_domain([0, 0, 1])
         self.control_model.set_disturbance_reshape(np.array([[1, 0, 0]]))
 
-
+        self.control_model.d_linear[0] = False
+        self.control_model.y_linear[0] = False
 
 
     def run(self, optimize=False):
