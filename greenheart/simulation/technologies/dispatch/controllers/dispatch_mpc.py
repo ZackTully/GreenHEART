@@ -43,10 +43,11 @@ class DispatchModelPredictiveController:
         self.warm_start_with_previous_solution = False
         self.grid_curtail_mod = True
         self.use_NL_electrolzyer = True
+        self.NL_EL_order = 1
         self.only_bounded_yco = True
 
 
-        print(f"{self.use_NL_electrolzyer = }")
+        print(f"{self.use_NL_electrolzyer = }, {self.NL_EL_order = }")
 
         if p_opts is None:
             self.p_opts = {"print_time": False, "verbose": False}
@@ -132,12 +133,21 @@ class DispatchModelPredictiveController:
                 self.weight_h2s_state = 1e-1 / self.ref_h2s_state
 
             if "thermal_energy_storage" in self.node_order:
-                self.ref_tes_state = (
-                    0.7
-                    * simulation_graph.nodes["thermal_energy_storage"][
-                        "ionode"
-                    ].model.H_capacity_kWh
-                )
+                if "references" in mpc_config:
+
+                    self.ref_tes_state = (
+                        mpc_config["references"]["tes"]
+                        * simulation_graph.nodes["thermal_energy_storage"][
+                            "ionode"
+                        ].model.H_capacity_kWh
+                    )
+                else:                    
+                    self.ref_tes_state = (
+                        0.7
+                        * simulation_graph.nodes["thermal_energy_storage"][
+                            "ionode"
+                        ].model.H_capacity_kWh
+                    )
                 self.weight_tes_state = 1e-4 / self.ref_tes_state
 
             self.use_saved_solution = (
@@ -283,10 +293,9 @@ class DispatchModelPredictiveController:
                 assert self.yco_ub_node_ind.shape[0] == 1
 
                 for node_idx in self.yco_ub_node_ind:
-                    np.ones((1, len(self.yco_ub_ind))) @ yco_var[:,k] <= self.bounds_verbose[self.node_order[node_idx]]["y_ub"]
-                    np.ones((1, len(self.yco_ub_ind))) @ yco_var[:,k] >= self.bounds_verbose[self.node_order[node_idx]]["y_lb"]
+                    opti.subject_to(np.ones((1, len(self.yco_ub_ind))) @ yco_var[:,k] <= self.bounds_verbose[self.node_order[node_idx]]["y_ub"])
+                    opti.subject_to(np.ones((1, len(self.yco_ub_ind))) @ yco_var[:,k] >= self.bounds_verbose[self.node_order[node_idx]]["y_lb"])
                     
-
 
             else:
 
@@ -602,18 +611,20 @@ class DispatchModelPredictiveController:
 
         # Hacky for electrolyzer only right now
 
-        # 1st order fit 
-        popt = np.array([0.01885931])
-        Y = popt[0] * P_el
+        if self.NL_EL_order == 1:
 
+            # 1st order fit 
+            popt = np.array([0.01885931])
+            Y = popt[0] * P_el
 
-        # 2nd order fit
-        # popt = np.array([-2.28481418e-09,  2.08294629e-02])
-        # Y = popt[0] * P_el ** 2 + popt[1] * P_el
-        
-        # 3rd order fit 
-        # popt = np.array([ 1.28840632e-15, -4.33591254e-09,  2.15782895e-02])
-        # Y = popt[0] * P_el ** 3 + popt[1] * P_el**2 + popt[2] * P_el
+        elif self.NL_EL_order == 2:
+            # 2nd order fit
+            popt = np.array([-2.28481418e-09,  2.08294629e-02])
+            Y = popt[0] * P_el ** 2 + popt[1] * P_el
+        elif self.NL_EL_order == 3:
+            # 3rd order fit 
+            popt = np.array([ 1.28840632e-15, -4.33591254e-09,  2.15782895e-02])
+            Y = popt[0] * P_el ** 3 + popt[1] * P_el**2 + popt[2] * P_el
 
 
         return Y

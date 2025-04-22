@@ -79,6 +79,41 @@ class Battery:
 
         self.control_model = self.create_control_model()
 
+    # def create_control_model(self):
+    #     eta_bes = 0.98
+
+    #     # u charge  = disturbance
+    #     # u = u discharge only 
+
+    #     A = np.array([[1]])
+    #     B = np.array([[-1/eta_bes]])
+    #     E = np.array([[eta_bes]])
+
+    #     C = np.array([[0]])
+    #     D = np.array([[1]])
+    #     F = np.array([[0]])
+
+    #     bounds_dict = {
+    #         "u_lb": np.array([0, 0]),
+    #         "u_ub": np.array([self.max_charge_rate_kW, self.max_discharge_rate_kW]),
+    #         "x_lb": np.array([self.min_capacity_kWh]),
+    #         "x_ub": np.array([self.max_capacity_kWh]),
+    #         "y_lb": np.array([0, 0]),
+    #         "y_ub": np.array([None, None]),
+    #     }
+
+    #     control_model = ControlModel(
+    #         A, B, C, D, E, F, bounds=bounds_dict, discrete=True
+    #     )
+
+    #     control_model.constraints(y_position=[1], constraint_type=["greater"])
+
+    #     control_model.set_disturbance_domain([1, 0, 0])
+    #     control_model.set_output_domain([1, 0, 0])
+    #     control_model.set_disturbance_reshape(np.array([[1, 0, 0]]))
+
+    #     return control_model
+
     def create_control_model(self):
 
         eta_bes = 0.98
