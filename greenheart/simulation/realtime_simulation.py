@@ -1091,7 +1091,7 @@ class RealTimeSimulation:
 
         fig.align_ylabels()
 
-    def plot_nodes(self, data="edges", figsize = (15, 8), fname=None, save=False):
+    def plot_nodes(self, data="edges", figsize = (15, 8), hide_yaxis=True, fname=None, save=False):
         fig, ax = plt.subplots(
             len(self.node_order),
             1,
@@ -1105,15 +1105,18 @@ class RealTimeSimulation:
 
         if data == "edges":
 
-            normalized_states = np.zeros(self.system_states.shape)
-            # for i in range(self.system_states.shape[2]):
-            #     normalized_states[:, :, i] = np.nan_to_num(
-            #         self.system_states[:, :, i] / np.max(self.system_states[:, :, i])
-            #     )
+            # normalized_states = np.zeros(self.system_states.shape)
+            # # for i in range(self.system_states.shape[2]):
+            # #     normalized_states[:, :, i] = np.nan_to_num(
+            # #         self.system_states[:, :, i] / np.max(self.system_states[:, :, i])
+            # #     )
 
-            normalized_states[:, :, 0] = np.nan_to_num(self.system_states[:, :, 0] / np.max(self.system_states[:, :, [0, 1]]))
-            normalized_states[:, :, 1] = np.nan_to_num(self.system_states[:, :, 1] / np.max(self.system_states[:, :, [0, 1]]))
-            normalized_states[:, :, 2] = np.nan_to_num(self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2]))
+            # normalized_states[:, :, 0] = np.nan_to_num(self.system_states[:, :, 0] / np.max(self.system_states[:, :, [0, 1]]))
+            # normalized_states[:, :, 1] = np.nan_to_num(self.system_states[:, :, 1] / np.max(self.system_states[:, :, [0, 1]]))
+            # normalized_states[:, :, 2] = np.nan_to_num(self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2]))
+
+            normalized_states = self.system_states
+            normalized_states[:, :, 2] *= 54
 
             plot_states = normalized_states
         elif data == "error":
@@ -1182,23 +1185,25 @@ class RealTimeSimulation:
                     ax[i, j_ax].fill_between(
                         np.arange(0, self.system_states.shape[1], 1),
                         np.zeros(len(self.hybrid_profile)),
-                        self.hybrid_profile / np.max(self.system_states[:, :, 0]),
+                        self.hybrid_profile, # / np.max(self.system_states[:, :, 0]),
                         color=mpl.colormaps[cmaps[j]](0.8),
                         linewidth=0,
                         step="post",
                         label="Hybrid gen.",
                     )
-                    curtail = self.G.nodes[node]["ionode"].u_curtail_store / np.max(
-                        self.system_states[:, :, 0]
-                    )
-                    grid = (
-                        self.grid_power_store / np.max(self.system_states[:, :, 0])
-                    )[0, :]
+                    curtail = self.G.nodes[node]["ionode"].u_curtail_store 
+                    grid =                        self.grid_power_store[0,:] 
+                    # curtail = self.G.nodes[node]["ionode"].u_curtail_store / np.max(
+                    #     self.system_states[:, :, 0]
+                    # )
+                    # grid = (
+                    #     self.grid_power_store / np.max(self.system_states[:, :, 0])
+                    # )[0, :]
                     ax[i, j_ax].fill_between(
                         np.arange(0, plot_states.shape[1], 1),
-                        self.hybrid_profile / np.max(self.system_states[:, :, 0]),
-                        self.hybrid_profile / np.max(self.system_states[:, :, 0])
-                        + grid,
+                        self.hybrid_profile ,#/ np.max(self.system_states[:, :, 0]),
+                        self.hybrid_profile + grid, #/ np.max(self.system_states[:, :, 0])
+                        # + grid,
                         step="post",
                         alpha=1,
                         linewidth=0,
@@ -1311,7 +1316,8 @@ class RealTimeSimulation:
                     steel_output = self.G.nodes["steel"][
                         "ionode"
                     ].model.steel_store_tonne
-                    steel_output = steel_output / np.max(steel_output)
+                    # steel_output = steel_output / np.max(steel_output)
+                    steel_output = steel_output * 4300
                     ax[i, j_ax].fill_between(
                         np.arange(0, plot_states.shape[1], 1),
                         np.zeros(len(steel_output)),
@@ -1366,8 +1372,9 @@ class RealTimeSimulation:
                         np.max(np.abs(ax[i, j].get_ylim())),
                     ]
                 )
-                if ax.shape[1] == 1:
-                    ax[i, j].set_yticks([])
+                ax[i, j].yaxis.tick_right()
+                # if ax.shape[1] == 1:
+                #     ax[i, j].set_yticks([])
                 ax[i, j].axhline(0, linewidth=0.5, color="black", alpha=0.5, zorder=0.5)
                 ax[i, j].tick_params(axis="x", direction="in")
 

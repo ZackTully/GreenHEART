@@ -40,7 +40,7 @@ class DispatchModelPredictiveController:
         self.use_sparsity_constraint = False
         self.use_config_weights = True
         self.debug_mode = debug_mode
-        self.warm_start_with_previous_solution = False
+        self.warm_start_with_previous_solution = True
         self.grid_curtail_mod = True
         self.use_NL_electrolzyer = True
         self.NL_EL_order = 1
@@ -117,15 +117,23 @@ class DispatchModelPredictiveController:
                 self.term_keys = mpc_config["terms"]
 
             if "battery" in self.node_order:
+                if "references" in mpc_config:
+                    bes_soc_ref = mpc_config["references"]["bes"]
+                else:
+                    bes_soc_ref = 0.7   
                 self.ref_bes_state = (
-                    0.7
+                    bes_soc_ref
                     * simulation_graph.nodes["battery"]["ionode"].model.max_capacity_kWh
                 )
                 self.weight_bes_state = 1e-4 / self.ref_bes_state
 
             if "hydrogen_storage" in self.node_order:
+                if "references" in mpc_config:
+                    h2s_soc_ref = mpc_config["references"]["h2s"]
+                else:
+                    h2s_soc_ref = 0.7   
                 self.ref_h2s_state = (
-                    0.7
+                    h2s_soc_ref
                     * simulation_graph.nodes["hydrogen_storage"][
                         "ionode"
                     ].model.max_capacity_kg
@@ -134,20 +142,15 @@ class DispatchModelPredictiveController:
 
             if "thermal_energy_storage" in self.node_order:
                 if "references" in mpc_config:
-
-                    self.ref_tes_state = (
-                        mpc_config["references"]["tes"]
-                        * simulation_graph.nodes["thermal_energy_storage"][
-                            "ionode"
-                        ].model.H_capacity_kWh
-                    )
-                else:                    
-                    self.ref_tes_state = (
-                        0.7
-                        * simulation_graph.nodes["thermal_energy_storage"][
-                            "ionode"
-                        ].model.H_capacity_kWh
-                    )
+                    tes_soc_ref = mpc_config["references"]["tes"]
+                else:
+                    tes_soc_ref = 0.7                    
+                self.ref_tes_state = (
+                    tes_soc_ref
+                    * simulation_graph.nodes["thermal_energy_storage"][
+                        "ionode"
+                    ].model.H_capacity_kWh
+                )
                 self.weight_tes_state = 1e-4 / self.ref_tes_state
 
             self.use_saved_solution = (
@@ -1033,10 +1036,17 @@ class DispatchModelPredictiveController:
             self.update_optimization_parameters(x0, forecast)
             if self.warm_start_with_previous_solution:
                 if hasattr(self, "x_init"):  # then try to update initial guess
-                    self.opti.set_initial(self.opt_vars["uct"], self.uc_init)
-                    self.opti.set_initial(self.opt_vars["usp"], self.us_init)
-                    self.opti.set_initial(self.opt_vars["x"], self.x_init)
-                    self.opti.set_initial(self.opt_vars["yex"], self.ys_init)
+
+                    overlap = self.horizon - (step_index - self.step_index_store[-1])
+                    self.opti.set_initial(self.opt_vars["uct"][:, :overlap] , self.uc_init[:, -overlap:])
+                    self.opti.set_initial(self.opt_vars["usp"][:, :overlap] , self.us_init[:, -overlap:])
+                    self.opti.set_initial(self.opt_vars["x"][:, :overlap] , self.x_init[:, -overlap:])
+                    self.opti.set_initial(self.opt_vars["yex"][:, :overlap] , self.ys_init[:, -overlap:])
+
+                    # self.opti.set_initial(self.opt_vars["uct"], self.uc_init)
+                    # self.opti.set_initial(self.opt_vars["usp"], self.us_init)
+                    # self.opti.set_initial(self.opt_vars["x"], self.x_init)
+                    # self.opti.set_initial(self.opt_vars["yex"], self.ys_init)
 
             try:
 
@@ -1427,6 +1437,13 @@ class DispatchModelPredictiveController:
                 ref_tes_state=self.ref_tes_state,
                 weight_tes_state=self.weight_tes_state,
                 M_dco_yco=self.M_dco_yco.tolist(),
+                yco_ub_ind = self.yco_ub_ind.tolist(),
+                yco_ub_node_ind = self.yco_ub_node_ind.tolist(),
+                cols_li = self.cols_li.tolist(),
+                cols_nl = self.cols_nl.tolist(),
+                rows_li = self.rows_li.tolist(),
+                rows_nl = self.rows_nl.tolist(),
+                block_ss = self.block_ss.tolist(),
             )
 
             if hasattr(self, "x_init"):  # then try to update initial guess
@@ -1491,6 +1508,17 @@ class DispatchModelPredictiveController:
         self.Cet, self.Detct, self.Detsp, self.Fetex = combined_mat[5]
 
         self.M_dco_yco = np.array(state_dict["M_dco_yco"])
+        self.yco_ub_ind = np.array(state_dict["yco_ub_ind"])
+        self.yco_ub_node_ind = np.array(state_dict["yco_ub_node_ind"])
+
+        self.cols_li = np.array(state_dict["cols_li"])
+        self.cols_nl = np.array(state_dict["cols_nl"])
+        self.rows_li = np.array(state_dict["rows_li"])
+        self.rows_nl = np.array(state_dict["rows_nl"])
+
+        self.block_ss = np.array(state_dict["block_ss"])
+
+
 
         []
 
@@ -2589,14 +2617,14 @@ class DispatchModelPredictiveController:
 
         n_nodes = len(self.node_order)
         fig, ax = plt.subplots(
-            n_nodes, 5, sharex="all", layout="constrained", figsize=(15, 10), dpi=100
+            n_nodes, 4, sharex="all", layout="constrained", figsize=(15, 10), dpi=100
         )
 
         ax[0, 0].set_title("Disturbance")
         ax[0, 1].set_title("Control input")
         ax[0, 2].set_title("State")
         ax[0, 3].set_title("Output")
-        ax[0, 4].set_title("Split")
+        # ax[0, 4].set_title("Split")
 
         # for i, node in enumerate(list(RTS.G.nodes)):
         for i, node in enumerate(self.node_order):
@@ -2654,8 +2682,19 @@ class DispatchModelPredictiveController:
                 [np.sum(ysp[y_inds, :], axis=0)[None, :] for ysp in self.ysp_store],
                 [0],
             )
-            plot_one(ax[i, 4], self.ysp_store, y_inds)
-            ax[i, 4].set_ylim(ax[i, 3].get_ylim())
+            # plot_one(ax[i, 4], self.ysp_store, y_inds)
+            # ax[i, 4].set_ylim(ax[i, 3].get_ylim())
+
+
+            if node == "generation":
+                forecast_curtail_grid = [
+                    np.concatenate([self.forecast_store[i], self.forecast_store[i] - self.curtail_store[i], self.forecast_store[i] + self.grid_store[i]])
+                    # [self.forecast_store[i], np.array(self.forecast_store[i]) - np.array(self.curtail_store[i]), np.array(self.forecast_store[i]) + np.array(self.grid_store[i])]
+                    for i in range(len(self.step_index_store))
+                ]
+
+                plot_one(ax[i, 0], forecast_curtail_grid, np.array([0, 1, 2]))
+
 
             fig.align_ylabels()
 
