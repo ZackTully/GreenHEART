@@ -51,24 +51,23 @@ the problem. All code and full tracebacks should be properly markdown formatted.
   <!-- e.g. Ubuntu 20.04 or macOS 10.12 -->
 - Python version: <3.10.4>
   <!-- All OS: `python --version`-->
-- GreenHEART version: <0.1.1>
+- H2Integrate version: <0.1.1>
   <!--
-  Unix: pip freeze | grep greenheart | awk -F"git@" '/git@/{print $2}' | awk -F"#egg" '/#egg/{print $1}'
-  Windows: `pip list --format freeze | findstr greenheart`
+  Unix: pip freeze | grep h2integrate | awk -F"git@" '/git@/{print $2}' | awk -F"#egg" '/#egg/{print $1}'
+  Windows: `pip list --format freeze | findstr h2integrate`
   -->
   - <Installed from source using an editable installation with developer tools: `pip install -e .[develop]`>
   - Commit hash: <commit-hash>
     <!--
-    Unix: `pip freeze | grep greenheart | awk -F"git@" '/git@/{print $2}' | awk -F"#egg" '/#egg/{print $1}'`
-    Windows: `pip freeze | findstr greenheart`, then copy the full git hash between "git@" and "#egg"
+    Unix: `pip freeze | grep h2integrate | awk -F"git@" '/git@/{print $2}' | awk -F"#egg" '/#egg/{print $1}'`
+    Windows: `pip freeze | findstr h2integrate`, then copy the full git hash between "git@" and "#egg"
     -->
 
 ### Relevant library versions
 <!--
 Use `pip freeze` to gather the relevant versions, and use the markdown table formatting as
-demonstrated below to replacing all relavant packages and their versions.
+demonstrated below to replacing all relevant packages and their versions.
 -->
-  
   | Package | Version |
   | ------- | ------- |
   | hopp | <3.1.1> |
