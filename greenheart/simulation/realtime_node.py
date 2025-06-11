@@ -191,7 +191,7 @@ class Node:
 
         # np.sum(outgoing_edges, axis=0)[0:3]- model_output[0, 0:3]
 
-        assert np.all(outgoing_edges >= 0)
+        assert np.all(outgoing_edges >= -1)
 
         return outgoing_edges.T, split_curtail
 

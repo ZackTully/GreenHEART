@@ -3,6 +3,8 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
+from typing import Union
+
 import time
 
 from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
@@ -38,7 +40,7 @@ from greenheart.simulation.technologies.electricity.battery import Battery
 
 
 from greenheart.tools.eco.utilities import ceildiv
-
+from hopp.utilities import load_yaml
 
 # Utilty imports
 from hopp.utilities import load_yaml
@@ -51,9 +53,12 @@ class RealTimeSimulation:
     def __init__(self, config, hopp_interface):
 
         self.verbose = True
+        self.save_sysid = False
+
 
         self.config = config
         self.rts_config = self.config.greenheart_config["realtime_simulation"]
+        self.component_config = load_yaml(self.rts_config["component_config"])
         self.hi = hopp_interface
 
         if "stop_index" in self.rts_config:
@@ -63,8 +68,6 @@ class RealTimeSimulation:
 
         self.setup_simulation_model(config, hopp_interface)
         self.setup_record_keeping()
-
-
 
     def setup_simulation_model(self, config, hopp_interface):
 
@@ -250,7 +253,12 @@ class RealTimeSimulation:
         # latex_graph = nx.to_latex(G, pos=nx.rescale_layout_dict(layout, scale=3))
         # latex_graph = nx.to_latex(G, pos=nx.rescale_layout(np.array(list({key:np.array(value) for key, value in layout.items()}.values()), dtype=float), scale=3))
         # latex_graph = nx.to_latex(G, pos={key: nx.rescale_layout(np.array(value, dtype=float), scale=3) for key, value in layout.items()})
-        latex_graph = nx.to_latex(G, pos={key: np.array(value, dtype=float) * 2 for key, value in layout.items()})
+        latex_graph = nx.to_latex(
+            G,
+            pos={
+                key: np.array(value, dtype=float) * 2 for key, value in layout.items()
+            },
+        )
 
     def step_system_state_function(self, G_dispatch, generation_available, step_index):
 
@@ -324,7 +332,6 @@ class RealTimeSimulation:
 
         self.setup_ctrl_sysid()
 
-
         gen_profiles = {}
 
         for hopp_tech in hopp_results["annual_energies"]["technologies"].keys():
@@ -358,47 +365,17 @@ class RealTimeSimulation:
                 forecast = hybrid_profile[i : i + dispatcher.controller.horizon]
             else:
                 # forecast = np.ones(dispatcher.controller.horizon) * hybrid_profile[i]
-                forecast = np.concatenate([hybrid_profile[i:], hybrid_profile[-1] * np.ones(dispatcher.controller.horizon - (len(hybrid_profile) - i))])
+                forecast = np.concatenate(
+                    [
+                        hybrid_profile[i:],
+                        hybrid_profile[-1]
+                        * np.ones(
+                            dispatcher.controller.horizon - (len(hybrid_profile) - i)
+                        ),
+                    ]
+                )
 
-            # x0 = np.zeros(len([node for node in self.node_order if (node in ["battery", "hydrogen_storage", "thermal_energy_storage"])]))
-            x0 = []
-            for state_node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
-                if state_node in self.G:
-                    if state_node == "battery":
-                        if self.G.nodes["battery"]["ionode"].model.use_hopp_outputs:
-                            if i == 0:
-                                state = self.G.nodes._nodes['battery']['ionode'].model.hopp_battery.config.initial_SOC / 100 * self.G.nodes._nodes['battery']['ionode'].model.hopp_battery.config.system_capacity_kwh
-                            else:
-
-                                if self.G.nodes["battery"]["ionode"].model.hopp_battery.outputs.SOC[i-1] < self.G.nodes["battery"]["ionode"].model.hopp_battery._system_model.ParamsCell.minimum_SOC:
-                                    # If the bound is violated by only a little, just use the lower bound instead
-                                    assert (self.G.nodes["battery"]["ionode"].model.hopp_battery._system_model.ParamsCell.minimum_SOC - self.G.nodes["battery"]["ionode"].model.hopp_battery.outputs.SOC[i-1]) <= 1e-3, "Battery minimum SOC violated"
-                                    state = self.G.nodes["battery"]["ionode"].model.hopp_battery._system_model.ParamsCell.minimum_SOC / 100 * self.G.nodes._nodes['battery']['ionode'].model.hopp_battery.config.system_capacity_kwh
-                                else:
-                                    state = self.G.nodes["battery"]["ionode"].model.hopp_battery.outputs.SOC[i-1] / 100 * self.G.nodes._nodes['battery']['ionode'].model.hopp_battery.config.system_capacity_kwh
-                        else:
-                            state = self.G.nodes["battery"]["ionode"].model.storage_state
-                    elif state_node == "hydrogen_storage":
-                        state = self.G.nodes["hydrogen_storage"][
-                            "ionode"
-                        ].model.storage_state
-                    elif state_node == "thermal_energy_storage":
-                        state = (
-                            self.G.nodes["thermal_energy_storage"][
-                                "ionode"
-                            ].model._SOC()
-                            * self.G.nodes["thermal_energy_storage"][
-                                "ionode"
-                            ].model.H_capacity_kWh
-                        )
-                    x0.append(state)
-            x0 = np.array(x0)
-
-            # if i > 0:
-            #     mpc_state = self.dispatcher.controller.x_store[-1][:, i - self.dispatcher.controller.step_index_store[-1]]
-            #     if np.any((np.abs(x0 - mpc_state) / (0.5 * (x0 + mpc_state))) > 0.1):
-            #         pass
-
+            x0 = self.get_state_measurement(step_index=i)
 
             self.G = dispatcher.step(
                 self.G,
@@ -407,10 +384,6 @@ class RealTimeSimulation:
                 x_measured=x0,
                 step_index=i,
             )
-
-
-            
-
 
             if "generation" in self.G.nodes:
                 if "grid_purchase" in self.G.nodes["generation"]:
@@ -422,10 +395,7 @@ class RealTimeSimulation:
                 self.G, hybrid_profile[i] + grid_power, i
             )
 
-
-
-
-            if (not (i % 5)) and (self.verbose):
+            if (not (i % 80)) and (self.verbose):
                 print(
                     f"\r {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {(1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)) :.2f} seconds longer \t\t\t\t",
                     end="",
@@ -505,9 +475,11 @@ class RealTimeSimulation:
                     mpc_edges,
                     step_index=i,
                 )
-            
+
             y_steel = self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]
-            ref = self.config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]["reference"]
+            ref = self.config.greenheart_config["realtime_simulation"]["dispatch"][
+                "mpc"
+            ]["reference"]
 
             if (i >= 1) and (np.abs(y_steel - ref) / ref >= 0.5):
 
@@ -535,6 +507,53 @@ class RealTimeSimulation:
 
         []
 
+    def get_state_measurement(self, step_index):
+        # x0 = np.zeros(len([node for node in self.node_order if (node in ["battery", "hydrogen_storage", "thermal_energy_storage"])]))
+        x0 = []
+        for state_node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
+            if state_node in self.G:
+                model: Union[HydrogenStorage, ThermalEnergyStorage, Battery] = (
+                    self.G.nodes[state_node]["ionode"].model
+                )
+                if state_node == "battery":
+                    if model.use_hopp_outputs:
+                        if step_index == 0:
+                            state = (
+                                model.hopp_battery.config.initial_SOC
+                                / 100
+                                * model.hopp_battery.config.system_capacity_kwh
+                            )
+                        else:
+                            min_soc_violation = (
+                                model.hopp_battery.outputs.SOC[step_index - 1]
+                                - model.hopp_battery._system_model.ParamsCell.minimum_SOC
+                            )
+                            if min_soc_violation < 0:
+                                # # If the bound is violated by only a little, just use the lower bound instead
+                                # assert (min_soc_violation >= -1e-3), f"Battery minimum SOC violated by {min_soc_violation:.4f} "
+                                # state = (
+                                #     model.hopp_battery._system_model.ParamsCell.minimum_SOC
+                                #     / 100
+                                #     * model.hopp_battery.config.system_capacity_kwh
+                                # )
+                                pass
+                            else:
+                                pass
+                            state = (
+                                model.hopp_battery.outputs.SOC[step_index - 1]
+                                / 100
+                                * model.hopp_battery.config.system_capacity_kwh
+                            )
+                    else:
+                        state = model.storage_state
+                elif state_node == "hydrogen_storage":
+                    state = model.storage_state
+                elif state_node == "thermal_energy_storage":
+                    state = model._SOC() * model.H_capacity_kWh
+                x0.append(state)
+        x0 = np.array(x0)
+        return x0
+
     def setup_ctrl_sysid(self):
 
         # Make a bunch of dicts with 8760 length
@@ -544,39 +563,35 @@ class RealTimeSimulation:
         for label in self.dispatcher.controller.n_label:
             self.sysid.update({label: np.zeros(8760)})
 
-
         for label in self.dispatcher.controller.mct_label:
             self.sysid.update({label: np.zeros(8760)})
-
 
         for label in self.dispatcher.controller.msp_label:
             self.sysid.update({label: np.zeros(8760)})
 
-
         for label in self.dispatcher.controller.oex_label:
             self.sysid.update({label: np.zeros(8760)})
-        
-        
+
         for label in self.dispatcher.controller.pco_label:
             self.sysid.update({label: np.zeros(8760)})
-        
-        
+
         for label in self.dispatcher.controller.pex_label:
             self.sysid.update({label: np.zeros(8760)})
-        
+
         # pze
         # pgt - do these need to be recorded here too?
 
-        pass 
-
+        pass
 
     def save_ctrl_for_sysid(self, step_index=None):
+
+        if not self.save_sysid:
+            return 
 
         # Think about doing this with the un-simplified system model rather than the simplified one with coupling
 
         # save x uct usp dex inputs
         # save yco yex yze ygt outputs
-
 
         # states
         for label in self.dispatcher.controller.n_label:
@@ -584,63 +599,71 @@ class RealTimeSimulation:
             if node_name == "battery":
                 state = self.G.nodes["battery"]["ionode"].model.storage_state
             elif node_name == "thermal_energy_storage":
-                state =  self.G.nodes["thermal_energy_storage"]["ionode"].model._SOC() * self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh
+                state = (
+                    self.G.nodes["thermal_energy_storage"]["ionode"].model._SOC()
+                    * self.G.nodes["thermal_energy_storage"][
+                        "ionode"
+                    ].model.H_capacity_kWh
+                )
             elif node_name == "hydrogen_storage":
                 state = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
 
             self.sysid[label][step_index] = state
 
-
-
         # control inputs
-                
+
         for label in self.dispatcher.controller.mct_label:
             node_name = label.split(" ")[2]
             uct_index = int(label.split(" ")[1])
-            self.sysid[label][step_index] = self.G.nodes[node_name]["dispatch_ctrl"][uct_index]
-
+            self.sysid[label][step_index] = self.G.nodes[node_name]["dispatch_ctrl"][
+                uct_index
+            ]
 
         # splitting inputs
-                
+
         for label in self.dispatcher.controller.msp_label:
             source_node = label.split(" ")[2]
-            sink_node = label[label.find("(")+1:label.find(")")].split(" ")[1]
+            sink_node = label[label.find("(") + 1 : label.find(")")].split(" ")[1]
 
             usp_index = int(label.split(" ")[1])
 
-            self.sysid[label][step_index] = self.G.nodes[source_node]["dispatch_split"][usp_index]
-
+            self.sysid[label][step_index] = self.G.nodes[source_node]["dispatch_split"][
+                usp_index
+            ]
 
         # disturbance
-                
+
         # Output stuff
-                
+
         # yco
-        
+
         for label in self.dispatcher.controller.pco_label:
             source_node = label.split(" ")[2]
-            sink_node = label[label.find("(")+1:label.find(")")].split(" ")[1]
+            sink_node = label[label.find("(") + 1 : label.find(")")].split(" ")[1]
 
             output_domain = self.G.nodes[source_node]["ionode"].output_list[0:-1]
             output_index = np.where(output_domain)[0]
 
-            for i, edge in enumerate(self.edge_order):    
+            for i, edge in enumerate(self.edge_order):
                 if (edge[0] == source_node) and (edge[1] == sink_node):
                     # This is probably the right case then
-                    self.sysid[label][step_index] = self.system_states[i, step_index, output_index]
-
-
-
+                    self.sysid[label][step_index] = self.system_states[
+                        i, step_index, output_index
+                    ]
 
         # yex
-        yex_label = self.dispatcher.controller.pex_label[0] 
+        yex_label = self.dispatcher.controller.pex_label[0]
         yex_node = yex_label.split(" ")[-1]
-        self.sysid[yex_label][step_index] = self.G.nodes[yex_node]["ionode"].model.steel_store_tonne[step_index]
-
+        self.sysid[yex_label][step_index] = self.G.nodes[yex_node][
+            "ionode"
+        ].model.steel_store_tonne[step_index]
 
         # dex
         dex_label = self.dispatcher.controller.oex_label[0]
-        self.sysid[dex_label][step_index] = self.hybrid_profile[step_index] + self.G.nodes["generation"]["grid_purchase"]
+        self.sysid[dex_label][step_index] = (
+            self.hybrid_profile[step_index]
+            + self.G.nodes["generation"]["grid_purchase"]
+        )
         # yze = 0
         # ygt = 0
 
@@ -766,7 +789,11 @@ class RealTimeSimulation:
         outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
         component_dict = {
             "battery": {
-                "model": Battery(config=self.config, battery_config=self.config.hopp_config["technologies"]["battery"], hopp_interface=self.hi),
+                "model": Battery(
+                    config=self.config,
+                    battery_config=self.config.hopp_config["technologies"]["battery"],
+                    hopp_interface=self.hi,
+                ),
                 "model_inputs": inputs,
                 "model_outputs": outputs,
             }
@@ -836,7 +863,7 @@ class RealTimeSimulation:
         outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
         component_dict = {
             "hydrogen_storage": {
-                "model": HydrogenStorage(),
+                "model": HydrogenStorage(self.component_config["hydrogen_storage"]),
                 "model_inputs": inputs,
                 "model_outputs": outputs,
             }
@@ -1091,7 +1118,9 @@ class RealTimeSimulation:
 
         fig.align_ylabels()
 
-    def plot_nodes(self, data="edges", figsize = (15, 8), hide_yaxis=True, fname=None, save=False):
+    def plot_nodes(
+        self, data="edges", figsize=(15, 8), hide_yaxis=True, fname=None, save=False
+    ):
         fig, ax = plt.subplots(
             len(self.node_order),
             1,
@@ -1115,18 +1144,24 @@ class RealTimeSimulation:
             # normalized_states[:, :, 1] = np.nan_to_num(self.system_states[:, :, 1] / np.max(self.system_states[:, :, [0, 1]]))
             # normalized_states[:, :, 2] = np.nan_to_num(self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2]))
 
-            normalized_states = self.system_states
+            normalized_states = np.copy(self.system_states)
             normalized_states[:, :, 2] *= 54
 
             plot_states = normalized_states
         elif data == "error":
             normalized_states = np.zeros(self.system_states.shape)
 
-            normalized_states[:, :, 0] = np.nan_to_num(self.system_states[:, :, 0] / np.max(self.system_states[:, :, [0, 1]]))
-            normalized_states[:, :, 1] = np.nan_to_num(self.system_states[:, :, 1] / np.max(self.system_states[:, :, [0, 1]]))
-            normalized_states[:, :, 2] = np.nan_to_num(self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2]))
+            normalized_states[:, :, 0] = np.nan_to_num(
+                self.system_states[:, :, 0] / np.max(self.system_states[:, :, [0, 1]])
+            )
+            normalized_states[:, :, 1] = np.nan_to_num(
+                self.system_states[:, :, 1] / np.max(self.system_states[:, :, [0, 1]])
+            )
+            normalized_states[:, :, 2] = np.nan_to_num(
+                self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2])
+            )
 
-            plot_states = normalized_states            
+            plot_states = normalized_states
 
         colors = ["black", "red", "blue"]
         cmaps = ["Greys", "Reds", "Blues"]
@@ -1185,14 +1220,14 @@ class RealTimeSimulation:
                     ax[i, j_ax].fill_between(
                         np.arange(0, self.system_states.shape[1], 1),
                         np.zeros(len(self.hybrid_profile)),
-                        self.hybrid_profile, # / np.max(self.system_states[:, :, 0]),
+                        self.hybrid_profile,  # / np.max(self.system_states[:, :, 0]),
                         color=mpl.colormaps[cmaps[j]](0.8),
                         linewidth=0,
                         step="post",
                         label="Hybrid gen.",
                     )
-                    curtail = self.G.nodes[node]["ionode"].u_curtail_store 
-                    grid =                        self.grid_power_store[0,:] 
+                    curtail = self.G.nodes[node]["ionode"].u_curtail_store
+                    grid = self.grid_power_store[0, :]
                     # curtail = self.G.nodes[node]["ionode"].u_curtail_store / np.max(
                     #     self.system_states[:, :, 0]
                     # )
@@ -1201,8 +1236,9 @@ class RealTimeSimulation:
                     # )[0, :]
                     ax[i, j_ax].fill_between(
                         np.arange(0, plot_states.shape[1], 1),
-                        self.hybrid_profile ,#/ np.max(self.system_states[:, :, 0]),
-                        self.hybrid_profile + grid, #/ np.max(self.system_states[:, :, 0])
+                        self.hybrid_profile,  # / np.max(self.system_states[:, :, 0]),
+                        self.hybrid_profile
+                        + grid,  # / np.max(self.system_states[:, :, 0])
                         # + grid,
                         step="post",
                         alpha=1,
@@ -1412,7 +1448,6 @@ class RealTimeSimulation:
 
         []
 
-
     def reformat_stored(self):
         pass
 
@@ -1479,11 +1514,18 @@ class StandinNode:
         assert dispatch >= 0
         u_curtail = dispatch
         output = self.output - u_curtail
+        
+        
+        if output < 0:
+            if output > -1:
+                output = 0.0
+            else:
+                assert False, f"Generation node output was negative: {output:.6f} kW"
+
+
         return output, u_passthrough, u_curtail
 
 
 class Forecaster:
     def __init__(self):
         pass
-
-    

@@ -34,7 +34,8 @@ class run_PEM_clusters_step(run_PEM_clusters):
         E = np.zeros((n, o))
         # F = np.array([[1 / 51.6685]]) # kg H2 / kWh
         # F = np.array([[1 / 46.99]]) # kg H2 / kWh
-        F = np.array([[1 / 55]]) # kg H2 / kWh
+        # F = np.array([[1 / 55]]) # kg H2 / kWh
+        F = np.array([[0.018859310507127074]]) # kg H2 / kWh - Same as 53.02420783740172, this number is from the linear fit of electrolzyer data
 
         bounds_dict = {
             "u_lb": np.array([]),

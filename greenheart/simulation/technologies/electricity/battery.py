@@ -33,16 +33,17 @@ class Battery:
             site=hopp_interface.system.site, config=BatteryConfig(**battery_config)
         )
         self.hopp_battery.setup_performance_model()
-        self.hopp_battery._dispatch = ExternallyDefinedBatteryDispatchHeuristic(
-            pyomo_model=hopp_interface.system.dispatch_builder.pyomo_model,
-            index_set=hopp_interface.system.dispatch_builder.pyomo_model.forecast_horizon,
-            system_model=self.hopp_battery._system_model,
-            financial_model=self.hopp_battery._financial_model,
-            dispatch_options=hopp_interface.system.dispatch_builder.options
-        )
+        if hasattr(hopp_interface.system, "dispatch_builder"):
+            self.hopp_battery._dispatch = ExternallyDefinedBatteryDispatchHeuristic(
+                pyomo_model=hopp_interface.system.dispatch_builder.pyomo_model,
+                index_set=hopp_interface.system.dispatch_builder.pyomo_model.forecast_horizon,
+                system_model=self.hopp_battery._system_model,
+                financial_model=self.hopp_battery._financial_model,
+                dispatch_options=hopp_interface.system.dispatch_builder.options
+            )
 
-        self.hopp_battery.dispatch.initialize_parameters()
-        self.hopp_battery.dispatch.external_fixed_dispatch = np.zeros(8760 + config.greenheart_config['realtime_simulation']['dispatch']['mpc']['horizon'] + 24)
+            self.hopp_battery.dispatch.initialize_parameters()
+            self.hopp_battery.dispatch.external_fixed_dispatch = np.zeros(8760 + config.greenheart_config['realtime_simulation']['dispatch']['mpc']['horizon'] + 24)
 
 
         # # self.hopp_battery.dispatch.external_fixed_dispatch = .7 * np.ones(8760)
@@ -207,7 +208,7 @@ class Battery:
         lower1 = -self.max_discharge_rate_kW
 
         # cannot discharge below min capacity
-        lower2 = (self.min_capacity_kWh - self.storage_state) / self.dt
+        lower2 = 0.95 * (self.min_capacity_kWh - self.storage_state) / self.dt
 
         # find the most restrictive lower constraint
         lower = np.max([lower1, lower2])
@@ -292,11 +293,13 @@ class Battery:
         else:
             desired_power = dispatch
 
-        hopp_output, hopp_passthrough, hopp_curtail = self.step_hopp_battery(available_power, desired_power, step_index)
-
         model_output, u_model, u_passthrough, u_curtail = self.low_level_controller(
             available_power, desired_power
         )
+
+        hopp_output, hopp_passthrough, hopp_curtail = self.step_hopp_battery(available_power, u_model, step_index)
+        # hopp_output, hopp_passthrough, hopp_curtail = self.step_hopp_battery(available_power, desired_power, step_index)
+
 
         u_model = float(u_model)
         self.update_storage_state(u_model, step_index)

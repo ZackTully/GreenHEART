@@ -42,12 +42,17 @@ class DispatchModelPredictiveController:
         self.debug_mode = debug_mode
         self.warm_start_with_previous_solution = True
         self.grid_curtail_mod = True
-        self.use_NL_electrolzyer = True
+        self.use_NL_electrolzyer = False
         self.NL_EL_order = 1
         self.only_bounded_yco = True
+        self.no_shortfall = True
 
 
-        print(f"{self.use_NL_electrolzyer = }, {self.NL_EL_order = }")
+        # if self.no_shortfall:
+        #     print(f"{self.no_shortfall = }")
+
+        # if self.use_NL_electrolzyer:
+        #     print(f"{self.use_NL_electrolzyer = }, {self.NL_EL_order = }")
 
         if p_opts is None:
             self.p_opts = {"print_time": False, "verbose": False}
@@ -276,6 +281,8 @@ class DispatchModelPredictiveController:
 
         # for k in range(self.horizon+1):
         for k in range(self.horizon + 1):
+            if k == 0:
+                continue
             opti.subject_to(x_var[:, k] >= self.bounds["x_lb"][:, None])
             opti.subject_to(x_var[:, k] <= self.bounds["x_ub"][:, None])
 
@@ -317,6 +324,10 @@ class DispatchModelPredictiveController:
         if self.grid_curtail_mod:
             gridcurtail = opti.variable(self.oex, self.horizon)
             opti.subject_to(gridcurtail >= -dex_param)
+            if self.no_shortfall:
+                opti.subject_to(gridcurtail <= 0)
+            else:
+                opti.subject_to(gridcurtail <= 2e6)
 
         else:
 
@@ -557,6 +568,8 @@ class DispatchModelPredictiveController:
 
     def step_control_model(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
 
+        if self.use_NL_electrolzyer:
+            return self.step_control_model_NL(x_var, uct_var, usp_var, dex_param, grid_curtail)
         xkp1 = (
                 self.A @ x_var
                 + self.Bct @ uct_var
@@ -602,8 +615,6 @@ class DispatchModelPredictiveController:
                 + self.Detsp @ usp_var
                 + self.Fetex @ (dex_param + grid_curtail)
             )
-
-        return self.step_control_model_NL(x_var, uct_var, usp_var, dex_param, grid_curtail)
 
         return xkp1, yexk, yco, yze, ygt, yet
 
@@ -781,170 +792,6 @@ class DispatchModelPredictiveController:
         obj_terms.update({"objective": {"w": 1, "expr": objective}})
         return objective, obj_terms
 
-    # def objective_step(self, x, uct, usp, yco, yex, curtail, grid, var_inds= None):
-
-    #     # =============================================================================
-    #     # ==                                                                         ==
-    #     # ==                                Objective                                ==
-    #     # ==                                                                         ==
-    #     # =============================================================================
-
-    #     # ref_steel = 45.48e3
-    #     ref_steel = 35
-    #     self.reference = ref_steel
-    #     output_tracking = (ref_steel - yex) ** 2
-    #     # h2_tracking = 1e-3 *(2084.6 - (yco[5] + yco[6]))**2
-    #     h2_tracking = (2084.6 - (yco[6] + yco[7])) ** 2
-
-    #     grid_purchase = grid
-
-    #     # BES_local_curtail = (yco[0] - uct[0]) ** 2
-    #     BES_simultaneous = 1 * uct[0] * uct[1]
-    #     BES_state = (x[0] - (2e6 - 4e5) / 2) ** 2
-
-    #     # H2S_local_curtail =  (yco[4] - uct[2]) ** 2
-    #     # H2S_local_curtail = (yco[5] - uct[2]) ** 2
-    #     H2S_simultaneous = 1 * uct[4] * uct[5]
-    #     # H2S_simultaneous = 1 * uct[2] * uct[3]
-    #     H2s_state = (x[2] - (812209 / 2)) ** 2
-    #     # H2s_state = (x[1] - (812209 / 2)) ** 2
-
-    #     TES_simultaneous = uct[2] * uct[3]
-    #     TES_state = (x[1] - 6.4e6 / 2) ** 2
-
-    #     w_output = 1e5
-    #     w_h2_tracking = 1e0
-    #     w_bes_simultaneous = 1e0
-    #     # w_bes_local_curtail = 1e0
-    #     w_bes_state = 1e-8
-    #     w_h2s_simultaneous = 1e0
-    #     # w_h2s_local_curtail = 1e0
-    #     w_tes_simultaneous = 1e0
-    #     w_h2s_state = 1e-7
-    #     w_tes_state = 1e-8
-    #     w_curtail = 1e-4
-    #     w_grid_purchase = 1e-3
-
-    #     objective_weights = [
-    #         1,  # no weight for the total optimization objective
-    #         w_output,
-    #         w_h2_tracking,
-    #         w_bes_simultaneous,
-    #         # w_bes_local_curtail,
-    #         w_bes_state,
-    #         w_h2s_simultaneous,
-    #         # w_h2s_local_curtail,
-    #         w_h2s_state,
-    #         w_tes_state,
-    #         w_tes_simultaneous,
-    #         w_curtail,
-    #         w_grid_purchase,
-    #     ]
-
-    #     obj_value = (
-    #         w_output * output_tracking
-    #         # + w_h2_tracking * h2_tracking
-    #         + w_bes_simultaneous * BES_simultaneous
-    #         # + w_bes_local_curtail * BES_local_curtail
-    #         + w_bes_state * BES_state
-    #         + w_h2s_simultaneous * H2S_simultaneous
-    #         # + w_h2s_local_curtail * H2S_local_curtail
-    #         + w_h2s_state * H2s_state
-    #         + w_tes_state * TES_state
-    #         + w_tes_simultaneous * TES_simultaneous
-    #         + w_curtail * curtail**2
-    #         + w_grid_purchase * grid_purchase**2
-    #     )
-    #     objective_terms = [
-    #         obj_value,
-    #         w_output * output_tracking,
-    #         w_h2_tracking * h2_tracking,
-    #         w_bes_simultaneous * BES_simultaneous,
-    #         # w_bes_local_curtail * BES_local_curtail,
-    #         w_bes_state * BES_state,
-    #         w_h2s_simultaneous * H2S_simultaneous,
-    #         # w_h2s_local_curtail * H2S_local_curtail,
-    #         w_h2s_state * H2s_state,
-    #         w_tes_state * TES_state,
-    #         w_tes_simultaneous * TES_simultaneous,
-    #         w_curtail * curtail**2,
-    #         w_grid_purchase * grid_purchase,
-    #     ]
-    #     obj_term_labels = [
-    #         "objective",
-    #         "output",
-    #         "h2_tracking",
-    #         "bes_simultaneous",
-    #         # "bes_local_curtail",
-    #         "bes_state",
-    #         "h2s_simultaneous",
-    #         # "h2s_local_curtail",
-    #         "h2s_state",
-    #         "tes_state",
-    #         "tes_simultaneous",
-    #         "curtail",
-    #         "grid_purchase",
-    #     ]
-    #     self.objective_labels = {
-    #         i: obj_term_labels[i] for i in range(len(obj_term_labels))
-    #     }
-    #     self.objective_weights = {
-    #         obj_term_labels[i]: objective_weights[i]
-    #         for i in range(len(obj_term_labels))
-    #     }
-    #     return obj_value, objective_terms
-
-    # def objective(self, x, uc, us, ys, curtail):
-
-    #     ref_steel = 45.48e3
-    #     # ref_steel = 37.92e3
-    #     # ref_steel = 20e3
-    #     self.reference = ref_steel
-
-    #     bes_state_reference = 1200000
-    #     h2s_state_reference = 320467
-
-    #     objective_value = 0
-    #     for i in range(self.horizon):
-
-    #         # ysp = (
-    #         #     self.Csp @ x[:, i] + self.Dspc @ uc[:, i] + self.Dsps @ us[:, i]
-    #         # )  # + self.Fsp @ de
-
-    #         tracking_term = (ref_steel - ys[0, i]) ** 2
-
-    #         # h2s_sparsity = 1e-5 * (ysp[3] ** 2 + ysp[5] ** 2) ** 2
-    #         # h2s_sparsity = 1e-5 * (ysp[3] * ysp[5] ) **2
-    #         # h2s_sparsity = 1e3 * ((ysp[3] +  ysp[5]) + ca.fabs(uc[1,i]) )
-    #         # h2s_sparsity = us[3,i] ** 2 - uc[1, i]**2
-    #         # h2s_sparsity = 1e3 * ca.if_else(
-    #         #     uc[1, i] >= 0, (uc[1, i] - us[3, i]) ** 2, 0
-    #         # )
-    #         # h2s_sparsity = (2 * us[3, i] - uc[1, i] - ca.fabs(uc[1, i]))
-    #         # h2s_sparsity = 1e3 * (ysp[3] -  uc[1,i] ) **2
-    #         # h2s_sparsity = 1e3 * (ysp[3] + ysp[5]) **2
-    #         # bes_sparsity = 1e-5 * (ysp[0] ** 2 + ysp[2] ** 2) ** 2
-    #         # bes_sparsity = 1e-5 * (ysp[0] * ysp[2]) ** 2
-
-    #         # no_h2s_charge = 1e3 * uc[1, i] ** 2
-
-    #         # bes_state = 1e-5 * (x[0, i] - bes_state_reference) ** 2
-    #         # h2s_state = 1e-3 * (x[1, i] - h2s_state_reference) ** 2
-
-    #         # curtail_penalty = 1e-3 * curtail[0, i] ** 2
-    #         # storage_agreement = 1e-3 * (0.0218 * uc[0, i] - uc[1, i]) ** 2
-
-    #         objective_value += (
-    #             tracking_term
-    #             # + bes_state
-    #             # + h2s_state
-    #             # + storage_agreement
-    #             # + h2s_sparsity
-    #             # + bes_sparsity
-    #             # + curtail_penalty
-    #         )
-
-    #     return objective_value
 
     def update_optimization_parameters(self, x0, src_forecast):
         self.opti.set_value(self.opt_params["dex"], src_forecast)
@@ -962,7 +809,7 @@ class DispatchModelPredictiveController:
     def update_optimization_constraints(self):
         pass
 
-    def compute_trajectory(self, x0, forecast, step_index=0):
+    def compute_trajectory(self, x0, forecast, step_index=0, ret_obj=False):
         # =============================================================================
         # ==                                                                         ==
         # ==                            Compute Trajectory                           ==
@@ -1104,88 +951,68 @@ class DispatchModelPredictiveController:
                         i += 4
                     i += 1
 
-                # if self.horizon == 1:
-                #     x_db = self.opti.debug.value(self.opt_vars["x"])  # [None, :]
-                #     uc_db = np.atleast_2d(self.opti.debug.value(self.opt_vars["uct"])).T  # [None, :]
-                #     us_db = np.atleast_2d(self.opti.debug.value(self.opt_vars["usp"])).T
-                #     ys_db = np.atleast_2d(self.opti.debug.value(self.opt_vars["yex"]))# [None, :]
-                #     yco_db = np.atleast_2d(self.opti.debug.value(self.opt_vars["yco"])).T
-                #     curtail_db = self.opti.debug.value(self.opt_vars["curtail"])
-                #     grid_db = self.opti.debug.value(self.opt_vars["grid"])
+                self.plot_trajectory_generic(self.opti.debug, forecast)
+
+                # x_db = get_sol_value(self.opti.debug, self.opt_vars["x"]) 
+                # uc_db = get_sol_value(self.opti.debug, self.opt_vars["uct"])
+                # us_db = get_sol_value(self.opti.debug, self.opt_vars["usp"])
+                # ys_db = get_sol_value(self.opti.debug, self.opt_vars["yex"])
+                # yco_db = get_sol_value(self.opti.debug, self.opt_vars["yco"])
+                # if self.grid_curtail_mod:
+                #     gridcurtail = get_sol_value(self.opti.debug, self.opt_vars["gridcurtail"])
+                #     grid_db = np.where(gridcurtail >= 0, gridcurtail, 0)
+                #     curtail_db = np.where(gridcurtail <= 0, -gridcurtail, 0)
                 # else:
-                #     x_db = self.opti.debug.value(self.opt_vars["x"])  # [None, :]
-                #     uc_db = self.opti.debug.value(self.opt_vars["uct"])  # [None, :]
-                #     us_db = self.opti.debug.value(self.opt_vars["usp"])
-                #     ys_db = self.opti.debug.value(self.opt_vars["yex"])# [None, :]
-                #     yco_db = self.opti.debug.value(self.opt_vars["yco"])
-                #     curtail_db = self.opti.debug.value(self.opt_vars["curtail"])
-                #     grid_db = self.opti.debug.value(self.opt_vars["grid"])
 
-                # def get_sol_value(prob:ca.Opti, var):
-                #     val = prob.value(var)
-                #     val = np.reshape(val, var.shape)
-                #     return val
+                #     curtail_db = get_sol_value(self.opti.debug, self.opt_vars["curtail"])
+                #     grid_db = get_sol_value(self.opti.debug, self.opt_vars["grid"])
 
-                x_db = get_sol_value(self.opti.debug, self.opt_vars["x"]) 
-                uc_db = get_sol_value(self.opti.debug, self.opt_vars["uct"])
-                us_db = get_sol_value(self.opti.debug, self.opt_vars["usp"])
-                ys_db = get_sol_value(self.opti.debug, self.opt_vars["yex"])
-                yco_db = get_sol_value(self.opti.debug, self.opt_vars["yco"])
-                if self.grid_curtail_mod:
-                    gridcurtail = get_sol_value(self.opti.debug, self.opt_vars["gridcurtail"])
-                    grid_db = np.where(gridcurtail >= 0, gridcurtail, 0)
-                    curtail_db = np.where(gridcurtail <= 0, -gridcurtail, 0)
-                else:
+                # fig, ax = plt.subplots(
+                #     np.max(
+                #         [
+                #             uc_db.shape[0],
+                #             us_db.shape[0],
+                #             x_db.shape[0],
+                #             ys_db.shape[0],
+                #             yco_db.shape[0],
+                #         ]
+                #     ),
+                #     5,
+                #     sharex="all",
+                #     layout="constrained",
+                # )
 
-                    curtail_db = get_sol_value(self.opti.debug, self.opt_vars["curtail"])
-                    grid_db = get_sol_value(self.opti.debug, self.opt_vars["grid"])
+                # to_plot = [x_db, uc_db, us_db, ys_db, yco_db]
+                # titles = [
+                #     self.n_label,
+                #     self.mct_label,
+                #     self.msp_label,
+                #     self.pex_label,
+                #     self.pco_label,
+                # ]
+                # for i in range(len(to_plot)):
+                #     # ax[0, i].set_title(titles[i])
+                #     for j in range(len(to_plot[i])):
+                #         ax[j, i].plot(to_plot[i][j, :])
+                #         ax[j, i].set_title(titles[i][j])
 
-                fig, ax = plt.subplots(
-                    np.max(
-                        [
-                            uc_db.shape[0],
-                            us_db.shape[0],
-                            x_db.shape[0],
-                            ys_db.shape[0],
-                            yco_db.shape[0],
-                        ]
-                    ),
-                    5,
-                    sharex="all",
-                    layout="constrained",
-                )
+                #         if (i == 0) or (i == 1):
+                #             if i == 0:
+                #                 lb = self.bounds["x_lb"]
+                #                 ub = self.bounds["x_ub"]
+                #             elif i == 1:
+                #                 lb = self.bounds["u_lb"]
+                #                 ub = self.bounds["u_ub"]
 
-                to_plot = [x_db, uc_db, us_db, ys_db, yco_db]
-                titles = [
-                    self.n_label,
-                    self.mct_label,
-                    self.msp_label,
-                    self.pex_label,
-                    self.pco_label,
-                ]
-                for i in range(len(to_plot)):
-                    # ax[0, i].set_title(titles[i])
-                    for j in range(len(to_plot[i])):
-                        ax[j, i].plot(to_plot[i][j, :])
-                        ax[j, i].set_title(titles[i][j])
+                #             ylim = ax[j, i].get_ylim()
+                #             ax[j, i].axhline(lb[j], color="black", linewidth=0.75)
+                #             ax[j, i].axhline(ub[j], color="black", linewidth=0.75)
+                #             ax[j, i].set_ylim(ylim)
 
-                        if (i == 0) or (i == 1):
-                            if i == 0:
-                                lb = self.bounds["x_lb"]
-                                ub = self.bounds["x_ub"]
-                            elif i == 1:
-                                lb = self.bounds["u_lb"]
-                                ub = self.bounds["u_ub"]
-
-                            ylim = ax[j, i].get_ylim()
-                            ax[j, i].axhline(lb[j], color="black", linewidth=0.75)
-                            ax[j, i].axhline(ub[j], color="black", linewidth=0.75)
-                            ax[j, i].set_ylim(ylim)
-
-                ax[-1, 0].set_title("Forecast and curtail")
-                ax[-1, 0].plot(forecast)
-                ax[-1, 0].plot(forecast - curtail_db)
-                ax[-1, 0].plot(forecast - curtail_db + grid_db)
+                # ax[-1, 0].set_title("Forecast and curtail")
+                # ax[-1, 0].plot(forecast)
+                # ax[-1, 0].plot(forecast - curtail_db)
+                # ax[-1, 0].plot(forecast - curtail_db + grid_db)
 
                 np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
@@ -1272,29 +1099,8 @@ class DispatchModelPredictiveController:
                 else:
                     grid = get_sol_value(sol, self.opt_params["grid"])
 
-            # uct = sol.value(self.opt_vars["uct"])
-            # usp = sol.value(self.opt_vars["usp"])
-            # x = sol.value(self.opt_vars["x"])
-            # yex = sol.value(self.opt_vars["yex"])
-            # yco = sol.value(self.opt_vars["yco"])
-            # # e = sol.value(self.opt_vars["e"])
-            # dex = sol.value(self.opt_params["dex"])   #[None, :]
-            # if self.allow_curtail_forecast:
-            #     curtail = sol.value(self.opt_vars["curtail"])
-            # else:
-            #     curtail = sol.value(self.opt_params["curtail"])
-            # if self.allow_grid_purchase:
-            #     grid = sol.value(self.opt_vars["grid"])
-            # else:
-            #     grid = sol.value(self.opt_params["grid"])
 
             self.curtail_storage[step_index : step_index + self.horizon] = curtail
-
-            # def dimension_check(arr:np.ndarray):
-            #     if arr.ndim != 2:
-            #         return arr[:, None]
-            #     else:
-            #         return arr
 
             self.uc_init = uct
             self.us_init = usp
@@ -1304,25 +1110,13 @@ class DispatchModelPredictiveController:
 
             ysp = (
                 self.Cco @ x[:, :-1]
-                # + self.Dcoct @ uct
                 + self.Dcoct @ uct
                 + self.Dcosp @ usp
                 + self.Fcoex @ (dex - curtail)
             )
-            # This is what worked with a horizon of 1. Try to make it flexible for all cases
-            # ysp = (
-            #     self.Cco @ np.atleast_2d(x)[:, :-1]
-            #     # + self.Dcoct @ uct
-            #     + self.Dcoct @ np.atleast_2d(uct).T
-            #     + self.Dcosp @ np.atleast_2d(usp).T
-            #     + self.Fcoex @ np.atleast_2d(dex - curtail)
-            # )
-            # coupling disturbances
             dco = self.M_dco_yco @ ysp
 
             ysp = np.concatenate([ysp, yex])
-            # ysp = np.concatenate([ysp, np.atleast_2d(yex)])
-            # ysp = np.concatenate([ysp, ys[None, :]])
 
             obj_values = {
                 key: sol.value(self.obj_terms[key]) for key in self.obj_terms.keys()
@@ -1348,46 +1142,18 @@ class DispatchModelPredictiveController:
                 objective_uw=obj_values_uw,
             )
 
-            if False:
 
-                mat_co = (
-                    self.Csp @ x[:, 0 : self.horizon]
-                    + self.Dspc @ uc
-                    + self.Dsps @ us
-                    + self.Fsp @ de
-                )
-                mat_ex = (
-                    self.Cs @ x[:, 0 : self.horizon]
-                    + self.Dsc @ uc
-                    + self.Dss @ us
-                    + self.Fs @ de
-                )
-                self.print_block_matrices(
-                    [[mat_co[None, i, :]] for i in range(mat_co.shape[0])]
-                    + [list(mat_ex[None, :])],
-                    in_labels=[""],
-                    out_labels=self.ys_list,
-                    no_space=True,
-                )
-
-            # if self.mct == 1:
-            #     u_ctrl = uct[None, 0]
-            # else:
-            #     u_ctrl = uct[:, 0]
-
-            # if curtail.ndim < 2:
-            #     curtail = curtail[None, :]
-
-            # self.plot_solution(sol, forecast)
-            # self.plot_solution(uct, usp, x, ysp, forecast)
-
-            # self.plot_trajectory(step_index)
 
             # u_split = usp[:, 0]
             # if not self.debug_mode:
             #     self.save_state_for_debug(x0, forecast, step_index)
 
-            return uct, usp, curtail, grid
+            if ret_obj: 
+
+
+                return uct, usp, curtail, grid, obj_values_uw
+            else:
+                return uct, usp, curtail, grid
 
     def save_state_for_debug(self, x0, forecast, step_index):
 
@@ -1521,6 +1287,77 @@ class DispatchModelPredictiveController:
 
 
         []
+
+    def plot_trajectory_generic(self, prob:ca.Opti, forecast):
+
+        def get_sol_value(prob:ca.Opti, var):
+            val = prob.value(var)
+            val = np.reshape(val, var.shape)
+            return val
+
+        x_db = get_sol_value(prob, self.opt_vars["x"]) 
+        uc_db = get_sol_value(prob, self.opt_vars["uct"])
+        us_db = get_sol_value(prob, self.opt_vars["usp"])
+        ys_db = get_sol_value(prob, self.opt_vars["yex"])
+        yco_db = get_sol_value(prob, self.opt_vars["yco"])
+        if self.grid_curtail_mod:
+            gridcurtail = get_sol_value(prob, self.opt_vars["gridcurtail"])
+            grid_db = np.where(gridcurtail >= 0, gridcurtail, 0)
+            curtail_db = np.where(gridcurtail <= 0, -gridcurtail, 0)
+        else:
+
+            curtail_db = get_sol_value(prob, self.opt_vars["curtail"])
+            grid_db = get_sol_value(prob, self.opt_vars["grid"])
+
+        fig, ax = plt.subplots(
+            np.max(
+                [
+                    uc_db.shape[0],
+                    us_db.shape[0],
+                    x_db.shape[0],
+                    ys_db.shape[0],
+                    yco_db.shape[0],
+                ]
+            ),
+            5,
+            sharex="all",
+            layout="constrained",
+        )
+
+        to_plot = [x_db, uc_db, us_db, ys_db, yco_db]
+        titles = [
+            self.n_label,
+            self.mct_label,
+            self.msp_label,
+            self.pex_label,
+            self.pco_label,
+        ]
+        for i in range(len(to_plot)):
+            # ax[0, i].set_title(titles[i])
+            for j in range(len(to_plot[i])):
+                ax[j, i].plot(to_plot[i][j, :])
+                ax[j, i].set_title(titles[i][j])
+
+                if (i == 0) or (i == 1):
+                    if i == 0:
+                        lb = self.bounds["x_lb"]
+                        ub = self.bounds["x_ub"]
+                    elif i == 1:
+                        lb = self.bounds["u_lb"]
+                        ub = self.bounds["u_ub"]
+
+                    ylim = ax[j, i].get_ylim()
+                    ax[j, i].axhline(lb[j], color="black", linewidth=0.75)
+                    ax[j, i].axhline(ub[j], color="black", linewidth=0.75)
+                    ax[j, i].set_ylim(ylim)
+
+        ax[-1, 0].set_title("Forecast and curtail")
+        ax[-1, 0].plot(forecast)
+        ax[-1, 0].plot(forecast - curtail_db)
+        ax[-1, 0].plot(forecast - curtail_db + grid_db)
+
+
+
 
     def plot_trajectory(self, step_index=None):
 
@@ -2069,7 +1906,6 @@ class DispatchModelPredictiveController:
             linear_rows_verbose.update({key: [boo for bool_list in linear_rows[key] for boo in bool_list]})
 
         np.sum([len(linear_cols_verbose[key]) for key in linear_cols_verbose.keys()])
-
         np.sum([len(linear_rows_verbose[key]) for key in linear_rows_verbose.keys()])
 
         # Make indices and reduce the order of the verbose statespace

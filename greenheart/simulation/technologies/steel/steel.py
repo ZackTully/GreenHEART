@@ -1136,6 +1136,7 @@ class SteelModel:
         F = np.array(
             [
                 [0, 1 / self.m_h2_kgptls],
+                # [0.01,  1],
                 [1,  -(self.P_DRI_kwhptls + self.P_eaf_kwhptls) / self.m_h2_kgptls],
             ]
         )
@@ -1232,6 +1233,7 @@ class SteelModel:
         )
 
         steel_output_tonne = np.min(potential_steel)
+        # steel_output_tonne = potential_steel[1]
         power_used_kwh = steel_output_tonne * (self.P_DRI_kwhptls + self.P_eaf_kwhptls)
         h2_used_kg = steel_output_tonne * self.m_h2_kgptls
         power_waste_kwh = power_in - power_used_kwh
