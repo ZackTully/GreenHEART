@@ -10,15 +10,13 @@ import types
 import pytest
 
 from greenheart.simulation.realtime_simulation import RealTimeSimulation
-# from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import DispatchModelPredictiveController
-from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc_pyomo import DispatchModelPredictiveController
+from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import DispatchModelPredictiveController
+# from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc_pyomo import DispatchModelPredictiveController
 from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
 from greenheart.simulation.greenheart_simulation import  GreenHeartSimulationConfig
 
 
 from hopp.simulation.technologies.sites.site_info import SiteInfo
-
-
 
 class HOPPSystem:
     def __init__(self, site):
@@ -142,8 +140,8 @@ def test_store_solution_appends_data():
 
 def test_update_optimization_parameters_sets_values():
     ctrl = make_standin_controller()
-    x0 = np.ones((1,1))
-    src_forecast = np.ones((1,2))
+    x0 = np.ones((3,1))
+    src_forecast = np.ones((1,6))
     # Should not raise
     ctrl.update_optimization_parameters(x0, src_forecast)
 

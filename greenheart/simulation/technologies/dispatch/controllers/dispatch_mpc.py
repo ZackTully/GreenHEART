@@ -46,6 +46,8 @@ class DispatchModelPredictiveController:
         self.NL_EL_order = 1
         self.only_bounded_yco = True
         self.no_shortfall = True
+        self.terminal_cost = False
+        self.terminal_constraint = False
 
 
         # if self.no_shortfall:

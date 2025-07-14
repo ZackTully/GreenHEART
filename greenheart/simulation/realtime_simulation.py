@@ -16,9 +16,9 @@ from greenheart.simulation.realtime_node import Node
 from greenheart.simulation.technologies.ammonia.ammonia import (
     AmmoniaCapacityModelConfig,
 )
-from greenheart.simulation.technologies.heat.heat_conversion.joule_heater import (
-    JouleHeater,
-)
+# from greenheart.simulation.technologies.heat.heat_conversion.joule_heater import (
+#     JouleHeater,
+# )
 from greenheart.simulation.technologies.heat.heat_exchange.heat_exchanger import (
     HeatExchanger,
 )
