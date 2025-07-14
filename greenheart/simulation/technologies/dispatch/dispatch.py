@@ -2,9 +2,10 @@ import numpy as np
 import networkx as nx
 import pprint
 
-from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import (
-    DispatchModelPredictiveController,
-)
+# from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import (
+#     DispatchModelPredictiveController,
+# )
+from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc_pyomo import DispatchModelPredictiveController
 from greenheart.simulation.technologies.dispatch.controllers.dispatch_heuristic import DispatchHeuristicController
 
 

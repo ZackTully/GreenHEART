@@ -3,6 +3,7 @@ import scipy
 import networkx as nx
 import matplotlib.pyplot as plt
 import casadi as ca
+import pyomo.environ as pyo
 import pprint
 import sys
 from io import StringIO
@@ -46,7 +47,6 @@ class DispatchModelPredictiveController:
         self.NL_EL_order = 1
         self.only_bounded_yco = True
         self.no_shortfall = True
-
 
         # if self.no_shortfall:
         #     print(f"{self.no_shortfall = }")
@@ -258,165 +258,150 @@ class DispatchModelPredictiveController:
             setattr(self, f"{key}_saved", stored_dict[key])
 
     def setup_optimization(self):
+        # Create abstract model
+        model = pyo.ConcreteModel()
+        solver = pyo.SolverFactory("ipopt", options=self.s_opts)
+        self.solver = solver
 
-        # =============================================================================
-        # ==                                                                         ==
-        # ==                         Optimization setup                              ==
-        # ==                                                                         ==
-        # =============================================================================
+        # Setup sets
 
-        opti: ca.Opti = ca.Opti()
-        opti.solver("ipopt", self.p_opts, self.s_opts)
-        # opti.solver("ipopt")
+        # Time steps
+        model.k = pyo.Set(dimen=1, doc="time step k", initialize = np.arange(0, self.horizon, 1), ordered=True)
+        model.k_x = pyo.Set(dimen=1, doc="time step for x k", initialize = np.arange(0, self.horizon + 1, 1), ordered=True)
 
-        # Variables and bounds
-        uct_var = opti.variable(self.mct, self.horizon)
-        usp_var = opti.variable(self.msp, self.horizon)
-        x_var = opti.variable(self.n, self.horizon + 1)
-        yex_var = opti.variable(self.pex, self.horizon)
-        if self.only_bounded_yco:
-            yco_var = opti.variable(len(self.yco_ub_ind), self.horizon)
-        else:
-            yco_var = opti.variable(self.pco, self.horizon)
-        # e_var = opti.variable(self.q + 2, self.horizon)
+        model.n_set = pyo.Set(dimen=1, doc="states", initialize = np.arange(0, self.n), ordered=True)
 
-        # for k in range(self.horizon+1):
-        for k in range(self.horizon + 1):
-            if k == 0:
-                continue
-            opti.subject_to(x_var[:, k] >= self.bounds["x_lb"][:, None])
-            opti.subject_to(x_var[:, k] <= self.bounds["x_ub"][:, None])
+        model.mct_set = pyo.Set(dimen=1, doc="inputs, control", initialize = np.arange(0, self.mct), ordered=True)
+        model.msp_set = pyo.Set(dimen=1, doc="inputs, splitting", initialize = np.arange(0, self.msp), ordered=True)
 
-        for k in range(self.horizon):
-            opti.subject_to(uct_var[:, k] >= self.bounds["u_lb"][:, None])
-            opti.subject_to(uct_var[:, k] <= self.bounds["u_ub"][:, None])
+        model.pex_set = pyo.Set(dimen=1, doc="outputs, external", initialize = np.arange(0, self.pex), ordered=True)
+        model.pco_set = pyo.Set(dimen=1, doc="outputs, coupling", initialize = np.arange(0, self.pco), ordered=True)
+        model.pco_bd_set = pyo.Set(dimen=1, doc="outputs, coupling", initialize = self.yco_ub_ind, ordered=True)
+        model.pgt_set = pyo.Set(dimen=1, doc="outputs, greater than constraint", initialize = np.arange(0, self.pgt), ordered=True)
+        model.pet_set = pyo.Set(dimen=1, doc="outputs, equal to constraint", initialize = np.arange(0, self.pet), ordered=True)
+        model.pze_set = pyo.Set(dimen=1, doc="outputs, equal to zero", initialize = np.arange(0, self.pze), ordered=True)
 
-            # opti.subject_to(yco_var[:, k] >= ca.MX(list(self.bounds["y_lb"][:, None])))
-            # opti.subject_to(yco_var[:, k] <= ca.MX(list(self.bounds["y_ub"][:, None])))
+        model.oco_set = pyo.Set(dimen=1, doc="disturbances, coupling", initialize = np.arange(0, self.oco), ordered=True)
+        model.oex_set = pyo.Set(dimen=1, doc="disturbances, external", initialize = np.arange(0, self.oex), ordered=True)
 
-            # opti.subject_to(yex_var[:,k] >= self.bounds["y_lb"][:, None])
-            # opti.subject_to(yex_var[:,k] <= self.bounds["y_ub"][:, None])
-            opti.subject_to(yex_var[:, k] >= 0)
-            opti.subject_to(usp_var[:, k] >= np.zeros(self.msp))
+        def init_zero(model, i, j=None):
+            return 0
 
-            if self.only_bounded_yco:
-
-                assert self.yco_ub_node_ind.shape[0] == 1
-
-                for node_idx in self.yco_ub_node_ind:
-                    opti.subject_to(np.ones((1, len(self.yco_ub_ind))) @ yco_var[:,k] <= self.bounds_verbose[self.node_order[node_idx]]["y_ub"])
-                    opti.subject_to(np.ones((1, len(self.yco_ub_ind))) @ yco_var[:,k] >= self.bounds_verbose[self.node_order[node_idx]]["y_lb"])
-                    
-
-            else:
-
-                for node in self.node_order:
-
-                    node_idx = [i for i in range(self.pco) if self.pco_label[i].split(" ")[2] == node]
-
-                    if len(node_idx) > 0:
-                        opti.subject_to(np.ones((1, len(node_idx))) @ yco_var[node_idx, k] <= self.bounds_verbose[node]["y_ub"])
-                        opti.subject_to(np.ones((1, len(node_idx))) @ yco_var[node_idx, k] >= self.bounds_verbose[node]["y_lb"])
-
-        dex_param = opti.parameter(self.oex, self.horizon)
-        # e_src_param = opti.parameter(1, self.horizon)
-        x0_param = opti.parameter(self.n, 1)
-
-        if self.grid_curtail_mod:
-            gridcurtail = opti.variable(self.oex, self.horizon)
-            opti.subject_to(gridcurtail >= -dex_param)
-            if self.no_shortfall:
-                opti.subject_to(gridcurtail <= 0)
-            else:
-                opti.subject_to(gridcurtail <= 2e6)
-
-        else:
-
-            if self.allow_curtail_forecast:
-                curtail = opti.variable(self.oex, self.horizon)
-                opti.subject_to(curtail <= dex_param)
-                opti.subject_to(curtail >= np.zeros(curtail.shape))
-            else:
-                curtail = opti.parameter(self.oex, self.horizon)
-
-            if self.allow_grid_purchase:
-                grid_purchase = opti.variable(self.oex, self.horizon)
-                opti.subject_to(grid_purchase >= np.zeros(grid_purchase.shape))
-            else:
-                grid_purchase = opti.parameter(self.oex, self.horizon)
 
         # Parameters
-        # Initial conditions and forecasted disturbance
-        opti.subject_to(x_var[:, 0] == x0_param)
-        # opti.subject_to(e_var[0, :] == e_src_param)
+        model.dex = pyo.Param(model.oex_set, model.k, domain = pyo.NonNegativeReals, initialize=init_zero, mutable=True)
+        model.x0 = pyo.Param(model.n_set, domain=pyo.NonNegativeReals, initialize=init_zero, mutable=True)
+
+        # Variables
+        def xbd(model, n, k):
+            return (self.bounds["x_lb"][n], self.bounds["x_ub"][n])
+        model.x = pyo.Var(model.n_set, model.k_x, domain=pyo.Reals, bounds = xbd)        
+
+    
+
+        def uctbd(model, m, k):
+            return (self.bounds["u_lb"][m], self.bounds["u_ub"][m])
+        model.uct = pyo.Var(model.mct_set, model.k, domain = pyo.Reals, bounds = uctbd)
+
+        def uspbd(model, m, k):
+            return (0, None)
+        model.usp = pyo.Var(model.msp_set, model.k, domain=pyo.NonNegativeReals, bounds = uspbd)
+
+
+        model.yex = pyo.Var(model.pex_set, model.k, domain = pyo.NonNegativeReals)
+
+        if self.only_bounded_yco:
+
+            def pcobd(model, p, k):
+                return (self.bounds_verbose[self.node_order[self.yco_ub_node_ind[0]]]["y_lb"], self.bounds_verbose[self.node_order[self.yco_ub_node_ind[0]]]["y_ub"])
+            model.yco = pyo.Var(model.pco_bd_set * model.k, domain= pyo.Reals, bounds = pcobd)
+        else:
+            pass
+
+        # Grid curtail variable
+        if self.no_shortfall:
+            def ucurbd(model, o, k):
+                return (None, 0)
+        else:
+            def ucurbd(model, o, k):
+                return (None, 2e6)
+        model.ucur = pyo.Var(model.oex_set, model.k, domain = pyo.Reals, bounds = ucurbd )
+
+        for k in model.k:
+            model.add_component(name=f"dex_ucur_cons_{k}", val=pyo.Constraint(rule = model.ucur[0, k] >= -model.dex[0,k]))
+
+
+
+        model.construct()
+
+        # model.x0_con = pyo.Constraint(rule=)
+
+        for n in model.n_set:
+            model.add_component(name=f"x0_con_{n}",  val=pyo.Constraint(rule=model.x[n, 0]==model.x0[n]))
 
         objective = 0
         objective_terms = []
 
+
         objective_var_inds = self.get_objective_var_inds()
 
-        # Dynamics constraint
-        for i in range(self.horizon):
+        for k in range(self.horizon):
 
-            if self.grid_curtail_mod:
-                grid_curtail = gridcurtail[:,i]
-            else:
-                grid_curtail = -curtail[:, i] + grid_purchase[:, i]
+            # if k == 0:
+            #     x_k = model.x0
+            # else:
+            #     x_k = [model.x[n,k] for n in model.n_set]
+            x_k = [model.x[n,k] for n in model.n_set]
+            uct_k = [model.uct[m, k] for m in model.mct_set]
+            usp_k = [model.usp[m, k] for m in model.msp_set]
+            dex_k = [model.dex[o, k] for o in model.oex_set]
+            ucur_k = model.ucur[0, k]
 
-            xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(x_var[:, i], uct_var[:, i], usp_var[:, i], dex_param[:, i], grid_curtail)
+            xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(
+                x_k,
+                uct_k,
+                usp_k,
+                dex_k,
+                ucur_k,
+            )
+            # xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(xk, model.uct[:, k], model.usp[:, k], model.dex[:, k], model.ucur)
 
+            for n in model.n_set:
+                model.add_component(f"dyn_con_i{n}_k{k}", pyo.Constraint(rule = model.x[n, k+1] == xkp1[n]))
+            model.add_component(f"yex_con{k}", pyo.Constraint(rule = model.yex[0, k] == yexk[0]))
 
-            opti.subject_to(x_var[:, i + 1] == xkp1)
-            opti.subject_to(yex_var[:, i] == yexk[0])
             if self.only_bounded_yco:
-                opti.subject_to(yco_var[:,i] == yco[self.yco_ub_ind])
-            else: 
+                for i, p in enumerate(model.pco_bd_set):
+                    model.add_component(name=f"yco_con_p{p}_k{k}", val=pyo.Constraint(rule=model.yco[p, k] == yco[p]))
+            else:
+                pass
 
-                opti.subject_to(yco_var[:, i] == yco)
-            if self.pze > 0:
-                opti.subject_to(yze == np.zeros((self.pze, 1)))
-            if self.pgt > 0:
-                opti.subject_to(ygt == np.zeros((self.pgt, 1)))
-            if self.pet > 0:
-                opti.subject_to(yet == np.zeros((self.pet, 1)))
+            for p in model.pze_set:
+                model.add_component(f"pze_con_{k}_{p}", pyo.Constraint(rule = yze[p] == 0))
+
+            for i in range(self.pgt):
+                model.add_component(f"pgt_con_{k}_{i}", pyo.Constraint(rule = ygt[i] == 0))
+
+            for i in range(self.pet):
+                model.add_component(f"pet_con_{k}_{i}", pyo.Constraint(rule = yet[i] == 0))
 
             if self.grid_curtail_mod:
                 step_obj, step_obj_terms = self.objective_step(
-                    x_var[:, i],
-                    uct_var[:, i],
-                    usp_var[:, i],
+                    x_k,
+                    uct_k,
+                    usp_k,
                     yco,
                     yexk,
-                    gridcurtail=gridcurtail[:,i],
+                    gridcurtail=ucur_k,
                     var_inds=objective_var_inds,
                 )
             else:
+                pass
 
-                step_obj, step_obj_terms = self.objective_step(
-                    x_var[:, i],
-                    uct_var[:, i],
-                    usp_var[:, i],
-                    yco,
-                    yexk,
-                    curtail=curtail[:, i],
-                    grid=grid_purchase[:, i],
-                    var_inds=objective_var_inds,
-                )
             objective += step_obj
             objective_terms.append(step_obj_terms)
 
-            # opti.subject_to(yco >= self.bounds["y_lb"])
-            # opti.subject_to(yco <= self.bounds["y_ub"])
-
-        # if self.allow_curtail_forecast:
-        # opti.subject_to(curtail <= dex_param)
-        # opti.subject_to(curtail >= np.zeros(curtail.shape))
-
-        # Bounds
-        # Add constraint
-        # Objective
-        # opti.minimize(self.objective(x_var, uct_var, usp_var, yex_var, curtail))
-        opti.minimize(objective)
+        model.obj = pyo.Objective(expr = objective, sense = "minimize")
 
         self.obj_terms = {}
         self.obj_terms_uw = {}
@@ -433,44 +418,28 @@ class DispatchModelPredictiveController:
             self.obj_terms.update({term: obj_term})
             self.obj_terms_uw.update({term: obj_term_uw})
 
-        # for j in range(len(objective_terms[0])):
-        #     obj_term = 0
-        #     # term_label = self.objective_labels[j]
-        #     term_label = list(objective_terms[0].keys())[j]
-        #     for i in range(len(objective_terms)):
-
-        #         obj_term += objective_terms[i][j]
-
-        #     self.objective_terms.update({term_label: obj_term})
-
-        self.opti = opti
-        self.opt_vars = {
-            "uct": uct_var,
-            "usp": usp_var,
-            "x": x_var,
-            "yex": yex_var,
-            # "e": e_var,
-            "yco": yco_var,
-        }
-        self.opt_params = {"dex": dex_param, "x0": x0_param}
-
-        if self.grid_curtail_mod:
-
-            self.opt_vars.update({"gridcurtail": gridcurtail})
-        else:
-            if self.allow_curtail_forecast:
-                self.opt_vars.update({"curtail": curtail})
-            else:
-                self.opt_params.update({"curtail": curtail})
-
-            if self.allow_grid_purchase:
-                self.opt_vars.update({"grid": grid_purchase})
-            else:
-                self.opt_params.update({"grid": grid_purchase})
+        self.model = model
+        []
+        
+    def matmul(self, A, x):
+        y = []
+        for i in range(A.shape[0]):
+            row = 0
+            for j in range(A.shape[1]):
+                row += A[i, j] * x[j]
+            y.append(row)
+        return(y)
+    
+    def vecsum(self, vecs):
+        sumvec = []
+        for i in range(len(vecs[0])):
+            vsum = 0
+            for j in range(len(vecs)):
+                vsum += vecs[j][i]
+            sumvec.append(vsum)
+        return sumvec
 
     def get_objective_var_inds(self):
-                # Set up indices for objective terms flexibly
-
         def find_index(label, index_list):
             indices = [i for i in range(len(index_list)) if label in index_list[i]]
             # print(indices)
@@ -480,10 +449,6 @@ class DispatchModelPredictiveController:
         objective_var_inds = {}
 
         if "battery" in self.node_order:
-            # uct_charge_bes = find_index("uct 0 battery", self.mct_label)
-            # uct_discharge_bes = find_index("uct 1 battery", self.mct_label)
-            # x_bes = find_index("x 0 battery", self.n_label)
-
             objective_var_inds.update(
                 {
                     "uct_charge_bes": find_index("uct 0 battery", self.mct_label),
@@ -493,10 +458,6 @@ class DispatchModelPredictiveController:
             )
 
         if "hydrogen_storage" in self.node_order:
-            # uct_charge_h2s = find_index("uct 0 hydrogen_storage", self.mct_label)
-            # uct_discharge_h2s = find_index("uct 1 hydrogen_storage", self.mct_label)
-            # x_h2s = find_index("x 0 hydrogen_storage", self.n_label)
-
             objective_var_inds.update(
                 {
                     "uct_charge_h2s": find_index(
@@ -510,9 +471,6 @@ class DispatchModelPredictiveController:
             )
 
         if "thermal_energy_storage" in self.node_order:
-            # uct_charge_tes = find_index("uct 0 thermal_energy_storage", self.mct_label)
-            # uct_discharge_tes = find_index( "uct 1 thermal_energy_storage", self.mct_label   )
-            # x_tes = find_index("x 0 thermal_energy_storage", self.n_label)
             objective_var_inds.update(
                 {
                     "uct_charge_tes": find_index(
@@ -525,69 +483,68 @@ class DispatchModelPredictiveController:
                 }
             )
         return objective_var_inds
-
+            
     def step_control_model(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
 
         if self.use_NL_electrolzyer:
             return self.step_control_model_NL(x_var, uct_var, usp_var, dex_param, grid_curtail)
-        xkp1 = (
-                self.A @ x_var
-                + self.Bct @ uct_var
-                + self.Bsp @ usp_var
-                + self.Eex @ (dex_param + grid_curtail)
-            )
+
+        xkp1 = self.vecsum([
+            self.matmul(self.A, x_var),
+            self.matmul(self.Bct, uct_var),
+            self.matmul(self.Bsp, usp_var),
+            self.matmul(self.Eex, [(dex_param[0] + grid_curtail)]),
+        ])
         # external outputs
-        yexk = (
-                self.Cex @ x_var
-                + self.Dexct @ uct_var
-                + self.Dexsp @ usp_var
-                + self.Fexex @ (dex_param + grid_curtail)
-            )
+        yexk = self.vecsum([
+            self.matmul(self.Cex, x_var),
+            self.matmul(self.Dexct, uct_var),
+            self.matmul(self.Dexsp, usp_var),
+            self.matmul(self.Fexex, [(dex_param[0] + grid_curtail)]),
+        ])
 
         # coupling outputs
-        yco = (
-                self.Cco @ x_var
-                + self.Dcoct @ uct_var
-                + self.Dcosp @ usp_var
-                + self.Fcoex @ (dex_param + grid_curtail)
-            )
+        yco = self.vecsum([
+            self.matmul(self.Cco, x_var),
+            self.matmul(self.Dcoct, uct_var),
+            self.matmul(self.Dcosp, usp_var),
+            self.matmul(self.Fcoex, [(dex_param[0] + grid_curtail)]),
+        ])
 
         # Splitting constraint zero outputs
-        yze = (
-                self.Cze @ x_var
-                + self.Dzect @ uct_var
-                + self.Dzesp @ usp_var
-                + self.Fzeex @ (dex_param + grid_curtail)
-            )
+        yze = self.vecsum([
+            self.matmul(self.Cze, x_var),
+            self.matmul(self.Dzect, uct_var),
+            self.matmul(self.Dzesp, usp_var),
+            self.matmul(self.Fzeex, [(dex_param[0] + grid_curtail)]),
+        ])
 
         # greater than 0 constraint outputs
-        ygt = (
-                self.Cgt @ x_var
-                + self.Dgtct @ uct_var
-                + self.Dgtsp @ usp_var
-                + self.Fgtex @ (dex_param + grid_curtail)
-            )
+        ygt = self.vecsum([
+            self.matmul(self.Cgt, x_var),
+            self.matmul(self.Dgtct, uct_var),
+            self.matmul(self.Dgtsp, usp_var),
+            self.matmul(self.Fgtex, [(dex_param[0] + grid_curtail)]),
+        ])
 
         # equal to 0 constraint outputs
-        yet = (
-                self.Cet @ x_var
-                + self.Detct @ uct_var
-                + self.Detsp @ usp_var
-                + self.Fetex @ (dex_param + grid_curtail)
-            )
-
+        yet = self.vecsum([
+            self.matmul(self.Cet, x_var),
+            self.matmul(self.Detct, uct_var),
+            self.matmul(self.Detsp, usp_var),
+            self.matmul(self.Fetex, [(dex_param[0] + grid_curtail)]),
+        ])
         return xkp1, yexk, yco, yze, ygt, yet
 
     def nonlinear_block(self, X):
-        
-        P_el = np.ones((1, 2)) @ X
 
+        P_el = np.ones((1, 2)) @ X
 
         # Hacky for electrolyzer only right now
 
         if self.NL_EL_order == 1:
 
-            # 1st order fit 
+            # 1st order fit
             popt = np.array([0.01885931])
             Y = popt[0] * P_el
 
@@ -596,14 +553,11 @@ class DispatchModelPredictiveController:
             popt = np.array([-2.28481418e-09,  2.08294629e-02])
             Y = popt[0] * P_el ** 2 + popt[1] * P_el
         elif self.NL_EL_order == 3:
-            # 3rd order fit 
+            # 3rd order fit
             popt = np.array([ 1.28840632e-15, -4.33591254e-09,  2.15782895e-02])
             Y = popt[0] * P_el ** 3 + popt[1] * P_el**2 + popt[2] * P_el
 
-
         return Y
-
-     
 
     def step_control_model_NL(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
 
@@ -625,7 +579,6 @@ class DispatchModelPredictiveController:
         Y_block = ca.MX(len(self.rows_li) + len(self.rows_nl), 1)
         Y_block[self.rows_li, :] = Y_block_li
         Y_block[self.rows_nl, :] = Y_block_nl
-
 
         # Y_block = self.block_ss @ ca.vertcat(x_var, uct_var, usp_var, dex_param+ grid_curtail)
 
@@ -659,39 +612,15 @@ class DispatchModelPredictiveController:
 
         # output_tracking = (ref_steel - yex) ** 2
         obj_terms.update(
-            {"output_tracking": {"w": 1e9, "expr": (self.reference - yex) ** 2}}
+            {"output_tracking": {"w": 1e9, "expr": (self.reference - yex[0]) ** 2}}
         )
 
         if self.grid_curtail_mod:
             obj_terms.update({"gridcurtail": {"w": 1e-4, "expr": gridcurtail**2}})
         else:
             obj_terms.update({"curtail": {"w": 1e-4, "expr": curtail**2}})
-            # grid_purchase = grid
             obj_terms.update({"grid_purchase": {"w": 1e-4, "expr": grid**2}})
             obj_terms.update({"gen_simultaneous": {"w": 1, "expr": curtail * grid}})
-
-        # Sloppy terms for better tracking
-        # h2_ref = (
-        #     self.reference / self.G.nodes["steel"]["ionode"].model.control_model.F
-        # )[0, 1]
-        # P_ref = -self.G.nodes["steel"]["ionode"].model.control_model.F_gt[0, 1] * h2_ref
-        # Q_ref = (
-        #     -self.G.nodes["heat_exchanger"]["ionode"].model.control_model.F_gt[0, 0]
-        #     * h2_ref
-        # )
-
-        # obj_terms.update(
-        #     {"h2_ref": {"w": 1e0, "expr": ((usp[8] + uct[5]) - h2_ref) ** 2}}
-        # )
-        # term_keys.append("h2_ref")
-
-        # obj_terms.update(
-        #     {"P_ref": {"w": 1e0, "expr": ((usp[3] + usp[6]) - P_ref) ** 2}}
-        # )
-        # term_keys.append("P_ref")
-
-        # obj_terms.update({"Q_ref": {"w": 1e0, "expr": (uct[3] - h2_ref) ** 2}})
-        # term_keys.append("Q_ref")
 
         if "battery" in self.node_order:
             simu = uct[var_inds["uct_charge_bes"]] * uct[var_inds["uct_discharge_bes"]]
@@ -699,11 +628,8 @@ class DispatchModelPredictiveController:
 
             state = (x[var_inds["x_bes"]] - self.ref_bes_state) ** 2
             obj_terms.update({"bes_state": {"w": self.weight_bes_state, "expr": state}})
-            # state = (x[var_inds["x_bes"]] - (2e6 - 4e5)) ** 2
-            # obj_terms.update({"bes_state": {"w": 1e-8, "expr": state}})
 
             term_keys.append("bes_simultaneous")
-            # term_keys.append("bes_state")
 
         if "hydrogen_storage" in self.node_order:
             simu = uct[var_inds["uct_charge_h2s"]] * uct[var_inds["uct_discharge_h2s"]]
@@ -711,11 +637,8 @@ class DispatchModelPredictiveController:
 
             state = (x[var_inds["x_h2s"]] - self.ref_h2s_state) ** 2
             obj_terms.update({"h2s_state": {"w": self.weight_h2s_state, "expr": state}})
-            # state = (x[var_inds["x_h2s"]] - (812209 / 2)) ** 2
-            # obj_terms.update({"h2s_state": {"w": 1e-7, "expr": state}})
 
             term_keys.append("h2s_simultaneous")
-            # term_keys.append("h2s_state")
 
         if "thermal_energy_storage" in self.node_order:
             simu = uct[var_inds["uct_charge_tes"]] * uct[var_inds["uct_discharge_tes"]]
@@ -723,8 +646,6 @@ class DispatchModelPredictiveController:
 
             state = (x[var_inds["x_tes"]] - self.ref_tes_state) ** 2
             obj_terms.update({"tes_state": {"w": self.weight_tes_state, "expr": state}})
-            # state = (x[var_inds["x_tes"]] - 6.4e6 / 2) ** 2
-            # obj_terms.update({"tes_state": {"w": 1e-9, "expr": state}})
 
             if self.weights["tes_simultaneous"] > 0:
                 term_keys.append("tes_simultaneous")
@@ -736,9 +657,6 @@ class DispatchModelPredictiveController:
                 if key in obj_terms:
                     obj_terms[key]["w"] = self.weights[key]
 
-            # for term in term_keys:
-            #     if term in self.weights.keys():
-            #         obj_terms[term]["w"] = self.weights[term]
 
         if hasattr(self, "term_keys"):
             obj_term_keys = self.term_keys
@@ -752,19 +670,13 @@ class DispatchModelPredictiveController:
         obj_terms.update({"objective": {"w": 1, "expr": objective}})
         return objective, obj_terms
 
-
     def update_optimization_parameters(self, x0, src_forecast):
-        self.opti.set_value(self.opt_params["dex"], src_forecast)
-        self.opti.set_value(self.opt_params["x0"], x0)
-        if not self.allow_curtail_forecast:
-            self.opti.set_value(
-                self.opt_params["curtail"], np.zeros(self.opt_params["curtail"].shape)
-            )
 
-        if not self.allow_grid_purchase:
-            self.opti.set_value(
-                self.opt_params["grid"], np.zeros(self.opt_params["grid"].shape)
-            )
+        for n in self.model.n_set:
+            self.model.x0[n].set_value(x0[n])
+
+        for k in self.model.k:
+            self.model.dex[0,k].set_value(src_forecast[k])
 
     def compute_trajectory(self, x0, forecast, step_index=0, ret_obj=False):
         # =============================================================================
@@ -841,221 +753,48 @@ class DispatchModelPredictiveController:
             if self.warm_start_with_previous_solution:
                 if hasattr(self, "x_init"):  # then try to update initial guess
 
+                #     self.opti.set_initial(self.opt_vars["uct"][:, :overlap] , self.uc_init[:, -overlap:])
+                #     self.opti.set_initial(self.opt_vars["usp"][:, :overlap] , self.us_init[:, -overlap:])
+                #     self.opti.set_initial(self.opt_vars["x"][:, :overlap] , self.x_init[:, -overlap:])
+                #     self.opti.set_initial(self.opt_vars["yex"][:, :overlap] , self.ys_init[:, -overlap:])
+
                     overlap = self.horizon - (step_index - self.step_index_store[-1])
-                    self.opti.set_initial(self.opt_vars["uct"][:, :overlap] , self.uc_init[:, -overlap:])
-                    self.opti.set_initial(self.opt_vars["usp"][:, :overlap] , self.us_init[:, -overlap:])
-                    self.opti.set_initial(self.opt_vars["x"][:, :overlap] , self.x_init[:, -overlap:])
-                    self.opti.set_initial(self.opt_vars["yex"][:, :overlap] , self.ys_init[:, -overlap:])
+                    for k in range(overlap):
+                        for n in self.model.n_set:
+                            self.model.x[n, k].set_value(self.x_init[n, -overlap + k])
+                        
+                        for m in self.model.mct_set:
+                            self.model.uct[m, k].set_value(self.uc_init[m, -overlap + k])
+                    
+                        for m in self.model.msp_set:
+                            self.model.usp[m, k].set_value(self.us_init[m, -overlap + k])
+                        
+                        for p in self.model.pex_set:
+                            self.model.x[p, k].set_value(self.ys_init[p, -overlap + k])
 
-                    # self.opti.set_initial(self.opt_vars["uct"], self.uc_init)
-                    # self.opti.set_initial(self.opt_vars["usp"], self.us_init)
-                    # self.opti.set_initial(self.opt_vars["x"], self.x_init)
-                    # self.opti.set_initial(self.opt_vars["yex"], self.ys_init)
 
-            try:
 
-                # t0 = time.time()
+                pass    
 
-                sol = self.opti.solve()
 
-                # t1 = time.time()
-                # print(self.s_opts)
-                # print(f"Solution took: {t1-t0:.4f} seconds")
+            self.solver.solve(self.model)
 
-            except:
 
-                with Capturing() as output:
-                    self.opti.debug.show_infeasibilities()
 
-                # print()
+            uct = self.format_output(self.model.uct)
+            usp = self.format_output(self.model.usp)
+            x = self.format_output(self.model.x)
+            yex = self.format_output(self.model.yex)
+            yco = self.format_output(self.model.yco)
+            dex = self.format_output(self.model.dex)
 
-                output2 = []
 
-                violations = []
-
-                i = 0
-                while i < len(output):
-                    if output[i].startswith(
-                        "------- i = "
-                    ):  # new constraint description
-                        num_description = output[i + 1]
-                        line_number = output[i + 2]
-                        code_description = output[i + 3]
-                        at_description = ""
-                        # at_description = output[i + 4]
-
-                        violation = float(
-                            num_description.split("viol ")[1].split(")")[0]
-                        )
-                        violations.append(violation)
-
-                        if violation >= 1e-3:
-                            if "opti.subject" in code_description:
-                                code_desc = code_description.split("opti.subject_to(")[
-                                    1
-                                ][:-1]
-                            else:
-                                code_desc = ""
-
-                            print_line = (
-                                str(num_description).ljust(45)
-                                + code_desc.ljust(130)
-                                + at_description
-                            )
-                            pprint.pprint(print_line, width=200)
-
-                            # print(code_description)
-                        i += 4
-                    i += 1
-
-                self.plot_trajectory_generic(self.opti.debug, forecast)
-
-                # x_db = get_sol_value(self.opti.debug, self.opt_vars["x"]) 
-                # uc_db = get_sol_value(self.opti.debug, self.opt_vars["uct"])
-                # us_db = get_sol_value(self.opti.debug, self.opt_vars["usp"])
-                # ys_db = get_sol_value(self.opti.debug, self.opt_vars["yex"])
-                # yco_db = get_sol_value(self.opti.debug, self.opt_vars["yco"])
-                # if self.grid_curtail_mod:
-                #     gridcurtail = get_sol_value(self.opti.debug, self.opt_vars["gridcurtail"])
-                #     grid_db = np.where(gridcurtail >= 0, gridcurtail, 0)
-                #     curtail_db = np.where(gridcurtail <= 0, -gridcurtail, 0)
-                # else:
-
-                #     curtail_db = get_sol_value(self.opti.debug, self.opt_vars["curtail"])
-                #     grid_db = get_sol_value(self.opti.debug, self.opt_vars["grid"])
-
-                # fig, ax = plt.subplots(
-                #     np.max(
-                #         [
-                #             uc_db.shape[0],
-                #             us_db.shape[0],
-                #             x_db.shape[0],
-                #             ys_db.shape[0],
-                #             yco_db.shape[0],
-                #         ]
-                #     ),
-                #     5,
-                #     sharex="all",
-                #     layout="constrained",
-                # )
-
-                # to_plot = [x_db, uc_db, us_db, ys_db, yco_db]
-                # titles = [
-                #     self.n_label,
-                #     self.mct_label,
-                #     self.msp_label,
-                #     self.pex_label,
-                #     self.pco_label,
-                # ]
-                # for i in range(len(to_plot)):
-                #     # ax[0, i].set_title(titles[i])
-                #     for j in range(len(to_plot[i])):
-                #         ax[j, i].plot(to_plot[i][j, :])
-                #         ax[j, i].set_title(titles[i][j])
-
-                #         if (i == 0) or (i == 1):
-                #             if i == 0:
-                #                 lb = self.bounds["x_lb"]
-                #                 ub = self.bounds["x_ub"]
-                #             elif i == 1:
-                #                 lb = self.bounds["u_lb"]
-                #                 ub = self.bounds["u_ub"]
-
-                #             ylim = ax[j, i].get_ylim()
-                #             ax[j, i].axhline(lb[j], color="black", linewidth=0.75)
-                #             ax[j, i].axhline(ub[j], color="black", linewidth=0.75)
-                #             ax[j, i].set_ylim(ylim)
-
-                # ax[-1, 0].set_title("Forecast and curtail")
-                # ax[-1, 0].plot(forecast)
-                # ax[-1, 0].plot(forecast - curtail_db)
-                # ax[-1, 0].plot(forecast - curtail_db + grid_db)
-
-                np.set_printoptions(linewidth=200, suppress=True, precision=4)
-
-                # if not self.debug_mode:
-                #     self.save_state_for_debug(x0, forecast, step_index)
-
-                assert np.max(np.abs(violations)) <= 1e-3
-
-                self.bad_solve_count += 1
-                self.bad_solve_step.append(step_index)
-                self.bad_solve_violation.append(np.max(np.abs(violations)))
-                sol = self.opti.debug
-
-                plt.close()
-
-            self.prev_sol = sol
-
-            try:
-                jac_uct = sol.value(ca.jacobian(self.opti.f, self.opt_vars["uct"]))
-                jac_usp = sol.value(ca.jacobian(self.opti.f, self.opt_vars["usp"]))
-                jac_x = sol.value(ca.jacobian(self.opti.f, self.opt_vars["x"]))
-                jac_yex = sol.value(ca.jacobian(self.opti.f, self.opt_vars["yex"]))
-                # jac_yco = sol.value(ca.jacobian(self.opti.f, self.opt_vars["uct"]))
-
-                jac = sol.value(ca.jacobian(self.opti.f, self.opti.x)).toarray()[0]
-                # jac = self.opti.debug.value(ca.jacobian(self.opti.debug.f, self.opti.debug.x)).toarray()[0]
-                assert (np.abs(jac) < 1).any()
-                # True
-            except:
-                np.set_printoptions(linewidth=200, suppress=True, precision=4)
-
-                uc_slice = slice(0, self.mct * self.horizon)
-                us_slice = slice(
-                    self.mct * self.horizon, (self.mct + self.msp) * self.horizon
-                )
-                x_slice = slice(
-                    (self.mct + self.msp) * self.horizon,
-                    (self.mct + self.msp) * self.horizon + self.n * (self.horizon + 1),
-                )
-                ys_slice = slice(
-                    (self.mct + self.msp) * self.horizon + self.n * (self.horizon + 1),
-                    (self.mct + self.msp) * self.horizon
-                    + self.n * (self.horizon + 1)
-                    + self.pse * self.horizon,
-                )
-
-                jac_uc = np.reshape(jac[uc_slice], (self.horizon, self.mc))
-                jac_us = np.reshape(jac[us_slice], (self.horizon, self.ms))
-                jac_x = np.reshape(jac[x_slice], (self.horizon + 1, self.n))
-                jac_ys = np.reshape(jac[ys_slice], (self.horizon, self.pse))
-
-                self.print_block_matrices(
-                    mat=[[jac_uc, jac_us, jac_x[0 : self.horizon, :], jac_ys]],
-                    in_labels=["jac uc", "jac us", "jac x", "jac yex"],
-                    out_labels=[f"step {i}" for i in range(self.horizon)],
-                )
-
-                []
-
-            # self.opti.debug.value_parameters()
-            # self.opti.debug.value_variables()
-            # self.opti.debug.stats()
-            # self.opti.debug.arg()
-            # self.opti.debug.constraints()
-            # self.opti.debug.show_infeasibilities()
-
-            uct = get_sol_value(sol, self.opt_vars["uct"])
-            usp = get_sol_value(sol, self.opt_vars["usp"])
-            x = get_sol_value(sol, self.opt_vars["x"])
-            yex = get_sol_value(sol, self.opt_vars["yex"])
-            yco = get_sol_value(sol, self.opt_vars["yco"])
-            dex = get_sol_value(sol, self.opt_params["dex"])   #[None, :]
             if self.grid_curtail_mod:
-                gridcurtail = get_sol_value(sol, self.opt_vars["gridcurtail"])
+                gridcurtail = self.format_output(self.model.ucur)
                 grid = np.where(gridcurtail >= 0, gridcurtail, 0)
                 curtail = np.where(gridcurtail <= 0, -gridcurtail, 0)
             else:
-                if self.allow_curtail_forecast:
-                    curtail = get_sol_value(sol, self.opt_vars["curtail"])
-                else:
-                    curtail = get_sol_value(sol, self.opt_params["curtail"])
-                if self.allow_grid_purchase:
-                    grid = get_sol_value(sol, self.opt_vars["grid"])
-                else:
-                    grid = get_sol_value(sol, self.opt_params["grid"])
-
+                pass
 
             self.curtail_storage[step_index : step_index + self.horizon] = curtail
 
@@ -1074,14 +813,8 @@ class DispatchModelPredictiveController:
             dco = self.M_dco_yco @ ysp
 
             ysp = np.concatenate([ysp, yex])
-
-            obj_values = {
-                key: sol.value(self.obj_terms[key]) for key in self.obj_terms.keys()
-            }
-            obj_values_uw = {
-                key: sol.value(self.obj_terms_uw[key])
-                for key in self.obj_terms_uw.keys()
-            }
+            obj_values = {key: pyo.value(self.obj_terms[key]) for key in self.obj_terms.keys()}
+            obj_values_uw = {key: pyo.value(self.obj_terms_uw[key]) for key in self.obj_terms_uw.keys()}
 
             self.store_solution(
                 step_index=step_index,
@@ -1099,18 +832,33 @@ class DispatchModelPredictiveController:
                 objective_uw=obj_values_uw,
             )
 
-
-
             # u_split = usp[:, 0]
             # if not self.debug_mode:
             #     self.save_state_for_debug(x0, forecast, step_index)
 
             if ret_obj: 
 
-
                 return uct, usp, curtail, grid, obj_values_uw
             else:
                 return uct, usp, curtail, grid
+            
+    def format_output(self, var):
+        if not isinstance(var, dict):
+            try:
+                var = var.extract_values()
+            except:
+                AssertionError("error")
+
+        key_list = list(var.keys())
+
+        var_shape = np.max(np.stack(list(var.keys())), axis=0) + 1
+        var_out = np.zeros(var_shape)
+
+        for key in var.keys():
+            var_out[*key] = var[key]
+
+        return var_out
+
 
     def save_state_for_debug(self, x0, forecast, step_index):
 
@@ -1241,8 +989,6 @@ class DispatchModelPredictiveController:
 
         self.block_ss = np.array(state_dict["block_ss"])
 
-
-
         []
 
     def plot_trajectory_generic(self, prob:ca.Opti, forecast):
@@ -1312,9 +1058,6 @@ class DispatchModelPredictiveController:
         ax[-1, 0].plot(forecast)
         ax[-1, 0].plot(forecast - curtail_db)
         ax[-1, 0].plot(forecast - curtail_db + grid_db)
-
-
-
 
     def plot_trajectory(self, step_index=None):
 
@@ -2062,13 +1805,11 @@ class DispatchModelPredictiveController:
                     yco_ub.append(j)
         self.yco_ub_ind = np.sort(yco_ub)
 
-
         self.uct_order = uct_order
         self.usp_order = usp_order
 
         self.linear_cols_dict = linear_cols_coupled
         self.linear_rows_dict = linear_rows_coupled
-
 
         cols_li = []
         cols_nl = []
@@ -2095,8 +1836,6 @@ class DispatchModelPredictiveController:
                 row_count += 1
         self.rows_li = np.array(rows_li)[:, None]
         self.rows_nl = np.array(rows_nl)[:, None]
-
-
 
         # self.solve_steady_reference()
 
@@ -2478,7 +2217,6 @@ class DispatchModelPredictiveController:
             # plot_one(ax[i, 4], self.ysp_store, y_inds)
             # ax[i, 4].set_ylim(ax[i, 3].get_ylim())
 
-
             if node == "generation":
                 forecast_curtail_grid = [
                     np.concatenate([self.forecast_store[i], self.forecast_store[i] - self.curtail_store[i], self.forecast_store[i] + self.grid_store[i]])
@@ -2487,7 +2225,6 @@ class DispatchModelPredictiveController:
                 ]
 
                 plot_one(ax[i, 0], forecast_curtail_grid, np.array([0, 1, 2]))
-
 
             fig.align_ylabels()
 
@@ -2504,3 +2241,82 @@ class Capturing(list):
         self.extend(self._stringio.getvalue().splitlines())
         del self._stringio  # free up some memory
         sys.stdout = self._stdout
+
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+
+    from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
+    from greenheart.simulation.realtime_simulation import RealTimeSimulation
+    from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import    DispatchModelPredictiveController as mpc_ca
+    from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc_pyomo import DispatchModelPredictiveController
+    from hopp.simulation.technologies.sites.site_info import SiteInfo
+
+    config_root = Path(
+        "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/greenHEART/input-files"
+    )
+
+    fname_hopp_config = str(config_root / "plant/hopp_config_mn.yaml")
+    fname_greenheart_config = str(config_root / "plant/greenheart_config_onshore_mn.yaml")
+    fname_turbine_config = str(
+        config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml"
+    )
+    fname_floris_config = str(config_root / "floris/floris_input_lbw_6MW.yaml")
+
+    config = GreenHeartSimulationConfig(
+        fname_hopp_config,
+        fname_greenheart_config,
+        fname_turbine_config,
+        fname_floris_config,
+        verbose=False,
+        show_plots=False,
+        save_plots=False,
+        use_profast=True,
+        post_processing=True,
+        incentive_option=1,
+        plant_design_scenario=1,
+        output_level=8,
+    )
+
+    hopp_site = SiteInfo(**config.hopp_config["site"])
+
+
+    class hopp_system:
+        def __init__(self, site):
+            self.site = site
+
+
+    class hopp_interface:
+        def __init__(self, site):
+            self.system = hopp_system(site)
+
+
+    hi = hopp_interface(hopp_site)
+    simulator = RealTimeSimulation(config, hi)
+
+    mpc_config = config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
+
+    # mpc_config["weights"]["output_tracking"] *= 1e-7
+
+    horizon = 3
+    mpc_config["horizon"] = horizon
+    mpc = DispatchModelPredictiveController(
+        config,
+        simulator.G,
+        node_order=simulator.node_order,
+        edge_order=simulator.edge_order,
+        mpc_config=mpc_config,
+    )
+    mpc.warm_start_with_previous_solution = False
+    mpc.no_shortfall = False
+
+    x0 = np.array([1800000.   , 3238578.913,  783000.   ])
+    forecast = np.array([ 94841.828,  81526.197, 118532.144, 111062.737, 235747.435, 234696.2  ])
+
+    # mpc.update_optimization_parameters(x0, forecast)
+    uct, usp, curtail, grid, obj_values_uw = mpc.compute_trajectory(x0, forecast, ret_obj=True)
+
+
+
+    []
