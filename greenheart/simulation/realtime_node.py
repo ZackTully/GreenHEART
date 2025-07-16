@@ -60,6 +60,7 @@ class Node:
             self.u_passthrough_store = np.zeros((8760, np.sum(self.input_list)))
             self.disturbance_store = np.zeros((8760, np.sum(self.input_list)))
 
+
         if self.name == "generation":
             self.u_curtail_store = np.zeros((8760, 1))
             self.disturbance_store = np.zeros((8760, 1))
@@ -127,6 +128,9 @@ class Node:
             self.disturbance_store[step_index, :] = model_disturbance
 
     def store_passthrough(self, u_passthrough=None, step_index=0):
+        # if self.inputs["T"]:
+        #     self.u_passthrough_store[step_index, :] = u_passthrough[0:3]
+        # else:
         self.u_passthrough_store[step_index, :] = u_passthrough
 
     def store_curtail(self, u_curtail=None, split_curtail=None, step_index=0):

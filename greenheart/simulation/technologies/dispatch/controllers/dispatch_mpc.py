@@ -33,16 +33,39 @@ class DispatchModelPredictiveController:
         debug_mode=False,
     ):
 
-        # Option flags
-        self.use_config_weights = True
         self.debug_mode = debug_mode
-        self.warm_start_with_previous_solution = True
-        self.use_NL_electrolzyer = False
-        self.NL_EL_order = 1
-        self.only_bounded_yco = True
-        self.no_shortfall = True
-        self.terminal_cost = True
-        self.terminal_constraint = False
+
+        if mpc_config is not None:
+            options = mpc_config["options"]
+
+
+            # Option flags
+            self.use_config_weights = options["use_config_weights"]
+            self.warm_start_with_previous_solution = options["warm_start"]
+            self.use_NL_electrolzyer = options["use_NL_electrolyzer"]
+            self.NL_EL_order = options["NL_order"]
+            self.only_bounded_yco = options["only_bounded_yco"]
+            self.no_shortfall = options["no_shortfall"]
+            self.terminal_cost = options["terminal_cost"]
+            self.terminal_constraint = options["terminal_constraint"]
+
+        else:
+
+            # Option flags
+            self.use_config_weights = True
+            self.warm_start_with_previous_solution = True
+            self.use_NL_electrolzyer = False
+            self.NL_EL_order = 1
+            self.only_bounded_yco = True
+            self.no_shortfall = True
+            self.terminal_cost = True
+            self.terminal_constraint = False
+
+
+
+
+
+
 
         # if self.no_shortfall:
         #     print(f"{self.no_shortfall = }")
@@ -50,6 +73,8 @@ class DispatchModelPredictiveController:
         # if self.use_NL_electrolzyer:
         #     print(f"{self.use_NL_electrolzyer = }, {self.NL_EL_order = }")
 
+        # print(f"{self.terminal_cost = }")
+ 
         self.p_opts = p_opts
         self.s_opts = s_opts
 
@@ -155,6 +180,20 @@ class DispatchModelPredictiveController:
         self.bad_solve_violation = []
         self.prev_sol = None
 
+
+    def set_no_shortfall_bool(self, no_shortfall:bool):
+        self.no_shortfall = no_shortfall
+        self.setup_optimization()
+
+    def set_use_NL_electrolyzer(self, use_NL:bool):
+        self.use_NL_electrolzyer = use_NL
+        self.setup_optimization()
+
+    def set_terminal_cost_bool(self, terminal_bool):
+        self.terminal_cost = terminal_bool
+        self.setup_optimization()
+
+
     def setup_solution_storage(self):
         self.step_index_store = []
         self.uct_store = []
@@ -163,6 +202,7 @@ class DispatchModelPredictiveController:
         self.yex_store = []
         self.ysp_store = []
         self.forecast_store = []
+        self.x0_store = []
         self.curtail_store = []
         self.grid_store = []
         self.de_store = []
@@ -179,6 +219,7 @@ class DispatchModelPredictiveController:
         yex,
         ysp,
         forecast,
+        x0,
         curtail,
         grid_purchase,
         dex,
@@ -193,6 +234,7 @@ class DispatchModelPredictiveController:
         self.yex_store.append(np.atleast_2d(yex))
         self.ysp_store.append(np.atleast_2d(ysp))
         self.forecast_store.append(np.atleast_2d(forecast))
+        self.x0_store.append(np.atleast_2d(x0))
         self.curtail_store.append(np.atleast_2d(curtail))
         self.grid_store.append(np.atleast_2d(grid_purchase))
         self.de_store.append(np.atleast_2d(dex))
@@ -350,9 +392,9 @@ class DispatchModelPredictiveController:
             objective += step_obj
             objective_terms.append(step_obj_terms)
 
+        terminal_obj, terminal_terms = self.terminal_objective(xkp1)
+        
         if self.terminal_cost:
-            terminal_obj, terminal_terms = self.terminal_objective(xkp1)
-
             objective += terminal_obj
 
 
@@ -375,14 +417,13 @@ class DispatchModelPredictiveController:
             self.obj_terms.update({term: obj_term})
             self.obj_terms_uw.update({term: obj_term_uw})
 
-        if self.terminal_cost:
-            # TODO
-            for term in terminal_terms.keys():
-                expr = terminal_terms[term]["expr"]
-                w = terminal_terms[term]["w"]
 
-                self.obj_terms.update({term: w * expr})
-                self.obj_terms_uw.update({term: expr})
+        for term in terminal_terms.keys():
+            expr = terminal_terms[term]["expr"]
+            w = terminal_terms[term]["w"]
+
+            self.obj_terms.update({term: w * expr})
+            self.obj_terms_uw.update({term: expr})
 
         self.opti = opti
         self.opt_vars = {
@@ -765,6 +806,7 @@ class DispatchModelPredictiveController:
                 yex=yex,
                 ysp=ysp,
                 forecast=forecast,
+                x0=x0,
                 curtail=curtail,
                 grid_purchase=grid,
                 dex=dex,
