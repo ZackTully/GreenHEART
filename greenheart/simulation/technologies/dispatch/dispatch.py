@@ -287,7 +287,7 @@ class GreenheartDispatch:
 
         G = G_dispatch
         error_flag = False
-        if step_index > 0:
+        if (step_index > 0) and (len(self.controller.step_index_store) > 0) :
             mpc_state = self.controller.x_store[-1][:, step_index - self.controller.step_index_store[-1]]
             frac_error = (np.abs(x_measured - mpc_state) / (0.5 * (x_measured + mpc_state)))
 
@@ -297,10 +297,9 @@ class GreenheartDispatch:
                 step_index - self.previous_update
                 error_flag = True
 
-
-        # x0 = np.ones((1, self.controller.n))
         x0 = x_measured
-        # forecast = np.ones(self.controller.horizon)
+
+
 
         # u_mpc = self.controller.compute_trajectory(x0, forecast)
         if not (step_index % self.update_period) or (step_index == 0) or error_flag:

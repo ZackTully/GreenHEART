@@ -2,6 +2,15 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+from pathlib import Path
+import datetime
+
+import pprint
+import logging
+from logging import handlers
+import random
+import tqdm
+from multiprocessing import current_process
 
 from typing import Union
 
@@ -10,6 +19,7 @@ import time
 from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
 from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 from greenheart.simulation.realtime_node import Node
+from greenheart.simulation.technologies.dispatch.forecast import Forecast
 
 # Greenheart imports
 
@@ -50,14 +60,23 @@ from hopp.utilities import load_yaml
 
 
 class RealTimeSimulation:
-    def __init__(self, config, hopp_interface):
+    def __init__(self, config, hopp_interface, case_description = None):
+
+        self.case_description = case_description
 
         self.verbose = True
         self.save_sysid = False
 
-
         self.config = config
         self.rts_config = self.config.greenheart_config["realtime_simulation"]
+
+        # if isinstance(self.config.greenheart_config["realtime_simulation"], dict):
+        #     self.rts_config = self.config.greenheart_config["realtime_simulation"]
+        # else:
+        #     self.rts_config = load_yaml(self.config.greenheart_config["realtime_simulation"])
+
+
+
         self.component_config = load_yaml(self.rts_config["component_config"])
         self.hi = hopp_interface
 
@@ -66,8 +85,81 @@ class RealTimeSimulation:
         else:
             self.stop_index = 8760 + 15
 
+        if "start_index" in self.rts_config:
+            self.start_index = self.rts_config["start_index"]
+        else:
+            self.start_index = 0
+
+
+        # Set up logging that writes to the topmost file
+        
+        if current_process().name == "MainProcess":
+            self.worker_id = 0
+        else:
+            self.worker_id = current_process()._identity[0]-1
+
+        # self.worker_id = 0
+
+        # self.log_id = str(self.worker_id)+": "
+
+
+        # existing_loggers = logging.getLogger().manager.loggerDict
+
+
+        # if ("sweep_logger" in existing_loggers.keys()):
+        # if "logging" in self.rts_config:
+
+        #     # sweep_logger = existing_loggers["sweep_logger"]
+        #     # sweep_logger_fname = Path(sweep_logger.handlers[0].baseFilename)
+            
+
+
+        #     datetime_string = datetime.datetime.now().strftime("%H_%M_%S")
+
+        #     # main_fname = self.rts_config["logging"]["main_fpath"].parts[-1].split(".")[0]
+        #     main_fpath  = self.rts_config["logging"]["main_fpath"]
+
+        #     main_fname = "sweeplog_" + self.rts_config["logging"]["main_datestring"] 
+
+        #     log_fname = main_fpath / "temp" / (main_fname + f"__RTS_log_{self.worker_id}_at_{datetime_string}.log")
+
+        #     # lconfig = logging.config(filename = log_fname, level=logging.INFO, format="%(message)s", force=True)
+        #     logger = logging.getLogger("RTS logger")
+        #     logger.setLevel(logging.INFO)
+        #     handler = logging.FileHandler(log_fname)
+        #     handler.setLevel(logging.INFO)
+        #     logger.addHandler(handler)
+        #     self.logger = logger
+
+        # else:
+        #     self.logger = logging.getLogger()
+
+
+        # self.logger.info(self.log_id + "Dispatch config: \n" + "="*100)
+        # self.logger.info(pprint.pformat(self.rts_config["dispatch"]))
+        # self.logger.info("="*100 + "\n")
+
+        if "logging" in self.rts_config:
+            # pprint.pprint(self.rts_config)
+            # print("logging dict")
+            # pprint.pprint(self.rts_config["logging"])
+            self.setup_logging(self.rts_config.pop("logging"))
+        else:
+            self.logger = logging.getLogger()
+
         self.setup_simulation_model(config, hopp_interface)
         self.setup_record_keeping()
+
+    def setup_logging(self, log_config):
+
+        self.logger = logging.getLogger(f"SIMULATION {log_config['case_description']}")
+        self.logger.setLevel(logging.DEBUG)
+    
+        queue_handler = handlers.QueueHandler(log_config["queue"])
+        queue_handler.setLevel(logging.DEBUG)
+        self.logger.addHandler(queue_handler)
+
+        self.logger.info("Logger initialized")
 
     def setup_simulation_model(self, config, hopp_interface):
 
@@ -330,6 +422,8 @@ class RealTimeSimulation:
 
         self.dispatcher = dispatcher
 
+
+
         self.setup_ctrl_sysid()
 
         gen_profiles = {}
@@ -347,33 +441,74 @@ class RealTimeSimulation:
         # Is there an existing method to get the hybrid generation profile from the HOPP_result
 
         hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
-
         self.hybrid_profile = hybrid_profile
+
+        self.forecast_config = self.rts_config.get("forecast",
+                                            dict(
+                                                horizon = self.dispatcher.controller.horizon,
+                                                method="perfect_method",
+                                                method_config = {}
+                                            ))
+        
+        self.forecaster = Forecast(self.forecast_config, hybrid_profile, self.config)
 
         # Loop for everything downstream of generation
         error_feedback = False
         t0 = time.time()
 
-        for i in range(len(hybrid_profile)):
+        for i in range(random.randint(1, 100)):
+            random.randint(0, 100)
+
+        # r = random.randint(0, 255)
+        # g = random.randint(0, 255)
+        # b = random.randint(0, 255)
+
+        r = int(np.random.rand() * 255)
+        g = int(np.random.rand() * 255)
+        b = int(np.random.rand() * 255)
+
+        tqdm_color = f"#{r:02x}{g:02x}{b:02x}"
+
+        total = np.min([self.stop_index, 8760]) - np.max([0, self.start_index])
+
+
+        # colors = [ "RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN", "WHITE"]
+        colors = ["#32a852", "#a010b0", "#c81b3b", "#ddac2e", "#c95517", "#2926da", "#22dcb3", "#c2b1cf"]
+        tqdm_color = colors[self.worker_id % len(colors)]
+        # with tqdm.tqdm(total=total, desc=self.case_description, position=position, colour=color, leave=False) as pbar:
+
+        for i in tqdm.tqdm(
+            range(len(hybrid_profile)),
+            desc=self.case_description,
+            position=self.worker_id + 1,
+            leave=False,
+            colour=tqdm_color,
+        ):
+        # for i in range(len(hybrid_profile)):
 
             if i > self.stop_index:
                 print("stopping at realtime simulator stop index")
                 break
 
-            if i < (len(hybrid_profile) - dispatcher.controller.horizon):
+            if i < self.start_index:
+                continue
 
-                forecast = hybrid_profile[i : i + dispatcher.controller.horizon]
-            else:
-                # forecast = np.ones(dispatcher.controller.horizon) * hybrid_profile[i]
-                forecast = np.concatenate(
-                    [
-                        hybrid_profile[i:],
-                        hybrid_profile[-1]
-                        * np.ones(
-                            dispatcher.controller.horizon - (len(hybrid_profile) - i)
-                        ),
-                    ]
-                )
+            # if i < (len(hybrid_profile) - dispatcher.controller.horizon):
+
+            #     forecast = hybrid_profile[i : i + dispatcher.controller.horizon]
+            # else:
+            #     # forecast = np.ones(dispatcher.controller.horizon) * hybrid_profile[i]
+            #     forecast = np.concatenate(
+            #         [
+            #             hybrid_profile[i:],
+            #             hybrid_profile[-1]
+            #             * np.ones(
+            #                 dispatcher.controller.horizon - (len(hybrid_profile) - i)
+            #             ),
+            #         ]
+            #     )
+            forecast = self.forecaster.get_forecast(measurement=hybrid_profile[i], step_index=i)
+
 
             x0 = self.get_state_measurement(step_index=i)
 
@@ -395,11 +530,12 @@ class RealTimeSimulation:
                 self.G, hybrid_profile[i] + grid_power, i
             )
 
-            if (not (i % 80)) and (self.verbose):
-                print(
-                    f"\r {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {(1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)) :.2f} seconds longer \t\t\t\t",
-                    end="",
-                )
+            # if (not (i % 80)) and (self.verbose):
+            #     print(
+            #         f"\r {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {(1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)) :.2f} seconds longer \t\t\t\t",
+            #         end="",
+            #     )
+            # pbar.update(1)
 
             self.record_states(i, self.G, grid_power)
             # Check on the error
@@ -481,31 +617,19 @@ class RealTimeSimulation:
                 "mpc"
             ]["reference"]
 
-            if (i >= 1) and (np.abs(y_steel - ref) / ref >= 0.5):
+        t1 = time.time()
+        self.simulation_elapsed_time = t1 - t0
 
-                pass
-
-        # print("")
-        # self.input_error = {}
-        # for node in self.node_order:
-        #     self.input_error.update(
-        #         {
-        #             node: {
-        #                 "curtail": self.G.nodes[node]["ionode"].u_curtail_store,
-        #                 "passthrough": self.G.nodes[node]["ionode"].u_passthrough_store,
-        #             }
-        #         }
-        #     )
         for node in self.G.nodes:
             if hasattr(self.G.nodes[node]["ionode"].model, "consolidate_sim_outcome"):
                 self.G.nodes[node]["ionode"].model.consolidate_sim_outcome()
-        print("")
+        # print("")
 
         self.models = {
             node: self.G.nodes[node]["ionode"].model for node in self.node_order
         }
 
-        []
+        # self.logger.info(f"Simulation took: {self.simulation_elapsed_time/60:.2f} min or {self.simulation_elapsed_time/3600:.2f} hr")
 
     def get_state_measurement(self, step_index):
         # x0 = np.zeros(len([node for node in self.node_order if (node in ["battery", "hydrogen_storage", "thermal_energy_storage"])]))
@@ -517,7 +641,7 @@ class RealTimeSimulation:
                 )
                 if state_node == "battery":
                     if model.use_hopp_outputs:
-                        if step_index == 0:
+                        if (step_index == 0) or (step_index == self.start_index):
                             state = (
                                 model.hopp_battery.config.initial_SOC
                                 / 100
@@ -1257,7 +1381,8 @@ class RealTimeSimulation:
                         alpha=1,
                         linewidth=0,
                         label=f"curtail",
-                        color=mpl.colormaps[cmaps[j]](cmap_level - 0.15),
+                        # color=mpl.colormaps[cmaps[j]](cmap_level - 0.15),
+                        color="orange"
                     )
                     start += stop
 
@@ -1371,22 +1496,22 @@ class RealTimeSimulation:
         # ax[0, 1].set_title("Heat")
         # ax[0, 2].set_title("Hydrogen")
 
-        if self.stop_index / self.dispatcher.update_period <= 50:
-            xtick_locs = np.arange(0, self.stop_index, self.dispatcher.update_period)
-            ax[-1, 0].set_xticks(xtick_locs, xtick_locs, rotation=90)
-            # ax[-1, j].tick_params(axis="x", direction="in")
-        else:
-            update_locs = np.arange(0, self.stop_index, self.dispatcher.update_period)
-            xtick_locs = np.arange(
-                0,
-                self.stop_index,
-                int(
-                    np.round(self.stop_index / 50 / self.dispatcher.update_period)
-                    * self.dispatcher.update_period
-                ),
-            )
-            ax[-1, 0].set_xticks(xtick_locs, xtick_locs, rotation=90)
-            []
+        # if self.stop_index / self.dispatcher.update_period <= 50:
+        #     xtick_locs = np.arange(0, self.stop_index, self.dispatcher.update_period)
+        #     ax[-1, 0].set_xticks(xtick_locs, xtick_locs, rotation=90)
+        #     # ax[-1, j].tick_params(axis="x", direction="in")
+        # else:
+        #     update_locs = np.arange(0, self.stop_index, self.dispatcher.update_period)
+        #     xtick_locs = np.arange(
+        #         0,
+        #         self.stop_index,
+        #         int(
+        #             np.round(self.stop_index / 50 / self.dispatcher.update_period)
+        #             * self.dispatcher.update_period
+        #         ),
+        #     )
+        #     ax[-1, 0].set_xticks(xtick_locs, xtick_locs, rotation=90)
+        #     []
 
         legend_kwargs = {
             "fontsize": 10,
@@ -1435,10 +1560,12 @@ class RealTimeSimulation:
 
                 ax[i, j].legend(handles, labels, **legend_kwargs)
 
-        if self.stop_index <= 8760:
-            ax[0, 0].set_xlim([0, self.stop_index])
-        else:
-            ax[0, 0].set_xlim([0, 8760])
+        # if self.stop_index <= 8760:
+        #     ax[0, 0].set_xlim([0, self.stop_index])
+        # else:
+        #     ax[0, 0].set_xlim([0, 8760])
+
+        ax[0, 0].set_xlim([np.max([0, self.start_index]), np.min([8760, self.stop_index])])
 
         if save:
 
@@ -1513,7 +1640,9 @@ class StandinNode:
             dispatch = np.max([0.0, dispatch[0]])
         assert dispatch >= 0
         u_curtail = dispatch
-        output = self.output - u_curtail
+        actual_curtail = min(dispatch, input[0])
+        output = self.output - actual_curtail
+        # output = self.output - u_curtail
         
         
         if output < 0:
@@ -1526,6 +1655,3 @@ class StandinNode:
         return output, u_passthrough, u_curtail
 
 
-class Forecaster:
-    def __init__(self):
-        pass

@@ -542,12 +542,12 @@ def setup_greenheart_simulation(config: GreenHeartSimulationConfig):
     return config, hi, wind_cost_results
 
 
-def run_simulation(config: GreenHeartSimulationConfig):
+def run_simulation(config: GreenHeartSimulationConfig, case_description=None):
 
     config, hi, wind_cost_results = setup_greenheart_simulation(config=config)
 
     if config.realtime_simulation:
-        simulator = RealTimeSimulation(config, hi)
+        simulator = RealTimeSimulation(config, hi, case_description)
         dispatcher = GreenheartDispatch(hi, config, simulator, dispatch_config=config.greenheart_config["realtime_simulation"]["dispatch"])
         hi.hopp.system.dispatch_builder.dispatcher = dispatcher
     else:
@@ -562,6 +562,8 @@ def run_simulation(config: GreenHeartSimulationConfig):
         ],
         verbose=config.verbose,
     )
+
+    print("done running hopp")
 
     if config.realtime_simulation:
         simulator.simulate(dispatcher, hopp_results)

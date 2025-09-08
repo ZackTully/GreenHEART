@@ -4,11 +4,6 @@ import casadi as ca
 
 
 class ControlModel:
-    # linear state space with bounds model
-
-    # state space
-
-    # bounds
 
     def __init__(
         self,
@@ -24,14 +19,6 @@ class ControlModel:
 
         # Always initialize the control model system as a single output system
         # Then split it by duplicating rows/columns of D or F and add the appropriate constraints
-
-
-        # TODO put domain of inputs and outputs
-
-
-        # Domain input matrix = [1, 0, 1, 1] where in edge time input matrix = input
-        # Domain output matrix = same thing
-
 
         self.A = A
         self.B = B
@@ -49,7 +36,6 @@ class ControlModel:
         self.u_linear = [True] * self.m
         self.y_linear = [True] * self.p
         self.d_linear = [True] * self.o
-
 
         self.x_li = np.arange(self.n)
         self.x_nl = np.arange(0)
@@ -92,8 +78,6 @@ class ControlModel:
         assert len(dict_bound) == len(self_bound), "given bounds must match the system dimensions"
         return dict_bound
     
-
-
     def constraints(self, y_position, constraint_type):
 
         self.ycon_lb = -np.inf * np.ones(len(y_position))
@@ -107,14 +91,11 @@ class ControlModel:
         # in control model, separate the input output aspects of the statespace from constraints that look like state space
 
         # >=0 system
-
         self.C_gt = [np.zeros((0, self.n))]
         self.D_gt = [np.zeros((0, self.m))]
         self.F_gt = [np.zeros((0, self.o))]
 
-
         # =0 system
-
         self.C_et = [np.zeros((0, self.n))]
         self.D_et = [np.zeros((0, self.m))]
         self.F_et = [np.zeros((0, self.o))]
@@ -135,7 +116,6 @@ class ControlModel:
             self.ycon_lb[i] = self.y_lb[y_position[i]]
             self.ycon_ub[i] = self.y_ub[y_position[i]]
 
-
             if constraint_type[i] == "greater":
                 self.C_gt.append(C_temp)
                 self.D_gt.append(D_temp)
@@ -144,7 +124,6 @@ class ControlModel:
                 self.C_et.append(C_temp)
                 self.D_et.append(D_temp)
                 self.F_et.append(F_temp)
-
 
         self.C_gt = np.concatenate(self.C_gt, axis=0)
         self.D_gt = np.concatenate(self.D_gt, axis=0)
@@ -157,14 +136,6 @@ class ControlModel:
         self.y_lb = np.delete(self.y_lb, y_position)
         self.y_ub = np.delete(self.y_ub, y_position)
 
-
-        self.update_control_model()
-
-    def update_control_model(self):
-        # Update the dimensions and such 
-        pass
-
-
     def set_disturbance_domain(self, domain_list):
         self.disturbance_domain = np.array(domain_list)
 
@@ -173,46 +144,6 @@ class ControlModel:
 
     def set_output_domain(self, domain_list):
         self.output_domain = np.array(domain_list)
-
-
- 
-
-
-    def make_splitting_node(self, out_degree):
-
-        # Dont need this anymore
-
-        # Constraint C x + D u + F d == Cs x + Ds u + Fs d
-
-        # If these are not true then we'll have to do something fancier
-        assert self.m == 1
-        assert self.p == 1
-
-        # Maybe it should be if self.o = 1 because the thing being split is the uncontrolled input usually?
-
-        # If it is not a splitting node then it will have a relationshipt y = Fd
-        # If it is a splitting node, then we want to make a diagonal D = [[F], [F], ...] and make F = 0
-        # Then say sum(u) = d and u >= 0 for all
-
-        # Call these special constraints that the MPC can grab when it is building itself
-
-        # not splitting, not controllable
-        # not splitting, yes controllable
-        # yes splitting, not controllable
-        # yes splitting, yes controllable
-
-        # For each of these: which have 0 matrices and which have non-zero
-
-
-        self.p = out_degree * self.p
-        self.m = out_degree * self.m
-
-        self.C = np.block([self.C] * out_degree)
-        self.D = scipy.linalg.block_diag(*(self.D for i in range(out_degree)))
-        self.F = np.block([self.F] * out_degree)
-
-        pass
-
 
 
 if __name__ == "__main__":

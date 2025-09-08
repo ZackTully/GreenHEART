@@ -169,7 +169,7 @@ class Node:
         
 
         if (u_split < 0).any():
-            assert np.min(u_split) >= -1
+            assert np.min(u_split) >= -1, f"{u_split = }"
             u_split = np.where(u_split < 0, 0.0, u_split)
 
         if self.splitting_method == "fractional":

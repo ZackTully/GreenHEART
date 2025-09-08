@@ -61,11 +61,15 @@ def get_inputs(
     # load eco inputs
     greenheart_config = load_yaml(filename_greenheart_config)
 
+    if isinstance(greenheart_config["realtime_simulation"], str):
+        greenheart_config["realtime_simulation"] = load_yaml(greenheart_config["realtime_simulation"])
+
+
     # convert relative filepath to absolute for HOPP ingestion
-    hopp_config['site']['solar_resource_file'] = convert_relative_to_absolute_path(filename_hopp_config, hopp_config['site']['solar_resource_file'])
-    hopp_config['site']['wind_resource_file'] = convert_relative_to_absolute_path(filename_hopp_config, hopp_config['site']['wind_resource_file'])
-    hopp_config['site']['wave_resource_file'] = convert_relative_to_absolute_path(filename_hopp_config, hopp_config['site']['wave_resource_file'])
-    hopp_config['site']['grid_resource_file'] = convert_relative_to_absolute_path(filename_hopp_config, hopp_config['site']['grid_resource_file'])
+    hopp_config['site']['solar_resource_file'] = convert_relative_to_absolute_path(filename_hopp_config, hopp_config['site'].get('solar_resource_file', ""))
+    hopp_config['site']['wind_resource_file'] = convert_relative_to_absolute_path(filename_hopp_config, hopp_config['site'].get('wind_resource_file', ""))
+    hopp_config['site']['wave_resource_file'] = convert_relative_to_absolute_path(filename_hopp_config, hopp_config['site'].get('wave_resource_file', ""))
+    hopp_config['site']['grid_resource_file'] = convert_relative_to_absolute_path(filename_hopp_config, hopp_config['site'].get('grid_resource_file', ""))
 
     ################ load plant inputs from yaml
     if filename_orbit_config != None:
