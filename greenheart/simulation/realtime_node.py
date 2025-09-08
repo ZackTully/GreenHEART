@@ -200,6 +200,32 @@ class Node:
         return outgoing_edges.T, split_curtail
 
 
+
+
+def setup_generation_node(self):
+    pass
+
+def setup_battery_node(self):
+    pass
+
+def setup_electrolyzer_node(self):
+    pass
+
+def setup_hydrogen_storage_node(self):
+    pass
+
+def setup_thermal_energy_storage_node(self):
+    pass
+
+def setup_heat_exchanger_node(self):
+    pass
+
+def setup_steel_node(self):
+    pass
+
+
+
+
 if __name__ == "__main__":
 
     step_index = 10
