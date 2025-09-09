@@ -1,5 +1,24 @@
 import numpy as np
 
+from greenheart.simulation.technologies.heat.heat_exchange.heat_exchanger import (
+    HeatExchanger,
+)
+from greenheart.simulation.technologies.heat.heat_storage.thermal_energy_storage import (
+    ThermalEnergyStorage,
+)
+from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master_STEP import (
+    run_PEM_clusters_step,
+)
+
+from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage import (
+    HydrogenStorage,
+)
+from greenheart.simulation.technologies.steel.steel import SteelModel
+
+from greenheart.simulation.technologies.electricity.battery import Battery
+from greenheart.tools.eco.utilities import ceildiv
+from greenheart.simulation.technologies.dispatch.control_model import ControlModel
+
 
 class Node:
     def __init__(
@@ -12,13 +31,15 @@ class Node:
         in_degree=None,
         out_degree=None,
     ):
-        
+
         # self.T_electrolyzer_output = 80 # [C]
-        self.T_electrolyzer_output = 20 # [C]
+        self.T_electrolyzer_output = 20  # [C]
         # self.T_hydrogen_storage_output = 80 # [C]
-        self.T_hydrogen_storage_output = 20 # [C]
+        self.T_hydrogen_storage_output = 20  # [C]
         if name == "heat_exchanger":
-            print(f"{self.T_electrolyzer_output = }, {self.T_hydrogen_storage_output = }")
+            print(
+                f"{self.T_electrolyzer_output = }, {self.T_hydrogen_storage_output = }"
+            )
         self.inputs = expected_inputs
         self.input_list = [
             self.inputs["power"],
@@ -59,7 +80,6 @@ class Node:
             self.u_curtail_store = np.zeros((8760, np.sum(self.input_list)))
             self.u_passthrough_store = np.zeros((8760, np.sum(self.input_list)))
             self.disturbance_store = np.zeros((8760, np.sum(self.input_list)))
-
 
         if self.name == "generation":
             self.u_curtail_store = np.zeros((8760, 1))
@@ -166,8 +186,6 @@ class Node:
 
     def splitting(self, model_output, u_split, step_index):
 
-        
-
         if (u_split < 0).any():
             assert np.min(u_split) >= -1, f"{u_split = }"
             u_split = np.where(u_split < 0, 0.0, u_split)
@@ -200,30 +218,212 @@ class Node:
         return outgoing_edges.T, split_curtail
 
 
+class StandinNode:
+    def __init__(self, out_degree=1):
+        self.output = 0
+        self.out_degree = 1
+        # self.out_degree = out_degree
+        self.create_control_model()
+
+    def create_control_model(self):
+        n = 0
+        m = 0
+        p = 1
+        # m = self.out_degree
+        # p = self.out_degree
+        o = 1
+
+        A = np.zeros((n, n))
+        B = np.zeros((n, m))
+        C = np.zeros((p, n))
+        D = np.zeros((p, m))
+        E = np.zeros((n, o))
+        # F = np.zeros((p, o))
+        F = np.array([[1]])
+
+        bounds_dict = {
+            "u_lb": np.array([0] * m),
+            "u_ub": np.array([None] * m),
+            "x_lb": np.array([]),
+            "x_ub": np.array([]),
+            "y_lb": np.array([0] * p),
+            "y_ub": np.array([None] * p),
+        }
+
+        self.control_model = ControlModel(
+            A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict
+        )
+
+        self.control_model.set_disturbance_domain([1, 0, 0])
+        self.control_model.set_output_domain([1, 0, 0])
+
+    def set_output(self, output):
+        self.output = output
+
+    def step(self, input, dispatch=None, step_index=None):
+
+        u_passthrough = 0
+        if dispatch >= -1:
+            dispatch = np.max([0.0, dispatch[0]])
+        assert dispatch >= 0
+        u_curtail = dispatch
+        actual_curtail = min(dispatch, input[0])
+        output = self.output - actual_curtail
+        # output = self.output - u_curtail
+
+        if output < 0:
+            if output > -1:
+                output = 0.0
+            else:
+                assert False, f"Generation node output was negative: {output:.6f} kW"
+
+        return output, u_passthrough, u_curtail
 
 
-def setup_generation_node(self):
-    pass
+def setup_generation_node(G, config, hi, component_config):
+    inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
 
-def setup_battery_node(self):
-    pass
+    out_degree = G.out_degree["generation"]
 
-def setup_electrolyzer_node(self):
-    pass
-
-def setup_hydrogen_storage_node(self):
-    pass
-
-def setup_thermal_energy_storage_node(self):
-    pass
-
-def setup_heat_exchanger_node(self):
-    pass
-
-def setup_steel_node(self):
-    pass
+    component_dict = {
+        "generation": {
+            "model": StandinNode(out_degree),
+            "model_inputs": inputs,
+            "model_outputs": outputs,
+        }
+    }
+    return component_dict
 
 
+def setup_battery_node(G, config, hi, component_config):
+    inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    component_dict = {
+        "battery": {
+            "model": Battery(
+                config=config,
+                battery_config=config.hopp_config["technologies"]["battery"],
+                hopp_interface=hi,
+            ),
+            "model_inputs": inputs,
+            "model_outputs": outputs,
+        }
+    }
+
+    return component_dict
+
+
+def setup_electrolyzer_node(G, config, hi, component_config):
+
+    electrical_generation_timeseries = np.zeros(8760)
+    electrolyzer_size_mw = config.greenheart_config["electrolyzer"]["rating"]
+    n_pem_clusters = int(
+        ceildiv(
+            electrolyzer_size_mw,
+            config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
+        )
+    )
+    electrolyzer_capex_kw = config.greenheart_config["electrolyzer"][
+        "electrolyzer_capex"
+    ]
+    electrolyzer_direct_cost_kw = electrolyzer_capex_kw
+    useful_life = config.greenheart_config["project_parameters"]["project_lifetime"]
+
+    pem_param_dict = {
+        "eol_eff_percent_loss": config.greenheart_config["electrolyzer"][
+            "eol_eff_percent_loss"
+        ],
+        "uptime_hours_until_eol": config.greenheart_config["electrolyzer"][
+            "uptime_hours_until_eol"
+        ],
+        "include_degradation_penalty": config.greenheart_config["electrolyzer"][
+            "include_degradation_penalty"
+        ],
+        "turndown_ratio": config.greenheart_config["electrolyzer"]["turndown_ratio"],
+    }
+    user_defined_pem_param_dictionary = pem_param_dict
+    verbose = False
+
+    electrolyzer_model = run_PEM_clusters_step(
+        electrical_generation_timeseries,
+        electrolyzer_size_mw,
+        n_pem_clusters,
+        electrolyzer_direct_cost_kw,
+        useful_life,
+        user_defined_pem_param_dictionary,
+        verbose=verbose,
+        step_model=config.realtime_simulation,
+    )
+
+    inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
+    component_dict = {
+        "electrolyzer": {
+            "model": electrolyzer_model,
+            "model_inputs": inputs,
+            "model_outputs": outputs,
+        }
+    }
+    return component_dict
+
+
+def setup_hydrogen_storage_node(G, config, hi, component_config):
+    inputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
+    outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
+    component_dict = {
+        "hydrogen_storage": {
+            "model": HydrogenStorage(component_config["hydrogen_storage"]),
+            "model_inputs": inputs,
+            "model_outputs": outputs,
+        }
+    }
+
+    return component_dict
+
+
+def setup_thermal_energy_storage_node(G, config, hi, component_config):
+    inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    outputs = {"power": False, "Qdot": True, "mdot": False, "T": False}
+    component_dict = {
+        "thermal_energy_storage": {
+            "model": ThermalEnergyStorage(),
+            "model_inputs": inputs,
+            "model_outputs": outputs,
+        }
+    }
+
+    return component_dict
+
+
+def setup_heat_exchanger_node(G, config, hi, component_config):
+    inputs = {"power": True, "Qdot": True, "mdot": True, "T": True}
+    outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
+    component_dict = {
+        "heat_exchanger": {
+            "model": HeatExchanger(),
+            "model_inputs": inputs,
+            "model_outputs": outputs,
+        }
+    }
+
+    return component_dict
+
+
+def setup_steel_node(G, config, hi, component_config):
+    # config = config.greenheart_config["steel"]["costs"]["feedstocks"]
+
+    inputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
+    outputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
+    component_dict = {
+        "steel": {
+            "model": SteelModel(config.greenheart_config),
+            "model_inputs": inputs,
+            "model_outputs": outputs,
+        }
+    }
+
+    return component_dict
 
 
 if __name__ == "__main__":

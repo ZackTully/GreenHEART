@@ -118,8 +118,8 @@ class run_PEM_clusters_step(run_PEM_clusters):
 
         if isinstance(input_power, (np.ndarray, list)):
             input_power = input_power[0]
-        if isinstance(dispatch, (np.ndarray, list)):
-            dispatch = dispatch[0]
+        # if isinstance(dispatch, (np.ndarray, list)):
+        #     dispatch = dispatch[0]
 
 
         self.power_in_store[step_index] = input_power

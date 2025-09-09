@@ -52,8 +52,7 @@ from greenheart.simulation.technologies.electricity.battery import Battery
 from greenheart.tools.eco.utilities import ceildiv
 from hopp.utilities import load_yaml
 
-# Utilty imports
-from hopp.utilities import load_yaml
+
 
 
 # Simulation model for greenheart components
