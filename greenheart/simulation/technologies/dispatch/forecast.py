@@ -17,13 +17,6 @@ class Forecast:
 
         self.step_index = 0
 
-        self.true_forecast = true_forecast
-        self.perfect_forecast_profile = np.concatenate(
-            [
-                self.true_forecast,
-                self.true_forecast[-1] * np.ones(self.forecast_horizon),
-            ]
-        )
 
         if greenheart_config is not None:
             self.greenheart_config = greenheart_config
@@ -33,6 +26,13 @@ class Forecast:
             if mpc_horizon != self.forecast_horizon:
                 self.forecast_horizon = mpc_horizon
 
+        self.true_forecast = true_forecast
+        self.perfect_forecast_profile = np.concatenate(
+            [
+                self.true_forecast,
+                self.true_forecast[-1] * np.ones(self.forecast_horizon*2),
+            ]
+        )
         # getattr(self, f"_setup_{self.forecast_method}")(self.config["method_config"])
 
         self.make_forecast = getattr(self, f"_make_forecast_{self.forecast_method}")
@@ -125,8 +125,61 @@ class Forecast:
     # def forecast_persistence(self):
     #     return
 
+def plot_interp_options():
+    plt.rcParams.update({
+        "text.usetex": True,
+        "font.family": "serif",
+        # "font.family": "sans-serif",
+        # "font.sans-serif": "Helvetica",
+        "font.sans-serif": "computer modern",
+    })
+    fig, ax = plt.subplots(1, 1, layout="constrained", figsize=(4, 2.75))
+    ax.spines[['top', 'right']].set_visible(False)
+    ax.spines[['bottom', 'left']].set_visible(False)
+
+    alpha = 0.5
+    horizon = 10
+    short_horizon = 6
+
+
+    interp_perfect = np.ones(horizon)
+
+    interp_persistence = np.zeros(horizon)
+
+    interp_interp = alpha * np.ones(horizon)
+
+    interp_interp_horizon_weighted = np.linspace(alpha, 0, horizon)
+
+    interp_interp_horizon_weighted_short = np.concatenate([np.linspace(alpha, 0, short_horizon), np.zeros(horizon - short_horizon)])
+
+    ax.plot(interp_perfect, label="perfect")
+    ax.plot(interp_interp, label="interpolated")
+    ax.plot(interp_interp_horizon_weighted, label="interp. horizon-weighted")
+    ax.plot(interp_interp_horizon_weighted_short, label="interp. short-weighted")
+    ax.plot(interp_persistence, label="persistence")
+    
+    ax.legend(frameon=False, labelspacing=.125, loc = "upper right", bbox_to_anchor=(1, 0.94))
+
+    ax.set_xticks(np.arange(horizon), np.arange(horizon))
+
+
+    ax.text( 0.15, 0.7, f"$\\alpha_0 = {alpha}$")
+
+    ax.set_xlabel("Timestep $k$")
+    ax.set_ylabel("Interp. value $\\alpha_k$")
+
+
+    []
+
+
+
+
 
 if __name__ == "__main__":
+
+    plot_interp_options()
+
+
 
     perfect_method_config = {}
 
@@ -137,7 +190,7 @@ if __name__ == "__main__":
     perfect_persistence_interp_config = dict(perfect_fraction=0.75)
 
     perfect_persistence_interp_horizon_config = dict(
-        perfect_fraction = 0.25,
+        perfect_fraction = 0.75,
         perfect_duration = 12,
     )
 
@@ -220,12 +273,6 @@ if __name__ == "__main__":
 
         ax.set_xlim([0, sim_length + forecaster.forecast_horizon])
         ax.set_ylabel(forecaster.forecast_method)
-
-
-
-
-
-
 
 
 

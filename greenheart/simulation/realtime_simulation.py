@@ -536,6 +536,9 @@ class RealTimeSimulation:
             #     )
             # pbar.update(1)
 
+            if (not i % 250):
+                self.logger.info(f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer")
+
             self.record_states(i, self.G, grid_power)
             # Check on the error
 

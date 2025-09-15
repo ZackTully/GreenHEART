@@ -31,12 +31,14 @@ class DispatchModelPredictiveController:
         edge_order=None,
         mpc_config=None,
         p_opts={"print_time": False, "verbose": False, "record_time":True},
-        s_opts={"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":1e3},
+        s_opts={"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":1e5},
         # s_opts={"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":2e5},
         debug_mode=False,
     ):
 
         self.debug_mode = debug_mode
+        self.verbose = False
+
 
         self.mpc_config = mpc_config
 
@@ -386,6 +388,7 @@ class DispatchModelPredictiveController:
             opti.subject_to(uct_var[:, k] <= self.bounds["u_ub"][:, None])
 
             opti.subject_to(yex_var[:, k] >= 0)
+            opti.subject_to(yex_var[:, k] <= self.reference)
             opti.subject_to(usp_var[:, k] >= np.zeros(self.msp))
 
             if self.only_bounded_yco:
@@ -1126,7 +1129,8 @@ class DispatchModelPredictiveController:
                     print_line = (
                         str(num_desc).ljust(45) + code_desc.ljust(130) + at_desc
                     )
-                    pprint.pprint(print_line, width=200)
+                    if self.verbose:
+                        pprint.pprint(print_line, width=200)
                 i += 4
             i += 1
 
@@ -1145,7 +1149,7 @@ class DispatchModelPredictiveController:
 
 
         if np.max(np.abs(violations)) > 1e3:
-            self.check_gradients(self.opti.debug, print_jacs=True)
+            self.check_gradients(self.opti.debug, print_jacs=self.verbose)
             if not self.debug_mode:
                 self.save_state_for_debug(x0, forecast, step_index)
 
@@ -1385,16 +1389,17 @@ class DispatchModelPredictiveController:
         self.block_ss = np.array(state_dict["block_ss"], dtype=float)
 
 
+        if "x_init" in state_dict:
 
-        self.step_index_store.append(state_dict["step_index_init"])
+            self.step_index_store.append(state_dict["step_index_init"])
 
-        self.uc_init = np.array(state_dict["uc_init"], dtype=float)
-        self.us_init = np.array(state_dict["us_init"], dtype=float)
-        self.x_init = np.array(state_dict["x_init"], dtype=float)
-        self.ys_init = np.array(state_dict["ys_init"], dtype=float)
-        self.curtail_init = np.array(state_dict["curtail_init"], dtype=float)
+            self.uc_init = np.array(state_dict["uc_init"], dtype=float)
+            self.us_init = np.array(state_dict["us_init"], dtype=float)
+            self.x_init = np.array(state_dict["x_init"], dtype=float)
+            self.ys_init = np.array(state_dict["ys_init"], dtype=float)
+            self.curtail_init = np.array(state_dict["curtail_init"], dtype=float)
 
-        self.prev_success = True
+            self.prev_success = True
 
         self.x_bes_max = float(state_dict["x_bes_max"])
         self.x_tes_max = float(state_dict["x_tes_max"])
@@ -2849,6 +2854,9 @@ class Objective:
 
         return term_value
 
+
+    def term_step_bes_state_linear(self, uct_var, usp_var, x_var, yex_var, yco_var):
+        pass
 
 class Capturing(list):
     def __enter__(self):
