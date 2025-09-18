@@ -563,8 +563,6 @@ def run_simulation(config: GreenHeartSimulationConfig, case_description=None):
         verbose=config.verbose,
     )
 
-    print("done running hopp")
-
     if config.realtime_simulation:
         simulator.simulate(dispatcher, hopp_results)
 

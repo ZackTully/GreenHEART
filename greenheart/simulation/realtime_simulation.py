@@ -492,20 +492,7 @@ class RealTimeSimulation:
             if i < self.start_index:
                 continue
 
-            # if i < (len(hybrid_profile) - dispatcher.controller.horizon):
 
-            #     forecast = hybrid_profile[i : i + dispatcher.controller.horizon]
-            # else:
-            #     # forecast = np.ones(dispatcher.controller.horizon) * hybrid_profile[i]
-            #     forecast = np.concatenate(
-            #         [
-            #             hybrid_profile[i:],
-            #             hybrid_profile[-1]
-            #             * np.ones(
-            #                 dispatcher.controller.horizon - (len(hybrid_profile) - i)
-            #             ),
-            #         ]
-            #     )
             forecast = self.forecaster.get_forecast(measurement=hybrid_profile[i], step_index=i)
 
 

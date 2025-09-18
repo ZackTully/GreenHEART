@@ -14,6 +14,10 @@ import time
 
 from hopp.utilities import load_yaml
 
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.control_model_builder import ControlModelBuilder
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.gradient_helper import GradientHelper
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.plotter_helper import MPCPlotter
+
 
 class DispatchModelPredictiveController:
 
@@ -118,6 +122,8 @@ class DispatchModelPredictiveController:
             self.G = simulation_graph
             self.collect_system_matrices(traversal_order, simulation_graph)
 
+            
+
             self.use_saved_solution = (
                 "use_saved_solution"
                 in config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
@@ -125,6 +131,7 @@ class DispatchModelPredictiveController:
 
             if "battery" in self.node_order:
                 self.x_bes_max = simulation_graph.nodes["battery"]["ionode"].model.max_capacity_kWh
+                self.x_bes_min = simulation_graph.nodes["battery"]["ionode"].model.min_capacity_kWh
                 if "references" in mpc_config:
                     bes_soc_ref = mpc_config["references"]["bes"]
                 else:
@@ -139,6 +146,7 @@ class DispatchModelPredictiveController:
                 self.x_h2s_max = simulation_graph.nodes["hydrogen_storage"][
                         "ionode"
                     ].model.max_capacity_kg
+                self.x_h2s_min = simulation_graph.nodes["hydrogen_storage"]["ionode"].model.min_capacity_kg
                 if "references" in mpc_config:
                     h2s_soc_ref = mpc_config["references"]["h2s"]
                 else:
@@ -155,6 +163,8 @@ class DispatchModelPredictiveController:
                 self.x_tes_max = simulation_graph.nodes["thermal_energy_storage"][
                         "ionode"
                     ].model.H_capacity_kWh
+                self.x_tes_min = 0
+                # self.x_tes_min = simulation_graph.nodes["thermal_energy_storage"]["ionode"].model.H_buffer_max_kWh
                 if "references" in mpc_config:
                     tes_soc_ref = mpc_config["references"]["tes"]
                 else:
@@ -183,7 +193,7 @@ class DispatchModelPredictiveController:
             active_terms=self.term_keys,
             weights=self.weights,
             references=dict(steel=self.reference, x_bes=self.ref_bes_state, x_tes=self.ref_tes_state, x_h2s=self.ref_h2s_state, soc_bes=self.mpc_config["references"]["bes"], soc_tes=self.mpc_config["references"]["tes"], soc_h2s=self.mpc_config["references"]["h2s"]),
-            capacities=dict(x_bes=self.x_bes_max, x_tes= self.x_tes_max, x_h2s=self.x_h2s_max),
+            capacities=dict(x_bes_max=self.x_bes_max, x_bes_min=self.x_bes_min, x_tes_max= self.x_tes_max, x_tes_min=self.x_tes_min, x_h2s_max=self.x_h2s_max, x_h2s_min=self.x_h2s_min),
             var_inds=self.get_objective_var_inds()
         )
 
@@ -430,8 +440,9 @@ class DispatchModelPredictiveController:
         # Initial conditions
         opti.subject_to(x_var[:, 0] == x0_param)
 
-        objective = 0
-        objective_terms = []
+        if not self.use_objective_class:
+            objective = 0
+            objective_terms = []
 
         objective_var_inds = self.get_objective_var_inds()
 
@@ -457,59 +468,66 @@ class DispatchModelPredictiveController:
             if self.pet > 0:
                 opti.subject_to(yet == np.zeros((self.pet, 1)))
 
-            step_obj, step_obj_terms = self.objective_step(
-                x_var[:, k],
-                uct_var[:, k],
-                usp_var[:, k],
-                yco_var[:,k],
-                yex_var[:, k],
-                gridcurtail=gridcurtail[:, k],
-                var_inds=objective_var_inds,
-            )
-            # step_obj, step_obj_terms = self.objective_step(
-            #     x_var[:, k],
-            #     uct_var[:, k],
-            #     usp_var[:, k],
-            #     yco,
-            #     yexk,
-            #     gridcurtail=gridcurtail[:, k],
-            #     var_inds=objective_var_inds,
-            # )
 
-            objective += step_obj
-            objective_terms.append(step_obj_terms)
+            if not self.use_objective_class:
+                step_obj, step_obj_terms = self.objective_step(
+                    x_var[:, k],
+                    uct_var[:, k],
+                    usp_var[:, k],
+                    yco_var[:,k],
+                    yex_var[:, k],
+                    gridcurtail=gridcurtail[:, k],
+                    var_inds=objective_var_inds,
+                )
+                # step_obj, step_obj_terms = self.objective_step(
+                #     x_var[:, k],
+                #     uct_var[:, k],
+                #     usp_var[:, k],
+                #     yco,
+                #     yexk,
+                #     gridcurtail=gridcurtail[:, k],
+                #     var_inds=objective_var_inds,
+                # )
 
-        terminal_obj, terminal_terms = self.terminal_objective(xkp1)
+                objective += step_obj
+                objective_terms.append(step_obj_terms)
 
-        if self.terminal_cost:
-            objective += terminal_obj
 
-        self.obj_terms = {}
-        self.obj_terms_uw = {}
+        if self.use_objective_class:
+            objective = self.objective_manager.construct_objective(uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail)
+            self.obj_terms = self.objective_manager.obj_terms_w
+            self.obj_terms_uw = self.objective_manager.obj_terms_uw
+        else:
 
-        for term in objective_terms[0].keys():
-            obj_term = 0
-            obj_term_uw = 0
-            for i in range(self.horizon):
-                weight_i = objective_terms[i][term]["w"]
-                expr_i = objective_terms[i][term]["expr"]
 
-                obj_term += weight_i * expr_i
-                obj_term_uw += expr_i
+            terminal_obj, terminal_terms = self.terminal_objective(xkp1)
 
-            self.obj_terms.update({term: obj_term})
-            self.obj_terms_uw.update({term: obj_term_uw})
+            if self.terminal_cost:
+                objective += terminal_obj
 
-        for term in terminal_terms.keys():
-            expr = terminal_terms[term]["expr"]
-            w = terminal_terms[term]["w"]
+            self.obj_terms = {}
+            self.obj_terms_uw = {}
 
-            self.obj_terms.update({term: w * expr})
-            self.obj_terms_uw.update({term: expr})
+            for term in objective_terms[0].keys():
+                obj_term = 0
+                obj_term_uw = 0
+                for i in range(self.horizon):
+                    weight_i = objective_terms[i][term]["w"]
+                    expr_i = objective_terms[i][term]["expr"]
 
-        # objective = self.objective_manager.construct_objective(uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail)
-        # self.obj_terms = self.objective_manager.obj_terms_w
-        # self.obj_terms_uw = self.objective_manager.obj_terms_uw
+                    obj_term += weight_i * expr_i
+                    obj_term_uw += expr_i
+
+                self.obj_terms.update({term: obj_term})
+                self.obj_terms_uw.update({term: obj_term_uw})
+
+            for term in terminal_terms.keys():
+                expr = terminal_terms[term]["expr"]
+                w = terminal_terms[term]["w"]
+
+                self.obj_terms.update({term: w * expr})
+                self.obj_terms_uw.update({term: expr})
+
 
         # Set objective to objective expression
         opti.minimize(objective)
@@ -2650,9 +2668,12 @@ class Objective:
         self.soc_tes_ref = references["soc_tes"]
         self.soc_h2s_ref = references["soc_h2s"]
 
-        self.x_bes_cap = capacities["x_bes"]
-        self.x_tes_cap = capacities["x_tes"]
-        self.x_h2s_cap = capacities["x_h2s"]
+        self.x_bes_max = capacities["x_bes_max"]
+        self.x_tes_max = capacities["x_tes_max"]
+        self.x_h2s_max = capacities["x_h2s_max"]
+        self.x_bes_min = capacities["x_bes_min"]
+        self.x_tes_min = capacities["x_tes_min"]
+        self.x_h2s_min = capacities["x_h2s_min"]
 
         self.var_inds = var_inds
 
@@ -2665,6 +2686,9 @@ class Objective:
             "bes_state", 
             "tes_state",
             "h2s_state",
+            "bes_soc_state",
+            "tes_soc_state",
+            "h2s_soc_state",
             "bes_terminal",
             "tes_terminal", 
             "h2s_terminal", 
@@ -2695,6 +2719,9 @@ class Objective:
             bes_terminal = self.term_bes_terminal,
             tes_terminal = self.term_tes_terminal,
             h2s_terminal = self.term_h2s_terminal,
+            bes_soc_state = self.term_step_bes_state_soc_quadratic,
+            tes_soc_state = self.term_step_tes_state_soc_quadratic,
+            h2s_soc_state = self.term_step_h2s_state_soc_quadratic,
         )
 
 
@@ -2817,7 +2844,7 @@ class Objective:
         # obj = (x_var[self.var_inds["x_bes"], self.horizon] - self.x_bes_ref)**2
         
         # Relative or SOC reference
-        obj = (x_var[self.var_inds["x_bes"], self.horizon]/self.x_bes_cap - self.soc_bes_ref)**2
+        obj = (x_var[self.var_inds["x_bes"], self.horizon]/self.x_bes_max - self.soc_bes_ref)**2
 
         
         return obj
@@ -2828,7 +2855,7 @@ class Objective:
         # obj = (x_var[self.var_inds["x_tes"], self.horizon] - self.x_tes_ref)**2
 
         # Relative reference
-        obj = (x_var[self.var_inds["x_tes"], self.horizon]/self.x_tes_cap - self.soc_tes_ref)**2
+        obj = (x_var[self.var_inds["x_tes"], self.horizon]/self.x_tes_max - self.soc_tes_ref)**2
         
         return obj
     
@@ -2838,11 +2865,11 @@ class Objective:
         # obj = (x_var[self.var_inds["x_h2s"], self.horizon] - self.x_h2s_ref)**2
 
         # Relative SOC reference
-        obj = (x_var[self.var_inds["x_h2s"], self.horizon]/self.x_h2s_cap - self.soc_h2s_ref)**2
+        obj = (x_var[self.var_inds["x_h2s"], self.horizon]/self.x_h2s_max - self.soc_h2s_ref)**2
         
         return obj
 
-    def term_step_storage_state_linear_quadratic(self, uct_var, usp_var, x_var, yex_var, yco_var):
+    def term_step_storage_state_linear_quadratic(self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail):
         x_bar = np.array([[self.x_bes_max, self.x_tes_max, self.x_h2s_max]])
         
         Q_quad = 3 * np.eye(3) - np.ones((3, 3))
@@ -2855,8 +2882,32 @@ class Objective:
         return term_value
 
 
-    def term_step_bes_state_linear(self, uct_var, usp_var, x_var, yex_var, yco_var):
+    def term_step_bes_state_linear(self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail):
         pass
+
+
+    
+    def term_step_bes_state_soc_quadratic(self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail):
+        w_bes = 1 / (3 * (self.x_bes_max - self.x_bes_min)**2)
+        term_obj = 0
+        for k in range(self.horizon):
+            term_obj += w_bes * (self.x_bes_max - x_var[self.var_inds["x_bes"], k])**2
+        return term_obj
+    
+    def term_step_tes_state_soc_quadratic(self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail):
+        w_tes = 1 / (3 * (self.x_tes_max - self.x_tes_min)**2)
+        term_obj = 0
+        for k in range(self.horizon):
+            term_obj += w_tes * (self.x_tes_max - x_var[self.var_inds["x_tes"], k])**2
+        return term_obj
+
+    def term_step_h2s_state_soc_quadratic(self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail):
+        w_h2s = 1 / (3 * (self.x_h2s_max - self.x_h2s_min)**2)
+        term_obj = 0
+        for k in range(self.horizon):
+            term_obj += w_h2s * (self.x_h2s_max - x_var[self.var_inds["x_h2s"], k])**2
+        return term_obj
+
 
 class Capturing(list):
     def __enter__(self):
