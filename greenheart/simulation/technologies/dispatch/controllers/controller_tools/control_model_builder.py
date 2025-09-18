@@ -6,10 +6,8 @@ import networkx as nx
 class ControlModelBuilder:
     def __init__(self, mpc):
         self.mpc = mpc
-        self.node_order = self.mpc.node_order
-        self.edge_order = self.mpc.edge_order
-        
 
+  
 
     def step_control_model(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
 
@@ -133,6 +131,11 @@ class ControlModelBuilder:
         # ==                     Construct control model                             ==
         # ==                                                                         ==
         # =============================================================================
+
+        self.node_order = self.mpc.node_order
+        self.edge_order = self.mpc.edge_order
+        
+
         dims = {
             "dims": {
                 "n": [],  # number of states

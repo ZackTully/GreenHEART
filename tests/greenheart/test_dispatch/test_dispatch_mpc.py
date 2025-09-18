@@ -2,7 +2,7 @@ from pytest import approx, raises
 import numpy as np
 import types
 from pathlib import Path
-
+import json
 
 import sys
 import types
@@ -270,3 +270,34 @@ def test_run_simulation_short():
 
 
     rt_out, rts = run_simulation(config)
+
+def test_load_debug_state():
+    config_root = Path(__file__).parents[0] / "debug_inputs"
+    debug_state_path = config_root / "mpcstate_2025-09-18 15:48:42-1758232122_step64.json"
+
+    with open(debug_state_path, "r") as f:
+        state_dict = json.load(f)
+
+    x0 = np.array(state_dict["x0"], dtype=float)
+    forecast = np.array(state_dict["forecast"], dtype=float)
+    step_index = state_dict["step_index"]
+
+    config = {}
+    simulation_graph = {}
+    mpc_config = state_dict["mpc_config"]
+
+    s_opts = state_dict["s_opts"]
+    p_opts = state_dict["p_opts"]
+
+    mpc = DispatchModelPredictiveController(
+        config=config,
+        simulation_graph=simulation_graph,
+        mpc_config=mpc_config,
+        saved_state=state_dict,
+        p_opts=p_opts,
+        s_opts=s_opts,
+        debug_mode=True,
+    )
+
+    mpc.compute_trajectory(x0, forecast, step_index)
+  

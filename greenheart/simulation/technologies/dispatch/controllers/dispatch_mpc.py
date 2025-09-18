@@ -18,6 +18,7 @@ from greenheart.simulation.technologies.dispatch.controllers.controller_tools.co
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.gradient_helper import GradientHelper
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.plotter_helper import MPCPlotter
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.objective_helper import Objective
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.debug_helper import DebugHelper
 
 
 class DispatchModelPredictiveController:
@@ -49,6 +50,11 @@ class DispatchModelPredictiveController:
 
         if "logging" in self.mpc_config:
             self.setup_logging(self.mpc_config.pop("logging"))
+
+
+        self.plotter = MPCPlotter(mpc=self)
+        self.debug_helper = DebugHelper(mpc=self)
+        self.control_model = ControlModelBuilder(mpc=self)
 
 
         self.use_objective_class = True
@@ -100,7 +106,7 @@ class DispatchModelPredictiveController:
         self.curtail_storage = np.zeros(8760 + self.horizon)
 
         if self.debug_mode:
-            self.load_state_for_debug(saved_state)
+            self.debug_helper.load_state_for_debug(saved_state)
             self.use_saved_solution = False
 
         else:
@@ -122,7 +128,6 @@ class DispatchModelPredictiveController:
 
             self.G = simulation_graph
 
-            self.control_model = ControlModelBuilder(mpc=self)
             self.control_model.build_control_model(traversal_order, simulation_graph)
 
             # self.collect_system_matrices(traversal_order, simulation_graph)
@@ -194,12 +199,13 @@ class DispatchModelPredictiveController:
             self.term_keys = mpc_config["terms"]
 
         self.objective_manager = Objective(
+            mpc=self,
             horizon=self.horizon,
             active_terms=self.term_keys,
             weights=self.weights,
             references=dict(steel=self.reference, x_bes=self.ref_bes_state, x_tes=self.ref_tes_state, x_h2s=self.ref_h2s_state, soc_bes=self.mpc_config["references"]["bes"], soc_tes=self.mpc_config["references"]["tes"], soc_h2s=self.mpc_config["references"]["h2s"]),
             capacities=dict(x_bes_max=self.x_bes_max, x_bes_min=self.x_bes_min, x_tes_max= self.x_tes_max, x_tes_min=self.x_tes_min, x_h2s_max=self.x_h2s_max, x_h2s_min=self.x_h2s_min),
-            var_inds=self.get_objective_var_inds()
+            # var_inds=self.objective_manager.get_objective_var_inds()
         )
 
         if self.use_saved_solution:
@@ -458,11 +464,11 @@ class DispatchModelPredictiveController:
         # Initial conditions
         opti.subject_to(x_var[:, 0] == x0_param)
 
-        if not self.use_objective_class:
-            objective = 0
-            objective_terms = []
+        # if not self.use_objective_class:
+        #     objective = 0
+        #     objective_terms = []
 
-        objective_var_inds = self.get_objective_var_inds()
+
 
         # Loop through time steps in the horizon, apply dynamics constraint and calculate objective at each step
         for k in range(self.horizon):
@@ -490,28 +496,28 @@ class DispatchModelPredictiveController:
                 opti.subject_to(yet == np.zeros((self.pet, 1)))
 
 
-            if not self.use_objective_class:
-                step_obj, step_obj_terms = self.objective_step(
-                    x_var[:, k],
-                    uct_var[:, k],
-                    usp_var[:, k],
-                    yco_var[:,k],
-                    yex_var[:, k],
-                    gridcurtail=gridcurtail[:, k],
-                    var_inds=objective_var_inds,
-                )
-                # step_obj, step_obj_terms = self.objective_step(
-                #     x_var[:, k],
-                #     uct_var[:, k],
-                #     usp_var[:, k],
-                #     yco,
-                #     yexk,
-                #     gridcurtail=gridcurtail[:, k],
-                #     var_inds=objective_var_inds,
-                # )
+            # if not self.use_objective_class:
+            #     step_obj, step_obj_terms = self.objective_step(
+            #         x_var[:, k],
+            #         uct_var[:, k],
+            #         usp_var[:, k],
+            #         yco_var[:,k],
+            #         yex_var[:, k],
+            #         gridcurtail=gridcurtail[:, k],
+            #         var_inds=self.objective_manager.var_inds,
+            #     )
+            #     # step_obj, step_obj_terms = self.objective_step(
+            #     #     x_var[:, k],
+            #     #     uct_var[:, k],
+            #     #     usp_var[:, k],
+            #     #     yco,
+            #     #     yexk,
+            #     #     gridcurtail=gridcurtail[:, k],
+            #     #     var_inds=objective_var_inds,
+            #     # )
 
-                objective += step_obj
-                objective_terms.append(step_obj_terms)
+            #     objective += step_obj
+            #     objective_terms.append(step_obj_terms)
 
 
         if self.use_objective_class:
@@ -519,35 +525,35 @@ class DispatchModelPredictiveController:
             self.obj_terms = self.objective_manager.obj_terms_w
             self.obj_terms_uw = self.objective_manager.obj_terms_uw
         else:
+            pass
 
+            # terminal_obj, terminal_terms = self.terminal_objective(xkp1)
 
-            terminal_obj, terminal_terms = self.terminal_objective(xkp1)
+            # if self.terminal_cost:
+            #     objective += terminal_obj
 
-            if self.terminal_cost:
-                objective += terminal_obj
+            # self.obj_terms = {}
+            # self.obj_terms_uw = {}
 
-            self.obj_terms = {}
-            self.obj_terms_uw = {}
+            # for term in objective_terms[0].keys():
+            #     obj_term = 0
+            #     obj_term_uw = 0
+            #     for i in range(self.horizon):
+            #         weight_i = objective_terms[i][term]["w"]
+            #         expr_i = objective_terms[i][term]["expr"]
 
-            for term in objective_terms[0].keys():
-                obj_term = 0
-                obj_term_uw = 0
-                for i in range(self.horizon):
-                    weight_i = objective_terms[i][term]["w"]
-                    expr_i = objective_terms[i][term]["expr"]
+            #         obj_term += weight_i * expr_i
+            #         obj_term_uw += expr_i
 
-                    obj_term += weight_i * expr_i
-                    obj_term_uw += expr_i
+            #     self.obj_terms.update({term: obj_term})
+            #     self.obj_terms_uw.update({term: obj_term_uw})
 
-                self.obj_terms.update({term: obj_term})
-                self.obj_terms_uw.update({term: obj_term_uw})
+            # for term in terminal_terms.keys():
+            #     expr = terminal_terms[term]["expr"]
+            #     w = terminal_terms[term]["w"]
 
-            for term in terminal_terms.keys():
-                expr = terminal_terms[term]["expr"]
-                w = terminal_terms[term]["w"]
-
-                self.obj_terms.update({term: w * expr})
-                self.obj_terms_uw.update({term: expr})
+            #     self.obj_terms.update({term: w * expr})
+            #     self.obj_terms_uw.update({term: expr})
 
 
         # Set objective to objective expression
@@ -572,183 +578,153 @@ class DispatchModelPredictiveController:
         #     obj_terms_uw2=self.obj_terms_uw_man,
         # )
 
-    def compare_objective_implementations(self, obj1, obj_terms1, obj_terms_uw1, obj2, obj_terms2, obj_terms_uw2 ):
-
-        ov = {key: np.random.rand(val.shape[0], val.shape[1]) for key,val in self.opt_vars.items()}
-
-        F_obj1 = ca.Function("obj1", list(self.opt_vars.values()), [obj1])
-        F_obj2 = ca.Function("obj2", list(self.opt_vars.values()), [obj2])
-
-        print(f"Objectives are probably the same: {np.float64(F_obj1(*list(ov.values()))) == np.float64(F_obj2(*list(ov.values())))}")
-
-        obj_diff = np.float64(F_obj1(*list(ov.values()))) - np.float64(F_obj2(*list(ov.values())))
-
-
-        for term in obj_terms1.keys():
-            F1 = ca.Function(f"f1", list(self.opt_vars.values()), [obj_terms1[term]])
-            F2 = ca.Function(f"f2", list(self.opt_vars.values()), [obj_terms2[term]])
-
-            F1_uw = ca.Function(f"f1_uw", list(self.opt_vars.values()), [obj_terms_uw1[term]])
-            F2_uw = ca.Function(f"f2_uw", list(self.opt_vars.values()), [obj_terms_uw1[term]])
-
-
-            f_equal = np.float64(F1(*list(ov.values()))) == np.float64(F2(*list(ov.values())))
-            f_diff = np.float64(F1(*list(ov.values()))) - np.float64(F2(*list(ov.values())))
-
-            f_uw_equal = np.float64(F1_uw(*list(ov.values()))) == np.float64(F2_uw(*list(ov.values())))
-            f_uw_diff = np.float64(F1_uw(*list(ov.values()))) - np.float64(F2_uw(*list(ov.values())))
-
-
-            print(f"Term {term} are equal UW: {f_uw_equal}, W: {f_equal}")
-
-            []
 
 
 
         pass
 
-    def get_objective_var_inds(self):
-        # Set up indices for objective terms flexibly
-        def getid(label, index_list):
-            indices = [i for i in range(len(index_list)) if label in index_list[i]]
-            assert len(indices) == 1
-            return indices[0]
+    # def get_objective_var_inds(self):
+    #     # Set up indices for objective terms flexibly
+    #     def getid(label, index_list):
+    #         indices = [i for i in range(len(index_list)) if label in index_list[i]]
+    #         assert len(indices) == 1
+    #         return indices[0]
 
-        objective_var_inds = {}
+    #     objective_var_inds = {}
 
-        if "battery" in self.node_order:
-            bes_var_inds = dict(
-                uct_charge_bes=getid("uct 0 battery", self.mct_label),
-                uct_discharge_bes=getid("uct 1 battery", self.mct_label),
-                x_bes=getid("x 0 battery", self.n_label),
-            )
-            objective_var_inds.update(bes_var_inds)
+    #     if "battery" in self.node_order:
+    #         bes_var_inds = dict(
+    #             uct_charge_bes=getid("uct 0 battery", self.mct_label),
+    #             uct_discharge_bes=getid("uct 1 battery", self.mct_label),
+    #             x_bes=getid("x 0 battery", self.n_label),
+    #         )
+    #         objective_var_inds.update(bes_var_inds)
 
-        if "hydrogen_storage" in self.node_order:
-            h2s_var_inds = dict(
-                uct_charge_h2s=getid("uct 0 hydrogen_storage", self.mct_label),
-                uct_discharge_h2s=getid("uct 1 hydrogen_storage", self.mct_label),
-                x_h2s=getid("x 0 hydrogen_storage", self.n_label),
-            )
-            objective_var_inds.update(h2s_var_inds)
+    #     if "hydrogen_storage" in self.node_order:
+    #         h2s_var_inds = dict(
+    #             uct_charge_h2s=getid("uct 0 hydrogen_storage", self.mct_label),
+    #             uct_discharge_h2s=getid("uct 1 hydrogen_storage", self.mct_label),
+    #             x_h2s=getid("x 0 hydrogen_storage", self.n_label),
+    #         )
+    #         objective_var_inds.update(h2s_var_inds)
 
-        if "thermal_energy_storage" in self.node_order:
-            tes_var_inds = dict(
-                uct_charge_tes=getid("uct 0 thermal_energy_storage", self.mct_label),
-                uct_discharge_tes=getid("uct 1 thermal_energy_storage", self.mct_label),
-                x_tes=getid("x 0 thermal_energy_storage", self.n_label),
-            )
-            objective_var_inds.update(tes_var_inds)
-        return objective_var_inds
+    #     if "thermal_energy_storage" in self.node_order:
+    #         tes_var_inds = dict(
+    #             uct_charge_tes=getid("uct 0 thermal_energy_storage", self.mct_label),
+    #             uct_discharge_tes=getid("uct 1 thermal_energy_storage", self.mct_label),
+    #             x_tes=getid("x 0 thermal_energy_storage", self.n_label),
+    #         )
+    #         objective_var_inds.update(tes_var_inds)
+    #     return objective_var_inds
 
-    def objective_step(
-        self,
-        x,
-        uct,
-        usp,
-        yco,
-        yex,
-        gridcurtail=None,
-        var_inds=None,
-    ):
+    # def objective_step(
+    #     self,
+    #     x,
+    #     uct,
+    #     usp,
+    #     yco,
+    #     yex,
+    #     gridcurtail=None,
+    #     var_inds=None,
+    # ):
 
-        # =============================================================================
-        # ==                                                                         ==
-        # ==                                Objective                                ==
-        # ==                                                                         ==
-        # =============================================================================
-        obj_terms = {}
+    #     # =============================================================================
+    #     # ==                                                                         ==
+    #     # ==                                Objective                                ==
+    #     # ==                                                                         ==
+    #     # =============================================================================
+    #     obj_terms = {}
 
-        term_keys = ["output_tracking", "gridcurtail"]
+    #     term_keys = ["output_tracking", "gridcurtail"]
 
-        obj_terms.update(
-            {"output_tracking": {"w": 1e9, "expr": (self.reference - yex) ** 2}}
-        )
+    #     obj_terms.update(
+    #         {"output_tracking": {"w": 1e9, "expr": (self.reference - yex) ** 2}}
+    #     )
 
-        obj_terms.update({"gridcurtail": {"w": 1e-4, "expr": gridcurtail**2}})
+    #     obj_terms.update({"gridcurtail": {"w": 1e-4, "expr": gridcurtail**2}})
 
-        if "battery" in self.node_order:
-            simu = uct[var_inds["uct_charge_bes"]] * uct[var_inds["uct_discharge_bes"]]
-            obj_terms.update({"bes_simultaneous": {"w": 1e0, "expr": simu}})
-            state = (x[var_inds["x_bes"]] - self.ref_bes_state) ** 2
-            obj_terms.update({"bes_state": {"w": self.weight_bes_state, "expr": state}})
-            term_keys.append("bes_simultaneous")
+    #     if "battery" in self.node_order:
+    #         simu = uct[var_inds["uct_charge_bes"]] * uct[var_inds["uct_discharge_bes"]]
+    #         obj_terms.update({"bes_simultaneous": {"w": 1e0, "expr": simu}})
+    #         state = (x[var_inds["x_bes"]] - self.ref_bes_state) ** 2
+    #         obj_terms.update({"bes_state": {"w": self.weight_bes_state, "expr": state}})
+    #         term_keys.append("bes_simultaneous")
 
-        if "hydrogen_storage" in self.node_order:
-            simu = uct[var_inds["uct_charge_h2s"]] * uct[var_inds["uct_discharge_h2s"]]
-            obj_terms.update({"h2s_simultaneous": {"w": 1e0, "expr": simu}})
-            state = (x[var_inds["x_h2s"]] - self.ref_h2s_state) ** 2
-            obj_terms.update({"h2s_state": {"w": self.weight_h2s_state, "expr": state}})
-            term_keys.append("h2s_simultaneous")
+    #     if "hydrogen_storage" in self.node_order:
+    #         simu = uct[var_inds["uct_charge_h2s"]] * uct[var_inds["uct_discharge_h2s"]]
+    #         obj_terms.update({"h2s_simultaneous": {"w": 1e0, "expr": simu}})
+    #         state = (x[var_inds["x_h2s"]] - self.ref_h2s_state) ** 2
+    #         obj_terms.update({"h2s_state": {"w": self.weight_h2s_state, "expr": state}})
+    #         term_keys.append("h2s_simultaneous")
 
-        if "thermal_energy_storage" in self.node_order:
-            simu = uct[var_inds["uct_charge_tes"]] * uct[var_inds["uct_discharge_tes"]]
-            obj_terms.update({"tes_simultaneous": {"w": 1e0, "expr": simu}})
-            state = (x[var_inds["x_tes"]] - self.ref_tes_state) ** 2
-            obj_terms.update({"tes_state": {"w": self.weight_tes_state, "expr": state}})
+    #     if "thermal_energy_storage" in self.node_order:
+    #         simu = uct[var_inds["uct_charge_tes"]] * uct[var_inds["uct_discharge_tes"]]
+    #         obj_terms.update({"tes_simultaneous": {"w": 1e0, "expr": simu}})
+    #         state = (x[var_inds["x_tes"]] - self.ref_tes_state) ** 2
+    #         obj_terms.update({"tes_state": {"w": self.weight_tes_state, "expr": state}})
 
-            if self.weights["tes_simultaneous"] > 0:
-                term_keys.append("tes_simultaneous")
-            term_keys.append("tes_state")
+    #         if self.weights["tes_simultaneous"] > 0:
+    #             term_keys.append("tes_simultaneous")
+    #         term_keys.append("tes_state")
 
-        if self.use_config_weights:
-            for key in self.weights.keys():
-                if key in obj_terms:
-                    obj_terms[key]["w"] = self.weights[key]
+    #     if self.use_config_weights:
+    #         for key in self.weights.keys():
+    #             if key in obj_terms:
+    #                 obj_terms[key]["w"] = self.weights[key]
 
-        if hasattr(self, "term_keys"):
-            obj_term_keys = self.term_keys
-        else:
-            obj_term_keys = term_keys
+    #     if hasattr(self, "term_keys"):
+    #         obj_term_keys = self.term_keys
+    #     else:
+    #         obj_term_keys = term_keys
 
-        objective = 0
-        for term in obj_term_keys:
-            objective += obj_terms[term]["w"] * obj_terms[term]["expr"]
+    #     objective = 0
+    #     for term in obj_term_keys:
+    #         objective += obj_terms[term]["w"] * obj_terms[term]["expr"]
 
-        obj_terms.update({"objective": {"w": 1, "expr": objective}})
-        return objective, obj_terms
+    #     obj_terms.update({"objective": {"w": 1, "expr": objective}})
+    #     return objective, obj_terms
 
-    def terminal_objective(self, x_h):
+    # def terminal_objective(self, x_h):
 
-        obj_terms = {}
+    #     obj_terms = {}
 
-        term_keys = []
+    #     term_keys = []
 
-        if "battery" in self.node_order:
-            if "bes_terminal" in self.weights.keys():
-                w_bes = self.weights["bes_terminal"]
-            else:
-                w_bes = 1
-            ex_bes = (self.ref_bes_state - x_h[0]) ** 2
-            obj_terms.update({"bes_terminal": {"w": w_bes, "expr": ex_bes}})
-            term_keys.append("bes_terminal")
+    #     if "battery" in self.node_order:
+    #         if "bes_terminal" in self.weights.keys():
+    #             w_bes = self.weights["bes_terminal"]
+    #         else:
+    #             w_bes = 1
+    #         ex_bes = (self.ref_bes_state - x_h[0]) ** 2
+    #         obj_terms.update({"bes_terminal": {"w": w_bes, "expr": ex_bes}})
+    #         term_keys.append("bes_terminal")
 
-        if "hydrogen_storage" in self.node_order:
-            if "h2s_terminal" in self.weights.keys():
-                w_h2s = self.weights["h2s_terminal"]
-            else:
-                w_h2s = 1
-            ex_h2s = (self.ref_h2s_state - x_h[2]) ** 2
-            obj_terms.update({"h2s_terminal": {"w": w_h2s, "expr": ex_h2s}})
-            term_keys.append("h2s_terminal")
+    #     if "hydrogen_storage" in self.node_order:
+    #         if "h2s_terminal" in self.weights.keys():
+    #             w_h2s = self.weights["h2s_terminal"]
+    #         else:
+    #             w_h2s = 1
+    #         ex_h2s = (self.ref_h2s_state - x_h[2]) ** 2
+    #         obj_terms.update({"h2s_terminal": {"w": w_h2s, "expr": ex_h2s}})
+    #         term_keys.append("h2s_terminal")
 
-        if "thermal_energy_storage" in self.node_order:
-            if "tes_terminal" in self.weights.keys():
-                w_tes = self.weights["tes_terminal"]
-            else:
-                w_tes = 1
-            ex_tes = (self.ref_tes_state - x_h[1]) ** 2
-            obj_terms.update({"tes_terminal": {"w": w_tes, "expr": ex_tes}})
-            term_keys.append("tes_terminal")
+    #     if "thermal_energy_storage" in self.node_order:
+    #         if "tes_terminal" in self.weights.keys():
+    #             w_tes = self.weights["tes_terminal"]
+    #         else:
+    #             w_tes = 1
+    #         ex_tes = (self.ref_tes_state - x_h[1]) ** 2
+    #         obj_terms.update({"tes_terminal": {"w": w_tes, "expr": ex_tes}})
+    #         term_keys.append("tes_terminal")
 
-        objective = 0
+    #     objective = 0
 
-        # TODO make the terminal terms be relient on the term keys too
+    #     # TODO make the terminal terms be relient on the term keys too
 
-        for term in term_keys:
-            objective += obj_terms[term]["w"] * obj_terms[term]["expr"]
+    #     for term in term_keys:
+    #         objective += obj_terms[term]["w"] * obj_terms[term]["expr"]
 
-        return objective, obj_terms
+    #     return objective, obj_terms
 
     def update_optimization_parameters(self, x0, src_forecast):
         self.opti.set_value(self.opt_params["dex"], src_forecast)
@@ -877,7 +853,7 @@ class DispatchModelPredictiveController:
             )
 
             if not self.debug_mode:
-                # self.save_state_for_debug(x0, forecast, step_index)
+                # self.debug_helper.save_state_for_debug(x0, forecast, step_index)
                 pass
 
             if ret_obj:
@@ -1058,7 +1034,8 @@ class DispatchModelPredictiveController:
                 i += 4
             i += 1
 
-        self.plot_trajectory_generic(self.opti.debug, forecast)
+        # self.plot_trajectory_generic(self.opti.debug, forecast)
+        self.plotter.plot_trajectory_generic(self.opti.debug, forecast)
 
         np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
@@ -1141,362 +1118,195 @@ class DispatchModelPredictiveController:
 
         return uct, usp, curtail, grid
 
-    def save_state_for_debug(self, x0, forecast, step_index):
+    # def save_state_for_debug(self, x0, forecast, step_index):
 
-        assert not self.debug_mode
+    #     assert not self.debug_mode
 
-        import datetime
-        from pathlib import Path
-        import json
+    #     import datetime
+    #     from pathlib import Path
+    #     import json
 
-        datetime_string = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S-%s")
-        dir_path = "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/saved_data/mpc_saved_states"
-        dir = f"{dir_path}/mpcstate_{datetime_string}_step{step_index}"
-        # Path(dir).mkdir(parents=True, exist_ok=True)
-        Path(dir_path).mkdir(parents=True, exist_ok=True)
-        # fpath = f"{dir}/mpc_data.json"
-        fpath = f"{dir}.json"
+    #     datetime_string = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S-%s")
+    #     dir_path = "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/saved_data/mpc_saved_states"
+    #     dir = f"{dir_path}/mpcstate_{datetime_string}_step{step_index}"
+    #     # Path(dir).mkdir(parents=True, exist_ok=True)
+    #     Path(dir_path).mkdir(parents=True, exist_ok=True)
+    #     # fpath = f"{dir}/mpc_data.json"
+    #     fpath = f"{dir}.json"
 
-        js_kw = dict(ensure_ascii=True)
-        # js_kw = dict(ensure_ascii=True, indent=4)
+    #     js_kw = dict(ensure_ascii=True)
+    #     # js_kw = dict(ensure_ascii=True, indent=4)
 
-        with open(fpath, "w", encoding="utf-8") as f:
+    #     with open(fpath, "w", encoding="utf-8") as f:
 
-            plant_SS = [
-                [self.A, self.Bct, self.Bsp, self.Eex],
-                [self.Cco, self.Dcoct, self.Dcosp, self.Fcoex],
-                [self.Cex, self.Dexct, self.Dexsp, self.Fexex],
-                [self.Cze, self.Dzect, self.Dzesp, self.Fzeex],
-                [self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex],
-                [self.Cet, self.Detct, self.Detsp, self.Fetex],
-            ]
+    #         plant_SS = [
+    #             [self.A, self.Bct, self.Bsp, self.Eex],
+    #             [self.Cco, self.Dcoct, self.Dcosp, self.Fcoex],
+    #             [self.Cex, self.Dexct, self.Dexsp, self.Fexex],
+    #             [self.Cze, self.Dzect, self.Dzesp, self.Fzeex],
+    #             [self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex],
+    #             [self.Cet, self.Detct, self.Detsp, self.Fetex],
+    #         ]
 
-            save_dict = dict(
-                horizon=self.horizon,
-                statespace=[[mat.tolist() for mat in row] for row in plant_SS],
-                x0=x0.tolist(),
-                forecast=forecast.tolist(),
-                step_index=step_index,
-                bounds={key: self.bounds[key].tolist() for key in self.bounds.keys()},
-                bounds_verbose={
-                    node: {
-                        key: self.bounds_verbose[node][key].tolist()
-                        for key in self.bounds_verbose[node].keys()
-                    }
-                    for node in self.bounds_verbose.keys()
-                },
-                dimensions=self.dims,
-                labels=self.labels,
-                node_order=self.node_order,
-                edge_order=self.edge_order,
-                weights=self.weights,
-                reference=self.reference,
-                ref_bes_state=self.ref_bes_state,
-                weight_bes_state=self.weight_bes_state,
-                ref_h2s_state=self.ref_h2s_state,
-                weight_h2s_state=self.weight_h2s_state,
-                ref_tes_state=self.ref_tes_state,
-                weight_tes_state=self.weight_tes_state,
-                M_dco_yco=self.M_dco_yco.tolist(),
-                yco_ub_ind=self.yco_ub_ind.tolist(),
-                yco_ub_node_ind=self.yco_ub_node_ind.tolist(),
-                cols_li=self.cols_li.tolist(),
-                cols_nl=self.cols_nl.tolist(),
-                rows_li=self.rows_li.tolist(),
-                rows_nl=self.rows_nl.tolist(),
-                block_ss=self.block_ss.tolist(),
-                x_bes_max=self.G.nodes["battery"]["ionode"].model.max_capacity_kWh,
-                x_tes_max = self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh,
-                x_h2s_max =self.G.nodes["hydrogen_storage"]["ionode"].model.max_capacity_kg,
-                repr = self.opti.__repr__(),
-                return_status = self.opti.return_status(),
-                casadi_stats = self.opti.stats(),      
-                opti_params = str(self.opti.value_parameters()),      
-                opti_variables = str(self.opti.value_variables()),  
-                s_opts = self.s_opts,
-                p_opts = self.p_opts,    
-            )
-
-            if hasattr(self, "x_init"):  # then try to update initial guess
-                save_dict.update(
-                    # dict(
-                    #     uct_init=self.uc_init.tolist(),
-                    #     usp_init=self.us_init.tolist(),
-                    #     x_init=self.x_init.tolist(),
-                    #     yex_init=self.ys_init.tolist(),
-                    # )
-                    dict(
-                        step_index_init = self.step_index_store[-1],
-                        uc_init = self.uct_store[-1].tolist(),
-                        us_init = self.usp_store[-1].tolist(),
-                        x_init = self.x_store[-1].tolist(),
-                        ys_init = self.yex_store[-1].tolist(),
-                        curtail_init = self.curtail_store[-1].tolist()
-                    )
-                )
-
-                # self.opti.set_initial(self.opt_vars["uct"], self.uc_init)
-                # self.opti.set_initial(self.opt_vars["usp"], self.us_init)
-                # self.opti.set_initial(self.opt_vars["x"], self.x_init)
-                # self.opti.set_initial(self.opt_vars["yex"], self.ys_init)
-
-            save_dict.update({"mpc_config": self.mpc_config})
-
-            json.dump(save_dict, f, **js_kw)
-
-        pass
-
-    def load_state_for_debug(self, state_dict):
-        self.horizon = state_dict["horizon"]
-
-        self.bounds = {
-            key: np.array(state_dict["bounds"][key], dtype=float)
-            for key in state_dict["bounds"].keys()
-        }
-        self.bounds_verbose = {
-            node: {
-                key: np.array(state_dict["bounds_verbose"][node][key], dtype=float)
-                for key in state_dict["bounds_verbose"][node].keys()
-            }
-            for node in state_dict["bounds_verbose"].keys()
-        }
-
-        for key in state_dict["labels"].keys():
-            setattr(self, f"{key}_label", state_dict["labels"][key])
-
-        for key in state_dict["dimensions"].keys():
-            setattr(self, key, np.sum(state_dict["dimensions"][key]))
-
-        self.node_order = state_dict["node_order"]
-        self.edge_order = state_dict["edge_order"]
-
-        self.reference = state_dict["reference"]
-        self.weights = state_dict["weights"]
-
-        self.ref_bes_state = state_dict["ref_bes_state"]
-        self.weight_bes_state = state_dict["weight_bes_state"]
-        self.ref_h2s_state = state_dict["ref_h2s_state"]
-        self.weight_h2s_state = state_dict["weight_h2s_state"]
-        self.ref_tes_state = state_dict["ref_tes_state"]
-        self.weight_tes_state = state_dict["weight_tes_state"]
-
-        combined_mat = state_dict["statespace"]
-
-        out_dims = np.array([self.n, self.pco, self.pex, self.pze, self.pgt, self.pet])
-        in_dims = np.array([self.n, self.mct, self.msp, self.oex])
-
-        for i, row in enumerate(combined_mat):
-            for j, mat in enumerate(row):
-                if (out_dims[i] > 0) and (in_dims[j] > 0):
-                    combined_mat[i][j] = np.array(combined_mat[i][j], dtype=float)
-                else:
-                    combined_mat[i][j] = np.zeros((out_dims[i], in_dims[j]), dtype=float)
-
-        # combined_mat = [[np.array(mat) for mat in row] for row in combined_mat]
-
-        self.A, self.Bct, self.Bsp, self.Eex = combined_mat[0]
-        self.Cco, self.Dcoct, self.Dcosp, self.Fcoex = combined_mat[1]
-        self.Cex, self.Dexct, self.Dexsp, self.Fexex = combined_mat[2]
-        self.Cze, self.Dzect, self.Dzesp, self.Fzeex = combined_mat[3]
-        self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex = combined_mat[4]
-        self.Cet, self.Detct, self.Detsp, self.Fetex = combined_mat[5]
-
-        self.M_dco_yco = np.array(state_dict["M_dco_yco"], dtype=float)
-        self.yco_ub_ind = np.array(state_dict["yco_ub_ind"], dtype=int)
-        self.yco_ub_node_ind = np.array(state_dict["yco_ub_node_ind"], dtype=int)
-
-        self.cols_li = np.array(state_dict["cols_li"])
-        self.cols_nl = np.array(state_dict["cols_nl"])
-        self.rows_li = np.array(state_dict["rows_li"])
-        self.rows_nl = np.array(state_dict["rows_nl"])
-
-        self.block_ss = np.array(state_dict["block_ss"], dtype=float)
-
-
-        if "x_init" in state_dict:
-
-            self.step_index_store.append(state_dict["step_index_init"])
-
-            self.uc_init = np.array(state_dict["uc_init"], dtype=float)
-            self.us_init = np.array(state_dict["us_init"], dtype=float)
-            self.x_init = np.array(state_dict["x_init"], dtype=float)
-            self.ys_init = np.array(state_dict["ys_init"], dtype=float)
-            self.curtail_init = np.array(state_dict["curtail_init"], dtype=float)
-
-            self.prev_success = True
-
-        self.x_bes_max = float(state_dict["x_bes_max"])
-        self.x_tes_max = float(state_dict["x_tes_max"])
-        self.x_h2s_max = float(state_dict["x_h2s_max"])
-
-        []
-
-    def plot_trajectory_generic(self, prob: ca.Opti, forecast):
-
-        def get_sol_value(prob: ca.Opti, var):
-            val = prob.value(var)
-            val = np.reshape(val, var.shape)
-            return val
-
-        x_db = get_sol_value(prob, self.opt_vars["x"])
-        uc_db = get_sol_value(prob, self.opt_vars["uct"])
-        us_db = get_sol_value(prob, self.opt_vars["usp"])
-        ys_db = get_sol_value(prob, self.opt_vars["yex"])
-        yco_db = get_sol_value(prob, self.opt_vars["yco"])
-
-        gridcurtail = get_sol_value(prob, self.opt_vars["gridcurtail"])
-        grid_db = np.where(gridcurtail >= 0, gridcurtail, 0)
-        curtail_db = np.where(gridcurtail <= 0, -gridcurtail, 0)
-
-        fig, ax = plt.subplots(
-            np.max(
-                [
-                    uc_db.shape[0],
-                    us_db.shape[0],
-                    x_db.shape[0],
-                    ys_db.shape[0],
-                    yco_db.shape[0],
-                ]
-            ),
-            5,
-            sharex="all",
-            layout="constrained",
-        )
-
-        to_plot = [x_db, uc_db, us_db, ys_db, yco_db]
-        titles = [
-            self.n_label,
-            self.mct_label,
-            self.msp_label,
-            self.pex_label,
-            self.pco_label,
-        ]
-        for i in range(len(to_plot)):
-            # ax[0, i].set_title(titles[i])
-            for j in range(len(to_plot[i])):
-                ax[j, i].plot(to_plot[i][j, :])
-                ax[j, i].set_title(titles[i][j])
-
-                if (i == 0) or (i == 1):
-                    if i == 0:
-                        lb = self.bounds["x_lb"]
-                        ub = self.bounds["x_ub"]
-                    elif i == 1:
-                        lb = self.bounds["u_lb"]
-                        ub = self.bounds["u_ub"]
-
-                    ylim = ax[j, i].get_ylim()
-                    ax[j, i].axhline(lb[j], color="black", linewidth=0.75)
-                    ax[j, i].axhline(ub[j], color="black", linewidth=0.75)
-                    ax[j, i].set_ylim(ylim)
-
-        ax[-1, 0].set_title("Forecast and curtail")
-        ax[-1, 0].plot(forecast)
-        ax[-1, 0].plot(forecast - curtail_db)
-        ax[-1, 0].plot(forecast - curtail_db + grid_db)
-
-    # def plot_trajectory(self, step_index=None):
-
-    #     idx = -1
-
-    #     fig, ax = plt.subplots(2, 2, sharex="all", layout="constrained")
-
-    #     ax[0, 0].plot(self.forecast_store[idx].T)
-    #     ax[0, 0].fill_between(
-    #         np.arange(0, self.horizon, 1),
-    #         self.forecast_store[idx][0, :],
-    #         self.forecast_store[idx][0, :] - self.curtail_store[idx][0, :],
-    #     )
-
-    #     gen_split_index = [
-    #         i
-    #         for i in range(self.msp)
-    #         if self.msp_label[i].split(" ")[2] == "generation"
-    #     ]
-    #     start = np.zeros(self.horizon)
-    #     time = np.arange(0, self.horizon, 1)
-    #     for k in gen_split_index:
-    #         stop = self.usp_store[idx][k, :]
-    #         ax[0, 0].fill_between(
-    #             time,
-    #             start,
-    #             stop,
-    #             edgecolor=None,
-    #             label=self.msp_label[gen_split_index[k]],
+    #         save_dict = dict(
+    #             horizon=self.horizon,
+    #             statespace=[[mat.tolist() for mat in row] for row in plant_SS],
+    #             x0=x0.tolist(),
+    #             forecast=forecast.tolist(),
+    #             step_index=step_index,
+    #             bounds={key: self.bounds[key].tolist() for key in self.bounds.keys()},
+    #             bounds_verbose={
+    #                 node: {
+    #                     key: self.bounds_verbose[node][key].tolist()
+    #                     for key in self.bounds_verbose[node].keys()
+    #                 }
+    #                 for node in self.bounds_verbose.keys()
+    #             },
+    #             dimensions=self.dims,
+    #             labels=self.labels,
+    #             node_order=self.node_order,
+    #             edge_order=self.edge_order,
+    #             weights=self.weights,
+    #             reference=self.reference,
+    #             ref_bes_state=self.ref_bes_state,
+    #             weight_bes_state=self.weight_bes_state,
+    #             ref_h2s_state=self.ref_h2s_state,
+    #             weight_h2s_state=self.weight_h2s_state,
+    #             ref_tes_state=self.ref_tes_state,
+    #             weight_tes_state=self.weight_tes_state,
+    #             M_dco_yco=self.M_dco_yco.tolist(),
+    #             yco_ub_ind=self.yco_ub_ind.tolist(),
+    #             yco_ub_node_ind=self.yco_ub_node_ind.tolist(),
+    #             cols_li=self.cols_li.tolist(),
+    #             cols_nl=self.cols_nl.tolist(),
+    #             rows_li=self.rows_li.tolist(),
+    #             rows_nl=self.rows_nl.tolist(),
+    #             block_ss=self.block_ss.tolist(),
+    #             x_bes_max=self.G.nodes["battery"]["ionode"].model.max_capacity_kWh,
+    #             x_tes_max = self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh,
+    #             x_h2s_max =self.G.nodes["hydrogen_storage"]["ionode"].model.max_capacity_kg,
+    #             repr = self.opti.__repr__(),
+    #             return_status = self.opti.return_status(),
+    #             casadi_stats = self.opti.stats(),      
+    #             opti_params = str(self.opti.value_parameters()),      
+    #             opti_variables = str(self.opti.value_variables()),  
+    #             s_opts = self.s_opts,
+    #             p_opts = self.p_opts,    
     #         )
-    #         start += stop
 
-    #     ax[0, 0].legend()
+    #         if hasattr(self, "x_init"):  # then try to update initial guess
+    #             save_dict.update(
+    #                 # dict(
+    #                 #     uct_init=self.uc_init.tolist(),
+    #                 #     usp_init=self.us_init.tolist(),
+    #                 #     x_init=self.x_init.tolist(),
+    #                 #     yex_init=self.ys_init.tolist(),
+    #                 # )
+    #                 dict(
+    #                     step_index_init = self.step_index_store[-1],
+    #                     uc_init = self.uct_store[-1].tolist(),
+    #                     us_init = self.usp_store[-1].tolist(),
+    #                     x_init = self.x_store[-1].tolist(),
+    #                     ys_init = self.yex_store[-1].tolist(),
+    #                     curtail_init = self.curtail_store[-1].tolist()
+    #                 )
+    #             )
+
+    #             # self.opti.set_initial(self.opt_vars["uct"], self.uc_init)
+    #             # self.opti.set_initial(self.opt_vars["usp"], self.us_init)
+    #             # self.opti.set_initial(self.opt_vars["x"], self.x_init)
+    #             # self.opti.set_initial(self.opt_vars["yex"], self.ys_init)
+
+    #         save_dict.update({"mpc_config": self.mpc_config})
+
+    #         json.dump(save_dict, f, **js_kw)
 
     #     pass
 
+    # def load_state_for_debug(self, state_dict):
+    #     self.horizon = state_dict["horizon"]
 
-    def plot_solution(self, uct, usp, x, ysp, forecast):
+    #     self.bounds = {
+    #         key: np.array(state_dict["bounds"][key], dtype=float)
+    #         for key in state_dict["bounds"].keys()
+    #     }
+    #     self.bounds_verbose = {
+    #         node: {
+    #             key: np.array(state_dict["bounds_verbose"][node][key], dtype=float)
+    #             for key in state_dict["bounds_verbose"][node].keys()
+    #         }
+    #         for node in state_dict["bounds_verbose"].keys()
+    #     }
 
-        # uc = sol.value(self.opt_vars["uct"])
-        # us = sol.value(self.opt_vars["usp"])
-        # x = sol.value(self.opt_vars["x"])
-        # ys = sol.value(self.opt_vars["ysp"])[None, :]
-        # e = sol.value(self.opt_vars["e"])
+    #     for key in state_dict["labels"].keys():
+    #         setattr(self, f"{key}_label", state_dict["labels"][key])
 
-        uc = uct
-        us = usp
-        x = x
-        ys = ysp
+    #     for key in state_dict["dimensions"].keys():
+    #         setattr(self, key, np.sum(state_dict["dimensions"][key]))
 
-        fig, ax = plt.subplots(
-            np.max([len(uc), len(us), len(x), len(ys)]),
-            4,
-            sharex="all",
-            layout="constrained",
-        )
+    #     self.node_order = state_dict["node_order"]
+    #     self.edge_order = state_dict["edge_order"]
 
-        to_plot = [x, uc, us, ys]
-        for i in range(len(to_plot)):
-            for j in range(len(to_plot[i])):
-                ax[j, i].plot(to_plot[i][j, :])
+    #     self.reference = state_dict["reference"]
+    #     self.weights = state_dict["weights"]
 
-        fig, ax = plt.subplots(
-            4, 2, figsize=(10, 10), sharex="all", layout="constrained"
-        )
+    #     self.ref_bes_state = state_dict["ref_bes_state"]
+    #     self.weight_bes_state = state_dict["weight_bes_state"]
+    #     self.ref_h2s_state = state_dict["ref_h2s_state"]
+    #     self.weight_h2s_state = state_dict["weight_h2s_state"]
+    #     self.ref_tes_state = state_dict["ref_tes_state"]
+    #     self.weight_tes_state = state_dict["weight_tes_state"]
 
-        ax[0, 0].fill_between(
-            np.arange(0, len(forecast), 1),
-            np.zeros(len(forecast)),
-            forecast,
-            alpha=0.25,
-            edgecolor=None,
-            color="yellow",
-            label="forecast",
-        )
-        ax[0, 0].plot(us[0:2, :].T, label="generation")
+    #     combined_mat = state_dict["statespace"]
 
-        ax[1, 0].plot(uc[0, :], label="battery charge")
-        # ax[1, 0].plot(-e[3, :], label="battery discharge")
+    #     out_dims = np.array([self.n, self.pco, self.pex, self.pze, self.pgt, self.pet])
+    #     in_dims = np.array([self.n, self.mct, self.msp, self.oex])
 
-        ax[2, 0].plot(forecast - uc[0, :], label="gen + bes")
+    #     for i, row in enumerate(combined_mat):
+    #         for j, mat in enumerate(row):
+    #             if (out_dims[i] > 0) and (in_dims[j] > 0):
+    #                 combined_mat[i][j] = np.array(combined_mat[i][j], dtype=float)
+    #             else:
+    #                 combined_mat[i][j] = np.zeros((out_dims[i], in_dims[j]), dtype=float)
 
-        ax[2, 1].plot(us[3, :] - us[2, :] - uc[1, :], label="H2 to steel")
-        ax[1, 1].plot(uc[1, :], label="H2S charge")
-        # ax[1, 1].plot(-e[6, :], label="H2S discharge")
+    #     # combined_mat = [[np.array(mat) for mat in row] for row in combined_mat]
 
-        ax[0, 1].fill_between(
-            np.arange(0, uc.shape[1], 1),
-            np.zeros(uc.shape[1]),
-            np.sum(us[2:4, :], axis=0),
-            alpha=0.25,
-            edgecolor=None,
-            color="blue",
-            label="H2 gen",
-        )
+    #     self.A, self.Bct, self.Bsp, self.Eex = combined_mat[0]
+    #     self.Cco, self.Dcoct, self.Dcosp, self.Fcoex = combined_mat[1]
+    #     self.Cex, self.Dexct, self.Dexsp, self.Fexex = combined_mat[2]
+    #     self.Cze, self.Dzect, self.Dzesp, self.Fzeex = combined_mat[3]
+    #     self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex = combined_mat[4]
+    #     self.Cet, self.Detct, self.Detsp, self.Fetex = combined_mat[5]
 
-        ax[0, 1].plot(us[2:4, :].T, label="H2 gen")
+    #     self.M_dco_yco = np.array(state_dict["M_dco_yco"], dtype=float)
+    #     self.yco_ub_ind = np.array(state_dict["yco_ub_ind"], dtype=int)
+    #     self.yco_ub_node_ind = np.array(state_dict["yco_ub_node_ind"], dtype=int)
 
-        ax[3, 1].plot(ys[0, :], label="Steel")
+    #     self.cols_li = np.array(state_dict["cols_li"])
+    #     self.cols_nl = np.array(state_dict["cols_nl"])
+    #     self.rows_li = np.array(state_dict["rows_li"])
+    #     self.rows_nl = np.array(state_dict["rows_nl"])
 
-        for i in range(ax.shape[0]):
-            for j in range(ax.shape[1]):
-                ax[i, j].legend()
+    #     self.block_ss = np.array(state_dict["block_ss"], dtype=float)
+
+
+    #     if "x_init" in state_dict:
+
+    #         self.step_index_store.append(state_dict["step_index_init"])
+
+    #         self.uc_init = np.array(state_dict["uc_init"], dtype=float)
+    #         self.us_init = np.array(state_dict["us_init"], dtype=float)
+    #         self.x_init = np.array(state_dict["x_init"], dtype=float)
+    #         self.ys_init = np.array(state_dict["ys_init"], dtype=float)
+    #         self.curtail_init = np.array(state_dict["curtail_init"], dtype=float)
+
+    #         self.prev_success = True
+
+    #     self.x_bes_max = float(state_dict["x_bes_max"])
+    #     self.x_tes_max = float(state_dict["x_tes_max"])
+    #     self.x_h2s_max = float(state_dict["x_h2s_max"])
+
+    #     []
 
     def print_block_matrices(
         self, mat, in_labels, out_labels, no_space=False, save_description=False
@@ -1593,189 +1403,6 @@ class DispatchModelPredictiveController:
 
         []
 
-    def calculate_minimal_inputs(self):
-
-        Cze = np.block([[self.Cze], [self.Cgt], [self.Cet]])
-        Dzect = np.block([[self.Dzect], [self.Dgtct], [self.Detct]])
-        Dzesp = np.block([[self.Dzesp], [self.Dgtsp], [self.Detsp]])
-        Fzeex = np.block([[self.Fzeex], [self.Fgtex], [self.Fetex]])
-
-        n_constraints = Cze.shape[0]
-        n_variables = Dzect.shape[1] + Dzesp.shape[1]
-        n_inds = n_variables - n_constraints
-        n_deps = n_constraints
-
-        uct_inds = np.array([1, 2, 5])
-        usp_inds = np.array([1, 3, 5, 6])
-
-        uct_deps = np.array(
-            [i for i in range(self.mct) if i not in uct_inds], dtype=int
-        )
-        usp_deps = np.array(
-            [i for i in range(self.msp) if i not in usp_inds], dtype=int
-        )
-
-        Dze = np.block([Dzect, Dzesp])
-        inds_desired = np.concatenate([uct_inds, usp_inds + self.mct])
-        deps_desired = np.concatenate([uct_deps, usp_deps + self.mct])
-
-        # [(i, np.linalg.matrix_rank(Dze[:, np.delete(inds_desired, i)])) for i in range(len(inds_desired))]
-        # [(i, np.linalg.matrix_rank(Dze[:, np.delete(deps_desired, i)])) for i in range(len(deps_desired))]
-
-        inds = inds_desired
-        # inds = np.array([0, 1, 2, 4, 6, 8, 9, 10, 11, 14, 16, 18])
-        # inds = np.array([1,  3,  5,  6,  7, 8, 11, 14])
-        deps = np.array(
-            [i for i in range(self.mct + self.msp) if i not in inds], dtype=int
-        )
-
-        Dze_inv = np.linalg.inv(Dze[:, deps])
-
-        Dze_ind = Dze[:, inds]
-
-        ind_ct = [i for i in inds if i < self.mct]
-        ind_sp = [
-            i - self.mct for i in inds if (i >= self.mct) and (i < self.mct + self.msp)
-        ]
-
-        dep_ct = [i for i in inds if i < self.mct]
-        dep_sp = [
-            i - self.mct for i in deps if (i >= self.mct) and (i < self.mct + self.msp)
-        ]
-
-        ct_labels = [self.mct_label[i] for i in ind_ct]
-        sp_labels = [self.msp_label[i] for i in ind_sp]
-
-        ct_labels_dep = [self.mct_label[i] for i in dep_ct]
-        sp_labels_dep = [self.msp_label[i] for i in dep_sp]
-
-        Anew = self.A - np.block([self.Bct, self.Bsp])[:, deps] @ Dze_inv @ Cze
-        Bnew = (
-            np.block([self.Bct, self.Bsp])[:, inds]
-            - np.block([self.Bct, self.Bsp])[:, deps] @ Dze_inv @ Dze_ind
-        )
-        Enew = self.Eex - np.block([self.Bct, self.Bsp])[:, deps] @ Dze_inv @ Fzeex
-
-        Cnew = self.Cex - np.block([self.Dexct, self.Dexsp])[:, deps] @ Dze_inv @ Cze
-        Dnew = (
-            np.block([self.Dexct, self.Dexsp])[:, inds]
-            - np.block([self.Dexct, self.Dexsp])[:, deps] @ Dze_inv @ Dze_ind
-        )
-        Fnew = (
-            self.Fexex - np.block([self.Dexct, self.Dexsp])[:, deps] @ Dze_inv @ Fzeex
-        )
-
-        Cdep = Dze_inv @ Cze
-        Ddep = Dze_inv @ Dze_ind
-        Fdep = Dze_inv @ Fzeex
-
-        mat = [[Anew, Bnew, Enew], [Cnew, Dnew, Fnew], [Cdep, Ddep, Fdep]]
-
-        self.print_block_matrices(
-            mat,
-            in_labels=["x", "u", "dex"],
-            out_labels=["x+", "yex", "udep"],
-            save_description=False,
-        )
-        pprint.pprint(list(zip(range(n_inds), ct_labels + sp_labels)))
-        pprint.pprint(list(zip(range(n_deps), ct_labels_dep + sp_labels_dep)))
-
-        []
-
-    def plot_saved_trajectories(self):
-
-        n_nodes = len(self.node_order)
-        fig, ax = plt.subplots(
-            n_nodes, 4, sharex="all", layout="constrained", figsize=(15, 10), dpi=100
-        )
-
-        ax[0, 0].set_title("Disturbance")
-        ax[0, 1].set_title("Control input")
-        ax[0, 2].set_title("State")
-        ax[0, 3].set_title("Output")
-        # ax[0, 4].set_title("Split")
-
-        # for i, node in enumerate(list(RTS.G.nodes)):
-        for i, node in enumerate(self.node_order):
-
-            ax[i, 0].set_ylabel("\n".join(node.split("_")))
-
-            # 0 - disturbance, 1 - control input, 2 - states, 3- outputs total, 4 - outputs split
-
-            # dex_inds = [
-            #     i for i in range(len(self.oex_label)) if node in self.oex_label[i]
-            # ]
-            dco_inds = [
-                i
-                for i in range(len(self.oco_label))
-                if node in self.oco_label[i].split(" ")[2]
-            ]
-
-            uct_inds = [
-                i for i in range(len(self.mct_label)) if node in self.mct_label[i]
-            ]
-            # usp_inds = [
-            #     i
-            #     for i in range(len(self.msp_label))
-            #     if node in self.msp_label[i].split(" ")[2]
-            # ]
-
-            x_inds = [i for i in range(len(self.n_label)) if node in self.n_label[i]]
-            y_inds = [
-                i
-                for i in range(len(self.p_label))
-                if node in self.p_label[i].split(" ")[2]
-            ]
-
-            colors = ["blue", "orange", "red", "brown", "cyan"]
-
-            def plot_one(ax, stored, inds):
-                for j in range(len(self.step_index_store)):
-                    t = np.arange(
-                        self.step_index_store[j],
-                        self.step_index_store[j] + self.horizon,
-                    )[None, :]
-                    for k in range(len(inds)):
-                        if self.horizon == 1:
-                            ax.scatter(
-                                t * np.ones(len(inds)),
-                                stored[j][inds, :],
-                                color=colors[k],
-                            )
-                        else:
-                            ax.plot(t.T, stored[j][inds[k], :].T, color=colors[k])
-
-            plot_one(ax[i, 0], self.dco_store, dco_inds)
-            plot_one(ax[i, 1], self.uct_store, uct_inds)
-            plot_one(
-                ax[i, 2], [xst[:, 0 : self.horizon] for xst in self.x_store], x_inds
-            )
-            plot_one(
-                ax[i, 3],
-                [np.sum(ysp[y_inds, :], axis=0)[None, :] for ysp in self.ysp_store],
-                [0],
-            )
-            # plot_one(ax[i, 4], self.ysp_store, y_inds)
-            # ax[i, 4].set_ylim(ax[i, 3].get_ylim())
-
-            if node == "generation":
-                forecast_curtail_grid = [
-                    np.concatenate(
-                        [
-                            self.forecast_store[i],
-                            self.forecast_store[i] - self.curtail_store[i],
-                            self.forecast_store[i] + self.grid_store[i],
-                        ]
-                    )
-                    # [self.forecast_store[i], np.array(self.forecast_store[i]) - np.array(self.curtail_store[i]), np.array(self.forecast_store[i]) + np.array(self.grid_store[i])]
-                    for i in range(len(self.step_index_store))
-                ]
-
-                plot_one(ax[i, 0], forecast_curtail_grid, np.array([0, 1, 2]))
-
-            fig.align_ylabels()
-
-        pass
 
 
 
