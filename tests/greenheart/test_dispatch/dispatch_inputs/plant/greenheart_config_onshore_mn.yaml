@@ -63,6 +63,7 @@ electrolyzer:
     resize_for_enduse: False
     size_for: 'BOL' #'BOL' (generous) or 'EOL' (conservative)
     hydrogen_dmd:
+  # rating: 1160 # 1160 # 1125.165 # MW
   rating: 720 # 1160 # 1125.165 # MW
   cluster_rating_MW: 40
   pem_control_type: 'basic'
@@ -157,67 +158,7 @@ plant_design:
 
 
 realtime_simulation:
-  # stop_index: 50
-  system:
-    # system_graph_config: /Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/dispatch/objective_function/inputs/network_config_validation.yaml
-    # system_graph_config: /Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/greenHEART/input-files/plant/network_config_case3.yaml
-    system_graph_config: /Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/greenHEART/input-files/plant/network_config_tes_constant.yaml
-  component_config: /Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/greenHEART/input-files/plant/realtime_simulation_subsystems.yaml
-  dispatch:
-    update_period : 3
-    mpc:
-      horizon: 6
-
-
-      reference: 110
-      weights:
-
-
-        # These are the weights that I used for the second set of sweeps, they work sort of
-        output_tracking: 6.0e+12
-        grid_curtail: 1.0e-3
-        gen_simultaneous: 1
-        bes_simultaneous: 1
-        bes_state:  1.0e-05
-        h2s_simultaneous: 1
-        h2s_state:  1.0e-06
-        tes_simultaneous: 0
-        tes_state:  6.0e-05
-        objective: 1
-        # # These are the weights I used for the original sweeps in the draft
-        # output_tracking: 4.5e+11
-        # curtail: 1.0e-00
-        # # curtail: 2723.4221566716633
-        # grid_purchase: 1.0e-00
-        # grid_curtail: 1.0e-4
-        # gen_simultaneous: 1
-        # bes_simultaneous: 1
-        # bes_state: 1.0e-06
-        # # bes_state: 6.939119747386081e-09
-        # h2s_simultaneous: 1
-        # h2s_state: 1.0e-5
-        # tes_simultaneous: 0
-        # # tes_simultaneous: 1
-        # # tes_state: 2.5e-12
-        # tes_state: 2.5e-6
-        # objective: 1
-      terms:
-        [
-        output_tracking,
-        # curtail,
-        # grid_purchase,
-        gridcurtail,
-        bes_simultaneous,
-        h2s_simultaneous,
-        # gen_simultaneous,
-        bes_state,
-        h2s_state,
-        tes_state,
-        ]
-      references:
-        bes: 0.5
-        tes: 0.5
-        h2s: 0.5
+  /Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/greenHEART/input-files/plant/rts_configs/forecasting_sweep.yaml
 
 steel:
   capacity:

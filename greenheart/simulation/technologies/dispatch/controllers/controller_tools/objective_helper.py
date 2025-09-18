@@ -1,4 +1,6 @@
 import numpy as np
+import casadi as ca
+
 
 class Objective:
     def __init__(self, horizon:int, active_terms:list[str], weights:list[float], references:dict, capacities:dict, var_inds:dict):
@@ -258,3 +260,73 @@ class Objective:
         for k in range(self.horizon):
             term_obj += w_h2s * (self.x_h2s_max - x_var[self.var_inds["x_h2s"], k])**2
         return term_obj
+
+
+    def get_objective_var_inds(self):
+        # Set up indices for objective terms flexibly
+        def getid(label, index_list):
+            indices = [i for i in range(len(index_list)) if label in index_list[i]]
+            assert len(indices) == 1
+            return indices[0]
+
+        objective_var_inds = {}
+
+        if "battery" in self.node_order:
+            bes_var_inds = dict(
+                uct_charge_bes=getid("uct 0 battery", self.mct_label),
+                uct_discharge_bes=getid("uct 1 battery", self.mct_label),
+                x_bes=getid("x 0 battery", self.n_label),
+            )
+            objective_var_inds.update(bes_var_inds)
+
+        if "hydrogen_storage" in self.node_order:
+            h2s_var_inds = dict(
+                uct_charge_h2s=getid("uct 0 hydrogen_storage", self.mct_label),
+                uct_discharge_h2s=getid("uct 1 hydrogen_storage", self.mct_label),
+                x_h2s=getid("x 0 hydrogen_storage", self.n_label),
+            )
+            objective_var_inds.update(h2s_var_inds)
+
+        if "thermal_energy_storage" in self.node_order:
+            tes_var_inds = dict(
+                uct_charge_tes=getid("uct 0 thermal_energy_storage", self.mct_label),
+                uct_discharge_tes=getid("uct 1 thermal_energy_storage", self.mct_label),
+                x_tes=getid("x 0 thermal_energy_storage", self.n_label),
+            )
+            objective_var_inds.update(tes_var_inds)
+        return objective_var_inds
+    
+    def compare_objective_implementations(self, obj1, obj_terms1, obj_terms_uw1, obj2, obj_terms2, obj_terms_uw2 ):
+
+        ov = {key: np.random.rand(val.shape[0], val.shape[1]) for key,val in self.opt_vars.items()}
+
+        F_obj1 = ca.Function("obj1", list(self.opt_vars.values()), [obj1])
+        F_obj2 = ca.Function("obj2", list(self.opt_vars.values()), [obj2])
+
+        print(f"Objectives are probably the same: {np.float64(F_obj1(*list(ov.values()))) == np.float64(F_obj2(*list(ov.values())))}")
+
+        obj_diff = np.float64(F_obj1(*list(ov.values()))) - np.float64(F_obj2(*list(ov.values())))
+
+
+        for term in obj_terms1.keys():
+            F1 = ca.Function(f"f1", list(self.opt_vars.values()), [obj_terms1[term]])
+            F2 = ca.Function(f"f2", list(self.opt_vars.values()), [obj_terms2[term]])
+
+            F1_uw = ca.Function(f"f1_uw", list(self.opt_vars.values()), [obj_terms_uw1[term]])
+            F2_uw = ca.Function(f"f2_uw", list(self.opt_vars.values()), [obj_terms_uw1[term]])
+
+
+            f_equal = np.float64(F1(*list(ov.values()))) == np.float64(F2(*list(ov.values())))
+            f_diff = np.float64(F1(*list(ov.values()))) - np.float64(F2(*list(ov.values())))
+
+            f_uw_equal = np.float64(F1_uw(*list(ov.values()))) == np.float64(F2_uw(*list(ov.values())))
+            f_uw_diff = np.float64(F1_uw(*list(ov.values()))) - np.float64(F2_uw(*list(ov.values())))
+
+
+            print(f"Term {term} are equal UW: {f_uw_equal}, W: {f_equal}")
+
+            []
+
+
+
+        pass
