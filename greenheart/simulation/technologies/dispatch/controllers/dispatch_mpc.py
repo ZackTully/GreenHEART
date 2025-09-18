@@ -120,7 +120,11 @@ class DispatchModelPredictiveController:
             self.edge_order = edge_order
 
             self.G = simulation_graph
-            self.collect_system_matrices(traversal_order, simulation_graph)
+
+            self.control_model = ControlModelBuilder(mpc=self)
+            self.control_model.build_control_model(traversal_order, simulation_graph)
+
+            # self.collect_system_matrices(traversal_order, simulation_graph)
 
             
 
@@ -225,6 +229,19 @@ class DispatchModelPredictiveController:
     def set_terminal_cost_bool(self, terminal_bool):
         self.terminal_cost = terminal_bool
         self.setup_optimization()
+
+
+
+    # @property
+    # def labels(self):
+    #     return self.labels
+    
+    # @labels.setter
+    # def labels(self, labels):
+    #     self.labels = labels
+
+
+
 
 
     def setup_logging(self, log_config):
@@ -451,9 +468,12 @@ class DispatchModelPredictiveController:
 
             grid_curtail = gridcurtail[:, k]
 
-            xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(
+            xkp1, yexk, yco, yze, ygt, yet = self.control_model.step_control_model(
                 x_var[:, k], uct_var[:, k], usp_var[:, k], dex_param[:, k], grid_curtail
             )
+            # xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(
+            #     x_var[:, k], uct_var[:, k], usp_var[:, k], dex_param[:, k], grid_curtail
+            # )
 
             opti.subject_to(x_var[:, k + 1] == xkp1)
             opti.subject_to(yex_var[:, k] == yexk[0])
@@ -934,12 +954,12 @@ class DispatchModelPredictiveController:
             self.curtail_init = curtail
 
             ysp = (
-                self.Cco @ x[:, :-1]
-                + self.Dcoct @ uct
-                + self.Dcosp @ usp
-                + self.Fcoex @ (dex - curtail)
+                self.control_model.Cco @ x[:, :-1]
+                + self.control_model.Dcoct @ uct
+                + self.control_model.Dcosp @ usp
+                + self.control_model.Fcoex @ (dex - curtail)
             )
-            dco = self.M_dco_yco @ ysp
+            dco = self.control_model.M_dco_yco @ ysp
 
             ysp = np.concatenate([ysp, yex])
 
@@ -2924,5 +2944,61 @@ class Capturing(list):
 
 if __name__ == "__main__":
 
+    from pathlib import Path
+    from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
+    from hopp.simulation.technologies.sites.site_info import SiteInfo
+    from greenheart.simulation.realtime_simulation import RealTimeSimulation
+
+    class HOPPSystem:
+        def __init__(self, site):
+            self.site = site
+
+    class HOPPInterface:
+        def __init__(self, site):
+            self.system = HOPPSystem(site)
+
+    # config_root = Path(__file__).parents[0] / "dispatch_inputs"
+    config_root = Path(__file__).parents[5]/ "tests" / "greenheart" / "test_dispatch" / "dispatch_inputs"
+
+    fname_hopp_config = str(config_root / "plant/hopp_config_mn.yaml")
+    fname_greenheart_config = str(config_root / "plant/greenheart_config_onshore_mn.yaml")
+    fname_turbine_config = str(
+        config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml"
+    )
+    fname_floris_config = str(config_root / "floris/floris_input_lbw_6MW.yaml")
+
+
+    config = GreenHeartSimulationConfig(
+        fname_hopp_config,
+        fname_greenheart_config,
+        fname_turbine_config,
+        fname_floris_config,
+        verbose=False,
+        show_plots=False,
+        save_plots=False,
+        use_profast=True,
+        post_processing=True,
+        incentive_option=1,
+        plant_design_scenario=1,
+        output_level=8,
+    )
+
+    config.realtime_simulation = True
+
+    hopp_site = SiteInfo(**config.hopp_config["site"])
+    hi = HOPPInterface(hopp_site)
+    simulator = RealTimeSimulation(config, hi)
+
+
+    mpc_config = config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
     
-    pass
+    # Minimal required attributes for instantiation
+    ctrl = DispatchModelPredictiveController(
+        config=config,
+        simulation_graph=simulator.G,
+        node_order=simulator.node_order,
+        edge_order=simulator.edge_order,
+        mpc_config=mpc_config,
+    )
+
+    []

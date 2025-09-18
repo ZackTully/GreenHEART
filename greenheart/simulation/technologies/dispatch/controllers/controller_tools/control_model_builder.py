@@ -1,16 +1,19 @@
 import numpy as np
 import casadi as ca
-
-
+import scipy
+import networkx as nx
 
 class ControlModelBuilder:
-    def __init__(self):
-        pass
+    def __init__(self, mpc):
+        self.mpc = mpc
+        self.node_order = self.mpc.node_order
+        self.edge_order = self.mpc.edge_order
+        
 
 
     def step_control_model(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
 
-        if self.use_NL_electrolzyer:
+        if self.mpc.use_NL_electrolzyer:
             return self.step_control_model_NL(
                 x_var, uct_var, usp_var, dex_param, grid_curtail
             )
@@ -123,7 +126,8 @@ class ControlModelBuilder:
         )
         return xkp1, yexk, yco, yze, ygt, yet
 
-    def collect_system_matrices(self, traversal_order, G):
+    # def collect_system_matrices(self, traversal_order, G):
+    def build_control_model(self, traversal_order, G):
         # =============================================================================
         # ==                                                                         ==
         # ==                     Construct control model                             ==
@@ -628,6 +632,8 @@ class ControlModelBuilder:
 
         for key in dims.keys():
             setattr(self, key, np.sum(dims[key]))
+            setattr(self.mpc, key, np.sum(dims[key]))
+
 
         for key in labels.keys():
             labels[key] = [x for xs in labels[key] for x in xs]
@@ -641,6 +647,7 @@ class ControlModelBuilder:
 
         for key in labels.keys():
             setattr(self, f"{key}_label", labels[key])
+            setattr(self.mpc, f"{key}_label", labels[key])
 
         self.labels = labels
         self.dims = dims
@@ -668,7 +675,7 @@ class ControlModelBuilder:
             [
                 np.array([[1] + [0] * (len(G.nodes) - 1)]).T,
                 nx.incidence_matrix(
-                    G, oriented=True, nodelist=self.node_order, edgelist=self.edge_order
+                    G, oriented=True, nodelist=self.mpc.node_order, edgelist=self.mpc.edge_order
                 ).toarray(),
                 np.array([[0] * (len(G.nodes) - 1) + [-1]]).T,
             ],
@@ -858,19 +865,30 @@ class ControlModelBuilder:
         self.bounds = bounds
         self.bounds_verbose = verbose_bounds
 
+        self.mpc.bounds = bounds
+        self.mpc.bounds_verbose = verbose_bounds
+
         # Separate out the yco indices that need to be there and the ones that dont
         yco_ub = []
 
         self.yco_ub_node_ind = np.where(self.bounds["y_ub"] != np.inf)[0]
+        self.mpc.yco_ub_node_ind = np.where(self.bounds["y_ub"] != np.inf)[0]
         for y_ind in np.where(self.bounds["y_ub"] != np.inf)[0]:
             node = self.node_order[y_ind]
             for j in range(self.pco):
                 if self.pco_label[j].split(" ")[2] == node:
                     yco_ub.append(j)
+
         self.yco_ub_ind = np.sort(yco_ub)
+        self.mpc.yco_ub_ind = np.sort(yco_ub)
+        
+
 
         self.uct_order = uct_order
         self.usp_order = usp_order
+
+        self.mpc.uct_order = uct_order
+        self.mpc.usp_order = usp_order
 
         self.linear_cols_dict = linear_cols_coupled
         self.linear_rows_dict = linear_rows_coupled
