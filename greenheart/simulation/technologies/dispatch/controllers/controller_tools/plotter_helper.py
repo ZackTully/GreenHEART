@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import casadi as ca
 
 class MPCPlotter:
-    def __init__(self):
-        pass
+    def __init__(self, mpc):
+        self.mpc = mpc
 
     def plot_saved_trajectories(self):
 
