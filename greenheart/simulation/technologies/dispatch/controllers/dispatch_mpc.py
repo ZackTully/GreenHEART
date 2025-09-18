@@ -41,55 +41,31 @@ class DispatchModelPredictiveController:
         # s_opts={"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":2e5},
         debug_mode=False,
     ):
+        self.G = simulation_graph
+
+        self.node_order = node_order
+        self.edge_order = edge_order
+
+        self.mpc_config = mpc_config
 
         self.debug_mode = debug_mode
         self.verbose = False
 
-
-        self.mpc_config = mpc_config
-
         if "logging" in self.mpc_config:
             self.setup_logging(self.mpc_config.pop("logging"))
-
 
         self.plotter = MPCPlotter(mpc=self)
         self.debug_helper = DebugHelper(mpc=self)
         self.control_model = ControlModelBuilder(mpc=self)
 
-
         self.use_objective_class = True
+        self.horizon = mpc_config["horizon"]
 
-        if mpc_config is not None:
-            options = mpc_config["options"]
+        self.reference = mpc_config["reference"]
+        self.weights = mpc_config["weights"]
+        self.term_keys = mpc_config["terms"]
 
-            # Option flags
-            self.use_config_weights = options["use_config_weights"]
-            self.warm_start_with_previous_solution = options["warm_start"]
-            self.use_NL_electrolzyer = options["use_NL_electrolyzer"]
-            self.NL_EL_order = options["NL_order"]
-            self.only_bounded_yco = options["only_bounded_yco"]
-            self.no_shortfall = options["no_shortfall"]
-            self.terminal_cost = options["terminal_cost"]
-            self.terminal_constraint = options["terminal_constraint"]
-
-            # self.constrain_output_tracking = options["constrain_output_tracking"]
-            self.horizon = mpc_config["horizon"]
-
-        else:
-
-            # Option flags
-            self.use_config_weights = True
-            self.warm_start_with_previous_solution = True
-            self.use_NL_electrolzyer = False
-            self.NL_EL_order = 1
-            self.only_bounded_yco = True
-            self.no_shortfall = True
-            self.terminal_cost = True
-            self.terminal_constraint = False
-
-            # self.constrain_output_tracking = False
-
-            self.horizon = 5
+        self.set_option_flags(mpc_config)
 
         # if self.no_shortfall:
         #     print(f"{self.no_shortfall = }")
@@ -107,96 +83,48 @@ class DispatchModelPredictiveController:
 
         if self.debug_mode:
             self.debug_helper.load_state_for_debug(saved_state)
-
         else:
-
+            self.config = config
             system_graph = load_yaml(
                 config.greenheart_config["realtime_simulation"]["system"][
                     "system_graph_config"
                 ]
             )
+            self.traversal_order = system_graph["traversal_order"]
 
-            self.config = config
-
-            nodes = system_graph["traversal_order"]
-            traversal_order = system_graph["traversal_order"]
-
-            self.traversal_order = traversal_order
-            self.node_order = node_order
-            self.edge_order = edge_order
-
-            self.G = simulation_graph
-
-            self.control_model.build_control_model(traversal_order, simulation_graph)
-
-            # self.collect_system_matrices(traversal_order, simulation_graph)
+            self.control_model.build_control_model(self.traversal_order, self.G)
 
             if "battery" in self.node_order:
-                self.x_bes_max = simulation_graph.nodes["battery"]["ionode"].model.max_capacity_kWh
-                self.x_bes_min = simulation_graph.nodes["battery"]["ionode"].model.min_capacity_kWh
-                if "references" in mpc_config:
-                    bes_soc_ref = mpc_config["references"]["bes"]
-                else:
-                    bes_soc_ref = 0.7
-                self.ref_bes_state = (
-                    bes_soc_ref
-                    * simulation_graph.nodes["battery"]["ionode"].model.max_capacity_kWh
-                )
-                self.weight_bes_state = 1e-4 / self.ref_bes_state
+                self.get_battery_graph_info()
 
             if "hydrogen_storage" in self.node_order:
-                self.x_h2s_max = simulation_graph.nodes["hydrogen_storage"][
-                        "ionode"
-                    ].model.max_capacity_kg
-                self.x_h2s_min = simulation_graph.nodes["hydrogen_storage"]["ionode"].model.min_capacity_kg
-                if "references" in mpc_config:
-                    h2s_soc_ref = mpc_config["references"]["h2s"]
-                else:
-                    h2s_soc_ref = 0.7
-                self.ref_h2s_state = (
-                    h2s_soc_ref
-                    * simulation_graph.nodes["hydrogen_storage"][
-                        "ionode"
-                    ].model.max_capacity_kg
-                )
-                self.weight_h2s_state = 1e-1 / self.ref_h2s_state
+                self.get_hydrogen_storage_graph_info()
 
             if "thermal_energy_storage" in self.node_order:
-                self.x_tes_max = simulation_graph.nodes["thermal_energy_storage"][
-                        "ionode"
-                    ].model.H_capacity_kWh
-                self.x_tes_min = 0
-                # self.x_tes_min = simulation_graph.nodes["thermal_energy_storage"]["ionode"].model.H_buffer_max_kWh
-                if "references" in mpc_config:
-                    tes_soc_ref = mpc_config["references"]["tes"]
-                else:
-                    tes_soc_ref = 0.7
-                self.ref_tes_state = (
-                    tes_soc_ref
-                    * simulation_graph.nodes["thermal_energy_storage"][
-                        "ionode"
-                    ].model.H_capacity_kWh
-                )
-                self.weight_tes_state = 1e-4 / self.ref_tes_state
-        if "reference" in mpc_config:
-            self.reference = mpc_config["reference"]
-        # else:
-        #     ref_steel = 165
-        #     self.reference = ref_steel
-
-        if "weights" in mpc_config:
-            self.use_config_weights = True
-            self.weights = mpc_config["weights"]
-        if "terms" in mpc_config:
-            self.term_keys = mpc_config["terms"]
+                self.get_thermal_energy_storage_graph_info()
 
         self.objective_manager = Objective(
             mpc=self,
             horizon=self.horizon,
             active_terms=self.term_keys,
             weights=self.weights,
-            references=dict(steel=self.reference, x_bes=self.ref_bes_state, x_tes=self.ref_tes_state, x_h2s=self.ref_h2s_state, soc_bes=self.mpc_config["references"]["bes"], soc_tes=self.mpc_config["references"]["tes"], soc_h2s=self.mpc_config["references"]["h2s"]),
-            capacities=dict(x_bes_max=self.x_bes_max, x_bes_min=self.x_bes_min, x_tes_max= self.x_tes_max, x_tes_min=self.x_tes_min, x_h2s_max=self.x_h2s_max, x_h2s_min=self.x_h2s_min),
+            references=dict(
+                steel=self.reference,
+                x_bes=self.ref_bes_state,
+                x_tes=self.ref_tes_state,
+                x_h2s=self.ref_h2s_state,
+                soc_bes=self.mpc_config["references"]["bes"],
+                soc_tes=self.mpc_config["references"]["tes"],
+                soc_h2s=self.mpc_config["references"]["h2s"],
+            ),
+            capacities=dict(
+                x_bes_max=self.x_bes_max,
+                x_bes_min=self.x_bes_min,
+                x_tes_max=self.x_tes_max,
+                x_tes_min=self.x_tes_min,
+                x_h2s_max=self.x_h2s_max,
+                x_h2s_min=self.x_h2s_min,
+            ),
             # var_inds=self.objective_manager.get_objective_var_inds()
         )
 
@@ -205,39 +133,89 @@ class DispatchModelPredictiveController:
         if self.horizon == 1:
             self.warm_start_with_previous_solution = False
 
-        self.bad_solve_count = 0
-        self.bad_solve_step = []
-        self.bad_solve_violation = []
         self.prev_sol = None
 
-    def set_no_shortfall_bool(self, no_shortfall: bool):
-        self.no_shortfall = no_shortfall
-        self.setup_optimization()
+    def set_option_flags(self, mpc_config):
+        if mpc_config is not None:
+            options = mpc_config["options"]
 
-    def set_use_NL_electrolyzer(self, use_NL: bool):
-        self.use_NL_electrolzyer = use_NL
-        self.setup_optimization()
+            # Option flags
+            self.use_config_weights = options["use_config_weights"]
+            self.warm_start_with_previous_solution = options["warm_start"]
+            self.use_NL_electrolzyer = options["use_NL_electrolyzer"]
+            self.NL_EL_order = options["NL_order"]
+            self.only_bounded_yco = options["only_bounded_yco"]
+            self.no_shortfall = options["no_shortfall"]
+            self.terminal_cost = options["terminal_cost"]
+            self.terminal_constraint = options["terminal_constraint"]
 
-    def set_terminal_cost_bool(self, terminal_bool):
-        self.terminal_cost = terminal_bool
-        self.setup_optimization()
+            # self.constrain_output_tracking = options["constrain_output_tracking"]
 
+        else:
 
+            # Option flags
+            self.use_config_weights = True
+            self.warm_start_with_previous_solution = True
+            self.use_NL_electrolzyer = False
+            self.NL_EL_order = 1
+            self.only_bounded_yco = True
+            self.no_shortfall = True
+            self.terminal_cost = True
+            self.terminal_constraint = False
+
+            # self.constrain_output_tracking = False
+
+    def get_battery_graph_info(self):
+        self.x_bes_max = self.G.nodes["battery"]["ionode"].model.max_capacity_kWh
+        self.x_bes_min = self.G.nodes["battery"]["ionode"].model.min_capacity_kWh
+
+        bes_soc_ref = self.mpc_config["references"]["bes"]
+        self.ref_bes_state = bes_soc_ref * self.x_bes_max
+
+        self.weight_bes_state = 1e-4 / self.ref_bes_state
+
+    def get_hydrogen_storage_graph_info(self):
+        graph_h2s = self.G.nodes["hydrogen_storage"]["ionode"].model
+
+        self.x_h2s_max = graph_h2s.max_capacity_kg
+        self.x_h2s_min = graph_h2s.min_capacity_kg
+
+        h2s_soc_ref = self.mpc_config["references"]["h2s"]
+        self.ref_h2s_state = h2s_soc_ref * self.x_h2s_max
+        self.weight_h2s_state = 1e-1 / self.ref_h2s_state
+
+    def get_thermal_energy_storage_graph_info(self):
+        graph_tes = self.G.nodes["thermal_energy_storage"]["ionode"].model
+
+        self.x_tes_max = graph_tes.H_capacity_kWh
+        self.x_tes_min = 0
+        # self.x_tes_min = simulation_graph.nodes["thermal_energy_storage"]["ionode"].model.H_buffer_max_kWh
+
+        tes_soc_ref = self.mpc_config["references"]["tes"]
+        self.ref_tes_state = tes_soc_ref * self.x_tes_max
+        self.weight_tes_state = 1e-4 / self.ref_tes_state
+
+    # def set_no_shortfall_bool(self, no_shortfall: bool):
+    #     self.no_shortfall = no_shortfall
+    #     self.setup_optimization()
+
+    # def set_use_NL_electrolyzer(self, use_NL: bool):
+    #     self.use_NL_electrolzyer = use_NL
+    #     self.setup_optimization()
+
+    # def set_terminal_cost_bool(self, terminal_bool):
+    #     self.terminal_cost = terminal_bool
+    #     self.setup_optimization()
 
     def setup_logging(self, log_config):
         self.logger = logging.getLogger(f"MPC {log_config['case_description']}")
         self.logger.setLevel(logging.DEBUG)
-    
-        
+
         queue_handler = handlers.QueueHandler(log_config["queue"])
         queue_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(queue_handler)
 
         self.logger.info("Logger initialized")
-
-
-
-      
 
     def setup_solution_storage(self):
         self.step_index_store = []
@@ -259,6 +237,10 @@ class DispatchModelPredictiveController:
         self.iter_count_store = []
         self.t_wall_total_store = []
         self.t_proc_total_store = []
+
+        self.bad_solve_count = 0
+        self.bad_solve_step = []
+        self.bad_solve_violation = []
 
     def store_solve_stats(self, stats, step_index):
         self.solstats_step_index_store.append(step_index)
@@ -297,7 +279,6 @@ class DispatchModelPredictiveController:
         self.dco_store.append(np.atleast_2d(dco))
         self.objective_store.append(np.array(list(objective.values())))
         self.objective_uw_store.append(np.array(list(objective_uw.values())))
-
 
     def setup_optimization(self):
 
@@ -408,8 +389,6 @@ class DispatchModelPredictiveController:
         #     objective = 0
         #     objective_terms = []
 
-
-
         # Loop through time steps in the horizon, apply dynamics constraint and calculate objective at each step
         for k in range(self.horizon):
 
@@ -435,7 +414,6 @@ class DispatchModelPredictiveController:
             if self.pet > 0:
                 opti.subject_to(yet == np.zeros((self.pet, 1)))
 
-
             # if not self.use_objective_class:
             #     step_obj, step_obj_terms = self.objective_step(
             #         x_var[:, k],
@@ -458,7 +436,6 @@ class DispatchModelPredictiveController:
 
             #     objective += step_obj
             #     objective_terms.append(step_obj_terms)
-
 
         if self.use_objective_class:
             objective = self.objective_manager.construct_objective(uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail)
@@ -495,7 +472,6 @@ class DispatchModelPredictiveController:
             #     self.obj_terms.update({term: w * expr})
             #     self.obj_terms_uw.update({term: expr})
 
-
         # Set objective to objective expression
         opti.minimize(objective)
         self.opti = opti
@@ -517,7 +493,6 @@ class DispatchModelPredictiveController:
         #     obj_terms2=self.obj_terms_man,
         #     obj_terms_uw2=self.obj_terms_uw_man,
         # )
-
 
     # def objective_step(
     #     self,
@@ -643,8 +618,6 @@ class DispatchModelPredictiveController:
             val = prob.value(var)
             val = np.reshape(val, var.shape)
             return val
-
-
 
         if len(self.x_store) > 0:
             # Error between where the MPC planned for the state to be and where the measure state is
@@ -943,7 +916,6 @@ class DispatchModelPredictiveController:
 
         # assert np.max(np.abs(violations)) <= 1e3, f"violation too large at step index {step_index}"
 
-
         if np.max(np.abs(violations)) > 1e3:
             self.check_gradients(self.opti.debug, print_jacs=self.verbose)
             if not self.debug_mode:
@@ -951,14 +923,11 @@ class DispatchModelPredictiveController:
 
                 raise AssertionError(f"violation too large at step index {step_index}")
 
-
-
         self.bad_solve_count += 1
         self.bad_solve_step.append(step_index)
         self.bad_solve_violation.append(np.max(np.abs(violations)))
 
         plt.close()
-
 
     def print_block_matrices(
         self, mat, in_labels, out_labels, no_space=False, save_description=False
@@ -1056,8 +1025,6 @@ class DispatchModelPredictiveController:
         []
 
 
-
-
 class Capturing(list):
     def __enter__(self):
         self._stdout = sys.stdout
@@ -1068,7 +1035,6 @@ class Capturing(list):
         self.extend(self._stringio.getvalue().splitlines())
         del self._stringio  # free up some memory
         sys.stdout = self._stdout
-
 
 
 if __name__ == "__main__":
