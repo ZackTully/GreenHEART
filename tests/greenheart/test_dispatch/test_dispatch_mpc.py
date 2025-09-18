@@ -180,38 +180,14 @@ def test_objective_step_returns_dict():
 
 def test_step_control_model_runs():
     ctrl = make_standin_controller()
-    # Patch required matrices
-    ctrl.A = np.eye(1)
-    ctrl.Bct = np.ones((1,1))
-    ctrl.Bsp = np.ones((1,1))
-    ctrl.Eex = np.ones((1,1))
-    ctrl.Cex = np.ones((1,1))
-    ctrl.Dexct = np.ones((1,1))
-    ctrl.Dexsp = np.ones((1,1))
-    ctrl.Fexex = np.ones((1,1))
-    ctrl.Cco = np.ones((1,1))
-    ctrl.Dcoct = np.ones((1,1))
-    ctrl.Dcosp = np.ones((1,1))
-    ctrl.Fcoex = np.ones((1,1))
-    ctrl.Cze = np.ones((1,1))
-    ctrl.Dzect = np.ones((1,1))
-    ctrl.Dzesp = np.ones((1,1))
-    ctrl.Fzeex = np.ones((1,1))
-    ctrl.Cgt = np.ones((1,1))
-    ctrl.Dgtct = np.ones((1,1))
-    ctrl.Dgtsp = np.ones((1,1))
-    ctrl.Fgtex = np.ones((1,1))
-    ctrl.Cet = np.ones((1,1))
-    ctrl.Detct = np.ones((1,1))
-    ctrl.Detsp = np.ones((1,1))
-    ctrl.Fetex = np.ones((1,1))
-    x_var = np.ones((1,1))
-    uct_var = np.ones((1,1))
-    usp_var = np.ones((1,1))
-    dex_param = np.ones((1,1))
+
+    x_var = np.ones((1,ctrl.n)).T
+    uct_var = np.ones((1,ctrl.mct)).T
+    usp_var = np.ones((1,ctrl.msp)).T
+    dex_param = np.ones((1,ctrl.oex)).T
     grid_curtail = np.ones((1,1))
     # Should not raise
-    ctrl.step_control_model(x_var, uct_var, usp_var, dex_param, grid_curtail)
+    ctrl.control_model.step_control_model(x_var, uct_var, usp_var, dex_param, grid_curtail)
 
 
 
@@ -223,14 +199,14 @@ def test_collect_system_matrices_runs():
 
 
     # Should not raise
-    ctrl.collect_system_matrices(ctrl.traversal_order, ctrl.G)
+    ctrl.control_model.build_control_model(ctrl.traversal_order, ctrl.G)
 
     # Check that some expected attributes are set
-    assert hasattr(ctrl, "A")
-    assert hasattr(ctrl, "Bct")
-    assert hasattr(ctrl, "Cco")
-    assert hasattr(ctrl, "labels")
-    assert hasattr(ctrl, "dims")
+    assert hasattr(ctrl.control_model, "A")
+    assert hasattr(ctrl.control_model, "Bct")
+    assert hasattr(ctrl.control_model, "Cco")
+    assert hasattr(ctrl.control_model, "labels")
+    assert hasattr(ctrl.control_model, "dims")
 
 def test_collect_system_matrices_dimensions():
     ctrl = make_standin_controller()
