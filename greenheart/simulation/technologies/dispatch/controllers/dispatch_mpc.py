@@ -107,7 +107,6 @@ class DispatchModelPredictiveController:
 
         if self.debug_mode:
             self.debug_helper.load_state_for_debug(saved_state)
-            self.use_saved_solution = False
 
         else:
 
@@ -131,13 +130,6 @@ class DispatchModelPredictiveController:
             self.control_model.build_control_model(traversal_order, simulation_graph)
 
             # self.collect_system_matrices(traversal_order, simulation_graph)
-
-            
-
-            self.use_saved_solution = (
-                "use_saved_solution"
-                in config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
-            )
 
             if "battery" in self.node_order:
                 self.x_bes_max = simulation_graph.nodes["battery"]["ionode"].model.max_capacity_kWh
@@ -208,13 +200,6 @@ class DispatchModelPredictiveController:
             # var_inds=self.objective_manager.get_objective_var_inds()
         )
 
-        if self.use_saved_solution:
-            self.load_stored_values(
-                config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"][
-                    "use_saved_solution"
-                ]
-            )
-
         self.setup_optimization()
 
         if self.horizon == 1:
@@ -239,22 +224,7 @@ class DispatchModelPredictiveController:
 
 
 
-    # @property
-    # def labels(self):
-    #     return self.labels
-    
-    # @labels.setter
-    # def labels(self, labels):
-    #     self.labels = labels
-
-
-
-
-
     def setup_logging(self, log_config):
-
-
-
         self.logger = logging.getLogger(f"MPC {log_config['case_description']}")
         self.logger.setLevel(logging.DEBUG)
     
@@ -288,8 +258,6 @@ class DispatchModelPredictiveController:
         self.solstats_step_index_store = []
         self.iter_count_store = []
         self.t_wall_total_store = []
-        # self.t_wall_func = []
-        # self.t_wall_grad = []
         self.t_proc_total_store = []
 
     def store_solve_stats(self, stats, step_index):
@@ -330,34 +298,6 @@ class DispatchModelPredictiveController:
         self.objective_store.append(np.array(list(objective.values())))
         self.objective_uw_store.append(np.array(list(objective_uw.values())))
 
-    def save_stored_values(self, fname=None):
-        save_dict = {
-            "horizon": self.horizon,
-            "step_index": self.step_index_store,
-            "uct": self.uct_store,
-            "usp": self.usp_store,
-            "x": self.x_store,
-            "yex": self.yex_store,
-            "ysp": self.ysp_store,
-            "forecast": self.forecast_store,
-            "curtail": self.curtail_store,
-            "grid": self.grid_store,
-            "de": self.de_store,
-            "dco": self.dco_store,
-            "objective": self.objective_store,
-            "objective_uw": self.objective_uw_store,
-        }
-
-        with open(fname, "wb") as f:
-            pickle.dump(save_dict, f)
-
-    def load_stored_values(self, fname=None):
-        # TODO: remove, this method probably doesn't work anymore
-        with open(fname, "rb") as f:
-            stored_dict = pickle.load(f)
-
-        for key in stored_dict.keys():
-            setattr(self, f"{key}_saved", stored_dict[key])
 
     def setup_optimization(self):
 
@@ -579,44 +519,6 @@ class DispatchModelPredictiveController:
         # )
 
 
-
-
-        pass
-
-    # def get_objective_var_inds(self):
-    #     # Set up indices for objective terms flexibly
-    #     def getid(label, index_list):
-    #         indices = [i for i in range(len(index_list)) if label in index_list[i]]
-    #         assert len(indices) == 1
-    #         return indices[0]
-
-    #     objective_var_inds = {}
-
-    #     if "battery" in self.node_order:
-    #         bes_var_inds = dict(
-    #             uct_charge_bes=getid("uct 0 battery", self.mct_label),
-    #             uct_discharge_bes=getid("uct 1 battery", self.mct_label),
-    #             x_bes=getid("x 0 battery", self.n_label),
-    #         )
-    #         objective_var_inds.update(bes_var_inds)
-
-    #     if "hydrogen_storage" in self.node_order:
-    #         h2s_var_inds = dict(
-    #             uct_charge_h2s=getid("uct 0 hydrogen_storage", self.mct_label),
-    #             uct_discharge_h2s=getid("uct 1 hydrogen_storage", self.mct_label),
-    #             x_h2s=getid("x 0 hydrogen_storage", self.n_label),
-    #         )
-    #         objective_var_inds.update(h2s_var_inds)
-
-    #     if "thermal_energy_storage" in self.node_order:
-    #         tes_var_inds = dict(
-    #             uct_charge_tes=getid("uct 0 thermal_energy_storage", self.mct_label),
-    #             uct_discharge_tes=getid("uct 1 thermal_energy_storage", self.mct_label),
-    #             x_tes=getid("x 0 thermal_energy_storage", self.n_label),
-    #         )
-    #         objective_var_inds.update(tes_var_inds)
-    #     return objective_var_inds
-
     # def objective_step(
     #     self,
     #     x,
@@ -742,124 +644,117 @@ class DispatchModelPredictiveController:
             val = np.reshape(val, var.shape)
             return val
 
-        if self.use_saved_solution:
 
-            uct, usp, curtail, grid = self.step_saved_solution(
-                step_index=step_index, forecast=forecast
+
+        if len(self.x_store) > 0:
+            # Error between where the MPC planned for the state to be and where the measure state is
+            state_error = (
+                x0 - self.x_store[-1][:, step_index - self.step_index_store[-1]]
             )
-            return uct, usp, curtail, grid
 
-        else:
+        self.update_optimization_parameters(x0, forecast)
+        if self.warm_start_with_previous_solution:
+            if hasattr(self, "x_init") and self.prev_success:
+                # Then the optimization has been run at least once and there should
+                # be initial values from the previous solution to borrow
 
-            if len(self.x_store) > 0:
-                # Error between where the MPC planned for the state to be and where the measure state is
-                state_error = (
-                    x0 - self.x_store[-1][:, step_index - self.step_index_store[-1]]
+                overlap = self.horizon - (step_index - self.step_index_store[-1])
+                self.opti.set_initial(
+                    self.opt_vars["uct"][:, :overlap], self.uc_init[:, -overlap:]
+                )
+                self.opti.set_initial(
+                    self.opt_vars["usp"][:, :overlap], self.us_init[:, -overlap:]
+                )
+                self.opti.set_initial(
+                    self.opt_vars["x"][:, :overlap], self.x_init[:, -overlap:]
+                )
+                self.opti.set_initial(
+                    self.opt_vars["yex"][:, :overlap], self.ys_init[:, -overlap:]
                 )
 
-            self.update_optimization_parameters(x0, forecast)
-            if self.warm_start_with_previous_solution:
-                if hasattr(self, "x_init") and self.prev_success:
-                    # Then the optimization has been run at least once and there should
-                    # be initial values from the previous solution to borrow
+        try:
+            sol = self.opti.solve()
+            sol_stats = sol.stats()
+            self.store_solve_stats(sol_stats, step_index)
+            successful_optimization = True
+            []
+        except:
+            # If the optimization does not solve, dig into the issues
+            self.unpack_bad_solution(step_index=step_index, forecast=forecast, x0=x0)
+            sol = self.opti.debug
+            successful_optimization = False
 
-                    overlap = self.horizon - (step_index - self.step_index_store[-1])
-                    self.opti.set_initial(
-                        self.opt_vars["uct"][:, :overlap], self.uc_init[:, -overlap:]
-                    )
-                    self.opti.set_initial(
-                        self.opt_vars["usp"][:, :overlap], self.us_init[:, -overlap:]
-                    )
-                    self.opti.set_initial(
-                        self.opt_vars["x"][:, :overlap], self.x_init[:, -overlap:]
-                    )
-                    self.opti.set_initial(
-                        self.opt_vars["yex"][:, :overlap], self.ys_init[:, -overlap:]
-                    )
+        self.prev_sol = sol
 
-            try:
-                sol = self.opti.solve()
-                sol_stats = sol.stats()
-                self.store_solve_stats(sol_stats, step_index)
-                successful_optimization = True
-                []
-            except:
-                # If the optimization does not solve, dig into the issues
-                self.unpack_bad_solution(step_index=step_index, forecast=forecast, x0=x0)
-                sol = self.opti.debug
-                successful_optimization = False
+        self.prev_success = successful_optimization
 
-            self.prev_sol = sol
+        # self.check_gradients(sol)
 
-            self.prev_success = successful_optimization
+        uct = get_sol_value(sol, self.opt_vars["uct"])
+        usp = get_sol_value(sol, self.opt_vars["usp"])
+        x = get_sol_value(sol, self.opt_vars["x"])
+        yex = get_sol_value(sol, self.opt_vars["yex"])
+        yco = get_sol_value(sol, self.opt_vars["yco"])
+        dex = get_sol_value(sol, self.opt_params["dex"])  # [None, :]
 
-            # self.check_gradients(sol)
+        gridcurtail = get_sol_value(sol, self.opt_vars["gridcurtail"])
+        grid = np.where(gridcurtail >= 0, gridcurtail, 0)
+        curtail = np.where(gridcurtail <= 0, -gridcurtail, 0)
 
-            uct = get_sol_value(sol, self.opt_vars["uct"])
-            usp = get_sol_value(sol, self.opt_vars["usp"])
-            x = get_sol_value(sol, self.opt_vars["x"])
-            yex = get_sol_value(sol, self.opt_vars["yex"])
-            yco = get_sol_value(sol, self.opt_vars["yco"])
-            dex = get_sol_value(sol, self.opt_params["dex"])  # [None, :]
+        self.curtail_storage[step_index : step_index + self.horizon] = curtail
 
-            gridcurtail = get_sol_value(sol, self.opt_vars["gridcurtail"])
-            grid = np.where(gridcurtail >= 0, gridcurtail, 0)
-            curtail = np.where(gridcurtail <= 0, -gridcurtail, 0)
+        # Save solution values for next warm start
+        self.uc_init = uct
+        self.us_init = usp
+        self.x_init = x
+        self.ys_init = yex
+        self.curtail_init = curtail
 
-            self.curtail_storage[step_index : step_index + self.horizon] = curtail
+        ysp = (
+            self.control_model.Cco @ x[:, :-1]
+            + self.control_model.Dcoct @ uct
+            + self.control_model.Dcosp @ usp
+            + self.control_model.Fcoex @ (dex - curtail)
+        )
+        dco = self.control_model.M_dco_yco @ ysp
 
-            # Save solution values for next warm start
-            self.uc_init = uct
-            self.us_init = usp
-            self.x_init = x
-            self.ys_init = yex
-            self.curtail_init = curtail
+        ysp = np.concatenate([ysp, yex])
 
-            ysp = (
-                self.control_model.Cco @ x[:, :-1]
-                + self.control_model.Dcoct @ uct
-                + self.control_model.Dcosp @ usp
-                + self.control_model.Fcoex @ (dex - curtail)
-            )
-            dco = self.control_model.M_dco_yco @ ysp
+        obj_values = {
+            key: sol.value(self.obj_terms[key]) for key in self.obj_terms.keys()
+        }
+        obj_values_uw = {
+            key: sol.value(self.obj_terms_uw[key])
+            for key in self.obj_terms_uw.keys()
+        }
 
-            ysp = np.concatenate([ysp, yex])
+        # self.check_gradients(sol, print_jacs=True)
 
-            obj_values = {
-                key: sol.value(self.obj_terms[key]) for key in self.obj_terms.keys()
-            }
-            obj_values_uw = {
-                key: sol.value(self.obj_terms_uw[key])
-                for key in self.obj_terms_uw.keys()
-            }
+        self.store_solution(
+            step_index=step_index,
+            uc=uct,
+            us=usp,
+            x=x,
+            yex=yex,
+            ysp=ysp,
+            forecast=forecast,
+            x0=x0,
+            curtail=curtail,
+            grid_purchase=grid,
+            dex=dex,
+            dco=dco,
+            objective=obj_values,
+            objective_uw=obj_values_uw,
+        )
 
-            # self.check_gradients(sol, print_jacs=True)
+        if not self.debug_mode:
+            # self.debug_helper.save_state_for_debug(x0, forecast, step_index)
+            pass
 
-            self.store_solution(
-                step_index=step_index,
-                uc=uct,
-                us=usp,
-                x=x,
-                yex=yex,
-                ysp=ysp,
-                forecast=forecast,
-                x0=x0,
-                curtail=curtail,
-                grid_purchase=grid,
-                dex=dex,
-                dco=dco,
-                objective=obj_values,
-                objective_uw=obj_values_uw,
-            )
-
-            if not self.debug_mode:
-                # self.debug_helper.save_state_for_debug(x0, forecast, step_index)
-                pass
-
-            if ret_obj:
-                return uct, usp, curtail, grid, obj_values_uw
-            else:
-                return uct, usp, curtail, grid
+        if ret_obj:
+            return uct, usp, curtail, grid, obj_values_uw
+        else:
+            return uct, usp, curtail, grid
 
     def check_gradients(self, sol, print_jacs=False):
 
@@ -1064,249 +959,6 @@ class DispatchModelPredictiveController:
 
         plt.close()
 
-    def step_saved_solution(self, step_index, forecast):
-        # find the right index
-
-        save_index = [
-            i
-            for i in range(len(self.step_index_saved))
-            if step_index == self.step_index_saved[i]
-        ]
-        assert len(save_index) == 1
-        save_index = save_index[0]
-
-        # Values set in load_stored_values
-
-        uct = self.uct_saved[save_index]
-        usp = self.usp_saved[save_index]
-        x = self.x_saved[save_index]
-        yex = self.yex_saved[save_index]
-        ysp = self.ysp_saved[save_index]
-        saved_forecast = self.forecast_saved[save_index]
-        curtail = self.curtail_saved[save_index]
-        grid = self.grid_saved[save_index]
-        dex = self.de_saved[save_index]
-        dco = self.dco_saved[save_index]
-        obj_values = self.objective_saved[save_index]
-        obj_values = {
-            key: obj_values[i] for i, key in enumerate(list(self.obj_terms.keys()))
-        }
-
-        obj_values_uw = self.objective_uw_saved[save_index]
-        obj_values_uw = {
-            key: obj_values_uw[i]
-            for i, key in enumerate(list(self.obj_terms_uw.keys()))
-        }
-
-        # check saved forecast is the same as given forecast?
-
-        self.store_solution(
-            step_index=step_index,
-            uc=uct,
-            us=usp,
-            x=x,
-            yex=yex,
-            ysp=ysp,
-            forecast=forecast,
-            curtail=curtail,
-            grid_purchase=grid,
-            dex=dex,
-            dco=dco,
-            objective=obj_values,
-            objective_uw=obj_values_uw,
-        )
-
-        return uct, usp, curtail, grid
-
-    # def save_state_for_debug(self, x0, forecast, step_index):
-
-    #     assert not self.debug_mode
-
-    #     import datetime
-    #     from pathlib import Path
-    #     import json
-
-    #     datetime_string = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S-%s")
-    #     dir_path = "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/saved_data/mpc_saved_states"
-    #     dir = f"{dir_path}/mpcstate_{datetime_string}_step{step_index}"
-    #     # Path(dir).mkdir(parents=True, exist_ok=True)
-    #     Path(dir_path).mkdir(parents=True, exist_ok=True)
-    #     # fpath = f"{dir}/mpc_data.json"
-    #     fpath = f"{dir}.json"
-
-    #     js_kw = dict(ensure_ascii=True)
-    #     # js_kw = dict(ensure_ascii=True, indent=4)
-
-    #     with open(fpath, "w", encoding="utf-8") as f:
-
-    #         plant_SS = [
-    #             [self.A, self.Bct, self.Bsp, self.Eex],
-    #             [self.Cco, self.Dcoct, self.Dcosp, self.Fcoex],
-    #             [self.Cex, self.Dexct, self.Dexsp, self.Fexex],
-    #             [self.Cze, self.Dzect, self.Dzesp, self.Fzeex],
-    #             [self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex],
-    #             [self.Cet, self.Detct, self.Detsp, self.Fetex],
-    #         ]
-
-    #         save_dict = dict(
-    #             horizon=self.horizon,
-    #             statespace=[[mat.tolist() for mat in row] for row in plant_SS],
-    #             x0=x0.tolist(),
-    #             forecast=forecast.tolist(),
-    #             step_index=step_index,
-    #             bounds={key: self.bounds[key].tolist() for key in self.bounds.keys()},
-    #             bounds_verbose={
-    #                 node: {
-    #                     key: self.bounds_verbose[node][key].tolist()
-    #                     for key in self.bounds_verbose[node].keys()
-    #                 }
-    #                 for node in self.bounds_verbose.keys()
-    #             },
-    #             dimensions=self.dims,
-    #             labels=self.labels,
-    #             node_order=self.node_order,
-    #             edge_order=self.edge_order,
-    #             weights=self.weights,
-    #             reference=self.reference,
-    #             ref_bes_state=self.ref_bes_state,
-    #             weight_bes_state=self.weight_bes_state,
-    #             ref_h2s_state=self.ref_h2s_state,
-    #             weight_h2s_state=self.weight_h2s_state,
-    #             ref_tes_state=self.ref_tes_state,
-    #             weight_tes_state=self.weight_tes_state,
-    #             M_dco_yco=self.M_dco_yco.tolist(),
-    #             yco_ub_ind=self.yco_ub_ind.tolist(),
-    #             yco_ub_node_ind=self.yco_ub_node_ind.tolist(),
-    #             cols_li=self.cols_li.tolist(),
-    #             cols_nl=self.cols_nl.tolist(),
-    #             rows_li=self.rows_li.tolist(),
-    #             rows_nl=self.rows_nl.tolist(),
-    #             block_ss=self.block_ss.tolist(),
-    #             x_bes_max=self.G.nodes["battery"]["ionode"].model.max_capacity_kWh,
-    #             x_tes_max = self.G.nodes["thermal_energy_storage"]["ionode"].model.H_capacity_kWh,
-    #             x_h2s_max =self.G.nodes["hydrogen_storage"]["ionode"].model.max_capacity_kg,
-    #             repr = self.opti.__repr__(),
-    #             return_status = self.opti.return_status(),
-    #             casadi_stats = self.opti.stats(),      
-    #             opti_params = str(self.opti.value_parameters()),      
-    #             opti_variables = str(self.opti.value_variables()),  
-    #             s_opts = self.s_opts,
-    #             p_opts = self.p_opts,    
-    #         )
-
-    #         if hasattr(self, "x_init"):  # then try to update initial guess
-    #             save_dict.update(
-    #                 # dict(
-    #                 #     uct_init=self.uc_init.tolist(),
-    #                 #     usp_init=self.us_init.tolist(),
-    #                 #     x_init=self.x_init.tolist(),
-    #                 #     yex_init=self.ys_init.tolist(),
-    #                 # )
-    #                 dict(
-    #                     step_index_init = self.step_index_store[-1],
-    #                     uc_init = self.uct_store[-1].tolist(),
-    #                     us_init = self.usp_store[-1].tolist(),
-    #                     x_init = self.x_store[-1].tolist(),
-    #                     ys_init = self.yex_store[-1].tolist(),
-    #                     curtail_init = self.curtail_store[-1].tolist()
-    #                 )
-    #             )
-
-    #             # self.opti.set_initial(self.opt_vars["uct"], self.uc_init)
-    #             # self.opti.set_initial(self.opt_vars["usp"], self.us_init)
-    #             # self.opti.set_initial(self.opt_vars["x"], self.x_init)
-    #             # self.opti.set_initial(self.opt_vars["yex"], self.ys_init)
-
-    #         save_dict.update({"mpc_config": self.mpc_config})
-
-    #         json.dump(save_dict, f, **js_kw)
-
-    #     pass
-
-    # def load_state_for_debug(self, state_dict):
-    #     self.horizon = state_dict["horizon"]
-
-    #     self.bounds = {
-    #         key: np.array(state_dict["bounds"][key], dtype=float)
-    #         for key in state_dict["bounds"].keys()
-    #     }
-    #     self.bounds_verbose = {
-    #         node: {
-    #             key: np.array(state_dict["bounds_verbose"][node][key], dtype=float)
-    #             for key in state_dict["bounds_verbose"][node].keys()
-    #         }
-    #         for node in state_dict["bounds_verbose"].keys()
-    #     }
-
-    #     for key in state_dict["labels"].keys():
-    #         setattr(self, f"{key}_label", state_dict["labels"][key])
-
-    #     for key in state_dict["dimensions"].keys():
-    #         setattr(self, key, np.sum(state_dict["dimensions"][key]))
-
-    #     self.node_order = state_dict["node_order"]
-    #     self.edge_order = state_dict["edge_order"]
-
-    #     self.reference = state_dict["reference"]
-    #     self.weights = state_dict["weights"]
-
-    #     self.ref_bes_state = state_dict["ref_bes_state"]
-    #     self.weight_bes_state = state_dict["weight_bes_state"]
-    #     self.ref_h2s_state = state_dict["ref_h2s_state"]
-    #     self.weight_h2s_state = state_dict["weight_h2s_state"]
-    #     self.ref_tes_state = state_dict["ref_tes_state"]
-    #     self.weight_tes_state = state_dict["weight_tes_state"]
-
-    #     combined_mat = state_dict["statespace"]
-
-    #     out_dims = np.array([self.n, self.pco, self.pex, self.pze, self.pgt, self.pet])
-    #     in_dims = np.array([self.n, self.mct, self.msp, self.oex])
-
-    #     for i, row in enumerate(combined_mat):
-    #         for j, mat in enumerate(row):
-    #             if (out_dims[i] > 0) and (in_dims[j] > 0):
-    #                 combined_mat[i][j] = np.array(combined_mat[i][j], dtype=float)
-    #             else:
-    #                 combined_mat[i][j] = np.zeros((out_dims[i], in_dims[j]), dtype=float)
-
-    #     # combined_mat = [[np.array(mat) for mat in row] for row in combined_mat]
-
-    #     self.A, self.Bct, self.Bsp, self.Eex = combined_mat[0]
-    #     self.Cco, self.Dcoct, self.Dcosp, self.Fcoex = combined_mat[1]
-    #     self.Cex, self.Dexct, self.Dexsp, self.Fexex = combined_mat[2]
-    #     self.Cze, self.Dzect, self.Dzesp, self.Fzeex = combined_mat[3]
-    #     self.Cgt, self.Dgtct, self.Dgtsp, self.Fgtex = combined_mat[4]
-    #     self.Cet, self.Detct, self.Detsp, self.Fetex = combined_mat[5]
-
-    #     self.M_dco_yco = np.array(state_dict["M_dco_yco"], dtype=float)
-    #     self.yco_ub_ind = np.array(state_dict["yco_ub_ind"], dtype=int)
-    #     self.yco_ub_node_ind = np.array(state_dict["yco_ub_node_ind"], dtype=int)
-
-    #     self.cols_li = np.array(state_dict["cols_li"])
-    #     self.cols_nl = np.array(state_dict["cols_nl"])
-    #     self.rows_li = np.array(state_dict["rows_li"])
-    #     self.rows_nl = np.array(state_dict["rows_nl"])
-
-    #     self.block_ss = np.array(state_dict["block_ss"], dtype=float)
-
-
-    #     if "x_init" in state_dict:
-
-    #         self.step_index_store.append(state_dict["step_index_init"])
-
-    #         self.uc_init = np.array(state_dict["uc_init"], dtype=float)
-    #         self.us_init = np.array(state_dict["us_init"], dtype=float)
-    #         self.x_init = np.array(state_dict["x_init"], dtype=float)
-    #         self.ys_init = np.array(state_dict["ys_init"], dtype=float)
-    #         self.curtail_init = np.array(state_dict["curtail_init"], dtype=float)
-
-    #         self.prev_success = True
-
-    #     self.x_bes_max = float(state_dict["x_bes_max"])
-    #     self.x_tes_max = float(state_dict["x_tes_max"])
-    #     self.x_h2s_max = float(state_dict["x_h2s_max"])
-
-    #     []
 
     def print_block_matrices(
         self, mat, in_labels, out_labels, no_space=False, save_description=False
