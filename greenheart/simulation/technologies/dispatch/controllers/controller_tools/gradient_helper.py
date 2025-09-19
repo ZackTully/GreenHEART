@@ -2,13 +2,116 @@ import numpy as np
 import matplotlib.pyplot as plt
 import casadi as ca
 import scipy
-
+from colorama import Fore, Style
 
 class GradientHelper:
-    def __init__(self):
-        pass
+    def __init__(self, mpc):
+        self.mpc = mpc
+        np.set_printoptions(linewidth=200, suppress=True, precision=4)
+
+
+
+    def get_mpc_attrs(self):
+        # This method cannot be run before the mpc optimization has been set up
+        self.opti = self.mpc.opti
+        self.opt_vars = self.mpc.opt_vars
+        self.opt_params = self.mpc.opt_params
+        
+        self.obj_weights = self.mpc.weights
+        self.obj_terms_uw = self.mpc.obj_terms_uw
+        self.terms = self.mpc.term_keys
+
+
+        for attr in self.mpc.__dir__():
+            if attr.endswith("_label"):
+                setattr(self, attr, getattr(self.mpc, attr))
+
+
+    def cast_numpy(self, arr):
+        if isinstance(arr, scipy.sparse.spmatrix):
+            arr = arr.toarray()
+        return arr
+
+    def print_banner(self, title):
+        print(Fore.GREEN + "=" * 100)
+        print(" " * int(100/2 - len(title)/2) +  title)
+        print("=" * 100)
+        print("" + Style.RESET_ALL)
+
+
+    def print_with_labels(self, arr, labels):
+        print("")
+        max_label = np.max([len(lab) for lab in labels])
+        arr_rows = arr.__str__().split("\n")
+        for i, lab, in enumerate(labels):
+            arr_rows[i] = labels[i].ljust(max_label+2, " ") + Fore.BLUE + arr_rows[i] + Style.RESET_ALL
+        print("\n".join(arr_rows))
+
+
+
+    def print_opt_var_values(self, sol):
+
+        self.print_banner("Optimization variables")
+
+        sol_forecast = sol.value(self.opt_params["dex"])
+        sol_curtail = sol.value(self.opt_vars["gridcurtail"])
+        sol_uct = sol.value(self.opt_vars["uct"])
+        sol_usp = sol.value(self.opt_vars["usp"])
+        sol_x = sol.value(self.opt_vars["x"])
+        sol_yex = sol.value(self.opt_vars["yex"])
+
+        self.print_with_labels(sol_forecast, ["forecast"])
+        self.print_with_labels(sol_curtail, ["curtail"])
+        self.print_with_labels(sol_uct, self.mct_label)
+        self.print_with_labels(sol_usp, self.msp_label)
+        self.print_with_labels(sol_x, self.n_label)
+        self.print_with_labels(sol_yex, self.pex_label)
+
+
+    def print_objective_values(self, sol):
+
+        self.print_banner("Unweighted Obj. Values")
+
+        values = np.atleast_2d([sol.value(val) for val in self.obj_terms_uw.values()]).T
+        labels = list(self.obj_terms_uw.keys())
+
+        self.print_with_labels(values, labels)
+
+
+    def print_objective_jacobian(self, sol):
+        def jac_f(sol, var ,f):
+            jac_var = self.cast_numpy(sol.value(ca.jacobian(f, var))).reshape(var.T.shape).T
+            return jac_var
+
+
+        for obj_key in self.obj_terms_uw.keys():
+            self.print_banner(obj_key)
+
+            self.print_with_labels(jac_f(sol, self.opt_vars["gridcurtail"], self.obj_terms_uw[obj_key]), ["curtail"])
+            self.print_with_labels(jac_f(sol, self.opt_vars["uct"], self.obj_terms_uw[obj_key]), self.mct_label)
+            self.print_with_labels(jac_f(sol, self.opt_vars["usp"], self.obj_terms_uw[obj_key]), self.msp_label)
+            self.print_with_labels(jac_f(sol, self.opt_vars["x"], self.obj_terms_uw[obj_key]), self.n_label)
+            self.print_with_labels(jac_f(sol, self.opt_vars["yex"], self.obj_terms_uw[obj_key]), self.pex_label)
+
+     
+
 
     def check_gradients(self, sol, print_jacs=False):
+
+        self.print_opt_var_values(sol)
+        self.print_objective_values(sol)
+        self.print_objective_jacobian(sol)
+
+
+
+
+
+
+
+
+
+        if not hasattr(self, "opt_vars"):
+            self.get_mpc_attrs()
 
         def cast_numpy(arr):
             if isinstance(arr, scipy.sparse.spmatrix):
