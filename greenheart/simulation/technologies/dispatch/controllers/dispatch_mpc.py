@@ -726,7 +726,7 @@ class DispatchModelPredictiveController:
             # self.debug_helper.save_state_for_debug(x0, forecast, step_index)
             pass
 
-        self.gradient_helper.check_gradients(sol)
+        # self.gradient_helper.check_gradients(sol)
 
         if ret_obj:
             return uct, usp, curtail, grid, obj_values_uw
@@ -768,7 +768,7 @@ class DispatchModelPredictiveController:
             i += 1
 
         # self.plot_trajectory_generic(self.opti.debug, forecast)
-        self.plotter.plot_trajectory_generic(self.opti.debug, forecast)
+        # self.plotter.plot_trajectory_generic(self.opti.debug, forecast)
 
         np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
@@ -792,7 +792,7 @@ class DispatchModelPredictiveController:
         self.bad_solve_step.append(step_index)
         self.bad_solve_violation.append(np.max(np.abs(violations)))
 
-        plt.close()
+        # plt.close()
 
     def print_block_matrices(
         self, mat, in_labels, out_labels, no_space=False, save_description=False

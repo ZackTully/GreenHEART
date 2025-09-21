@@ -140,7 +140,7 @@ class ControlModel:
         self.disturbance_domain = np.array(domain_list)
 
     def set_disturbance_reshape(self, reshape_mat):
-        self.disturbance_permutation = reshape_mat
+        self.disturbance_permutation = np.array(reshape_mat)
 
     def set_output_domain(self, domain_list):
         self.output_domain = np.array(domain_list)

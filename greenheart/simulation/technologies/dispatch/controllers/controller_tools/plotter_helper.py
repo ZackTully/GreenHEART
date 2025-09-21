@@ -8,7 +8,7 @@ class MPCPlotter:
 
     def plot_saved_trajectories(self):
 
-        n_nodes = len(self.node_order)
+        n_nodes = len(self.mpc.node_order)
         fig, ax = plt.subplots(
             n_nodes, 4, sharex="all", layout="constrained", figsize=(15, 10), dpi=100
         )
@@ -20,7 +20,7 @@ class MPCPlotter:
         # ax[0, 4].set_title("Split")
 
         # for i, node in enumerate(list(RTS.G.nodes)):
-        for i, node in enumerate(self.node_order):
+        for i, node in enumerate(self.mpc.node_order):
 
             ax[i, 0].set_ylabel("\n".join(node.split("_")))
 
@@ -31,12 +31,12 @@ class MPCPlotter:
             # ]
             dco_inds = [
                 i
-                for i in range(len(self.oco_label))
-                if node in self.oco_label[i].split(" ")[2]
+                for i in range(len(self.mpc.oco_label))
+                if node in self.mpc.oco_label[i].split(" ")[2]
             ]
 
             uct_inds = [
-                i for i in range(len(self.mct_label)) if node in self.mct_label[i]
+                i for i in range(len(self.mpc.mct_label)) if node in self.mpc.mct_label[i]
             ]
             # usp_inds = [
             #     i
@@ -44,23 +44,23 @@ class MPCPlotter:
             #     if node in self.msp_label[i].split(" ")[2]
             # ]
 
-            x_inds = [i for i in range(len(self.n_label)) if node in self.n_label[i]]
+            x_inds = [i for i in range(len(self.mpc.n_label)) if node in self.mpc.n_label[i]]
             y_inds = [
                 i
-                for i in range(len(self.p_label))
-                if node in self.p_label[i].split(" ")[2]
+                for i in range(len(self.mpc.p_label))
+                if node in self.mpc.p_label[i].split(" ")[2]
             ]
 
             colors = ["blue", "orange", "red", "brown", "cyan"]
 
             def plot_one(ax, stored, inds):
-                for j in range(len(self.step_index_store)):
+                for j in range(len(self.mpc.step_index_store)):
                     t = np.arange(
-                        self.step_index_store[j],
-                        self.step_index_store[j] + self.horizon,
+                        self.mpc.step_index_store[j],
+                        self.mpc.step_index_store[j] + self.mpc.horizon,
                     )[None, :]
                     for k in range(len(inds)):
-                        if self.horizon == 1:
+                        if self.mpc.horizon == 1:
                             ax.scatter(
                                 t * np.ones(len(inds)),
                                 stored[j][inds, :],
@@ -69,14 +69,14 @@ class MPCPlotter:
                         else:
                             ax.plot(t.T, stored[j][inds[k], :].T, color=colors[k])
 
-            plot_one(ax[i, 0], self.dco_store, dco_inds)
-            plot_one(ax[i, 1], self.uct_store, uct_inds)
+            plot_one(ax[i, 0], self.mpc.dco_store, dco_inds)
+            plot_one(ax[i, 1], self.mpc.uct_store, uct_inds)
             plot_one(
-                ax[i, 2], [xst[:, 0 : self.horizon] for xst in self.x_store], x_inds
+                ax[i, 2], [xst[:, 0 : self.mpc.horizon] for xst in self.mpc.x_store], x_inds
             )
             plot_one(
                 ax[i, 3],
-                [np.sum(ysp[y_inds, :], axis=0)[None, :] for ysp in self.ysp_store],
+                [np.sum(ysp[y_inds, :], axis=0)[None, :] for ysp in self.mpc.ysp_store],
                 [0],
             )
             # plot_one(ax[i, 4], self.ysp_store, y_inds)
@@ -86,13 +86,13 @@ class MPCPlotter:
                 forecast_curtail_grid = [
                     np.concatenate(
                         [
-                            self.forecast_store[i],
-                            self.forecast_store[i] - self.curtail_store[i],
-                            self.forecast_store[i] + self.grid_store[i],
+                            self.mpc.forecast_store[i],
+                            self.mpc.forecast_store[i] - self.mpc.curtail_store[i],
+                            self.mpc.forecast_store[i] + self.mpc.grid_store[i],
                         ]
                     )
                     # [self.forecast_store[i], np.array(self.forecast_store[i]) - np.array(self.curtail_store[i]), np.array(self.forecast_store[i]) + np.array(self.grid_store[i])]
-                    for i in range(len(self.step_index_store))
+                    for i in range(len(self.mpc.step_index_store))
                 ]
 
                 plot_one(ax[i, 0], forecast_curtail_grid, np.array([0, 1, 2]))
@@ -212,13 +212,13 @@ class MPCPlotter:
             val = np.reshape(val, var.shape)
             return val
 
-        x_db = get_sol_value(prob, self.opt_vars["x"])
-        uc_db = get_sol_value(prob, self.opt_vars["uct"])
-        us_db = get_sol_value(prob, self.opt_vars["usp"])
-        ys_db = get_sol_value(prob, self.opt_vars["yex"])
-        yco_db = get_sol_value(prob, self.opt_vars["yco"])
+        x_db = get_sol_value(prob, self.mpc.opt_vars["x"])
+        uc_db = get_sol_value(prob, self.mpc.opt_vars["uct"])
+        us_db = get_sol_value(prob, self.mpc.opt_vars["usp"])
+        ys_db = get_sol_value(prob, self.mpc.opt_vars["yex"])
+        yco_db = get_sol_value(prob, self.mpc.opt_vars["yco"])
 
-        gridcurtail = get_sol_value(prob, self.opt_vars["gridcurtail"])
+        gridcurtail = get_sol_value(prob, self.mpc.opt_vars["gridcurtail"])
         grid_db = np.where(gridcurtail >= 0, gridcurtail, 0)
         curtail_db = np.where(gridcurtail <= 0, -gridcurtail, 0)
 
@@ -239,11 +239,11 @@ class MPCPlotter:
 
         to_plot = [x_db, uc_db, us_db, ys_db, yco_db]
         titles = [
-            self.n_label,
-            self.mct_label,
-            self.msp_label,
-            self.pex_label,
-            self.pco_label,
+            self.mpc.n_label,
+            self.mpc.mct_label,
+            self.mpc.msp_label,
+            self.mpc.pex_label,
+            self.mpc.pco_label,
         ]
         for i in range(len(to_plot)):
             # ax[0, i].set_title(titles[i])
@@ -253,11 +253,11 @@ class MPCPlotter:
 
                 if (i == 0) or (i == 1):
                     if i == 0:
-                        lb = self.bounds["x_lb"]
-                        ub = self.bounds["x_ub"]
+                        lb = self.mpc.bounds["x_lb"]
+                        ub = self.mpc.bounds["x_ub"]
                     elif i == 1:
-                        lb = self.bounds["u_lb"]
-                        ub = self.bounds["u_ub"]
+                        lb = self.mpc.bounds["u_lb"]
+                        ub = self.mpc.bounds["u_ub"]
 
                     ylim = ax[j, i].get_ylim()
                     ax[j, i].axhline(lb[j], color="black", linewidth=0.75)

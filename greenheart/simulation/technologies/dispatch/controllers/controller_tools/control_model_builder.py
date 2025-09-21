@@ -365,8 +365,9 @@ class ControlModelBuilder:
                 up_node_output_domain = up_cm.output_domain
                 disturbance_index.append(
                     np.where(
-                        cm.disturbance_permutation
-                        @ (cm.disturbance_domain * up_node_output_domain)
+                        np.multiply(   cm.disturbance_permutation, (cm.disturbance_domain * up_node_output_domain))
+                        # cm.disturbance_permutation
+                        # @ (cm.disturbance_domain * up_node_output_domain)
                         == 1
                     )[0]
                 )
