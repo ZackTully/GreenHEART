@@ -726,6 +726,27 @@ class DispatchModelPredictiveController:
             # self.debug_helper.save_state_for_debug(x0, forecast, step_index)
             pass
 
+
+        active_obj_uw = {k:v for k, v in self.objective_manager.obj_terms_uw_traj.items() if k in self.term_keys}
+
+        if np.any([sol.value(v) > 1 for vals in active_obj_uw.values() for v in vals] ):
+            self.gradient_helper.print_objective_trajectory_values(sol, terms=self.term_keys, weighted=False)
+            pass
+        
+
+        # self.gradient_helper.print_objective_values(sol, terms=self.term_keys)
+        if (yex < 0.99 * self.reference).any():
+            # self.gradient_helper.print_objective_trajectory_values(sol, terms=self.term_keys, weighted=True)
+            # self.gradient_helper.print_objective_trajectory_values(sol, terms=self.term_keys, weighted=False)
+            # self.gradient_helper.print_objective_jacobian(sol, terms=self.term_keys)
+
+            # self.gradient_helper.check_gradients(sol)
+            # self.plotter.plot_saved_trajectories()
+            pass
+
+        # if step_index > 20:
+        #     self.plotter.plot_saved_trajectories()
+
         # self.gradient_helper.check_gradients(sol)
 
         if ret_obj:

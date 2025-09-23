@@ -11,6 +11,7 @@ class Objective:
         weights: list[float],
         references: dict,
         capacities: dict,
+        
         # var_inds: dict,
     ):
 
@@ -104,15 +105,20 @@ class Objective:
         obj_uw = 0
         obj_w = 0
 
+        obj_terms_uw_perstep = {}
+        
         obj_terms_uw = {}
         obj_terms_w = {}
 
         # for term in self.active_terms:
         for term in self.all_terms:
-            obj_term = self.term_map[term](**kwargs)
+            obj_term, term_traj = self.term_map[term](**kwargs)
+
 
             obj_terms_uw.update({term: obj_term})
             obj_terms_w.update({term: self.weights[term] * obj_term})
+            obj_terms_uw_perstep.update({term: term_traj})
+
 
             if term in self.active_terms:
                 obj_w += self.weights[term] * obj_term
@@ -122,6 +128,7 @@ class Objective:
 
         self.obj_terms_w = obj_terms_w
         self.obj_terms_uw = obj_terms_uw
+        self.obj_terms_uw_traj = obj_terms_uw_perstep
 
         return obj_w
 
@@ -130,96 +137,119 @@ class Objective:
     ):
         obj = 0
 
+        scaling = 1 / (self.steel_ref)**2
+
+        obj_traj = []
         for k in range(self.horizon):
-            obj_k = (self.steel_ref - yex_var[:, k]) ** 2
+            obj_k = scaling * (self.steel_ref - yex_var[:, k]) ** 2
+            obj_traj.append(obj_k)
             obj += obj_k
 
-        return obj
+        return obj, obj_traj
 
     def term_step_grid_curtail(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
         obj = 0
-
+        pv_cap = 800000  # kW
+        wind_cap = 155 * 6000  # kW
+        gen_cap = pv_cap + wind_cap
+        scaling = 1 / gen_cap**2
+        obj_traj = []
         for k in range(self.horizon):
-            obj_k = (gridcurtail[:, k]) ** 2
+            obj_k = scaling * (gridcurtail[:, k]) ** 2
+            obj_traj.append(obj_k)
             obj += obj_k
 
-        return obj
+        return obj, obj_traj
 
     def term_step_bes_simultaneous(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
         obj = 0
 
+        scaling = 1 / (self.mpc.bounds_verbose["battery"]["u_ub"][0] * self.mpc.bounds_verbose["battery"]["u_ub"][1])
+
+        obj_traj = []
         for k in range(self.horizon):
-            obj_k = (
+            obj_k = scaling * (
                 uct_var[self.var_inds["uct_charge_bes"], k]
                 * uct_var[self.var_inds["uct_discharge_bes"], k]
             )
+            obj_traj.append(obj_k)
             obj += obj_k
 
-        return obj
+        return obj, obj_traj
 
     def term_step_tes_simultaneous(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
         obj = 0
+
+        scaling = 1 / (self.mpc.bounds_verbose["thermal_energy_storage"]["u_ub"][0] * self.mpc.bounds_verbose["thermal_energy_storage"]["u_ub"][1])
+
+
+        obj_traj = []
         for k in range(self.horizon):
-            obj_k = (
+            obj_k = scaling * (
                 uct_var[self.var_inds["uct_charge_tes"], k]
                 * uct_var[self.var_inds["uct_discharge_tes"], k]
             )
+            obj_traj.append(obj_k)
             obj += obj_k
 
-        return obj
+        return obj, obj_traj
 
     def term_step_h2s_simultaneous(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
         obj = 0
+        scaling = 1 / (self.mpc.bounds_verbose["hydrogen_storage"]["u_ub"][0] * self.mpc.bounds_verbose["hydrogen_storage"]["u_ub"][1])
 
+        obj_traj = []
         for k in range(self.horizon):
-            obj_k = (
+            obj_k = scaling * (
                 uct_var[self.var_inds["uct_charge_h2s"], k]
                 * uct_var[self.var_inds["uct_discharge_h2s"], k]
             )
+            obj_traj.append(obj_k)
             obj += obj_k
 
-        return obj
+        return obj, obj_traj
 
     def term_step_bes_state(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
         obj = 0
-
+        obj_traj = []
         for k in range(self.horizon):
             obj_k = (x_var[self.var_inds["x_bes"], k] - self.x_bes_ref) ** 2
+            obj_traj.append(obj_k)
             obj += obj_k
 
-        return obj
+        return obj, obj_traj
 
     def term_step_tes_state(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
         obj = 0
-
+        obj_traj = []
         for k in range(self.horizon):
             obj_k = (x_var[self.var_inds["x_tes"], k] - self.x_tes_ref) ** 2
             obj += obj_k
-
-        return obj
+            obj_traj.append(obj_k)
+        return obj, obj_traj
 
     def term_step_h2s_state(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
         obj = 0
-
+        obj_traj = []
         for k in range(self.horizon):
             obj_k = (x_var[self.var_inds["x_h2s"], k] - self.x_h2s_ref) ** 2
             obj += obj_k
-
-        return obj
+            obj_traj.append(obj_k)
+        return obj, obj_traj
 
     def term_bes_terminal(self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail):
 
@@ -232,7 +262,7 @@ class Objective:
             - self.soc_bes_ref
         ) ** 2
 
-        return obj
+        return obj, None
 
     def term_tes_terminal(self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail):
 
@@ -245,7 +275,7 @@ class Objective:
             - self.soc_tes_ref
         ) ** 2
 
-        return obj
+        return obj, None
 
     def term_h2s_terminal(self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail):
 
@@ -258,7 +288,7 @@ class Objective:
             - self.soc_h2s_ref
         ) ** 2
 
-        return obj
+        return obj, None
 
     def term_step_storage_state_linear_quadratic(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
@@ -282,29 +312,40 @@ class Objective:
     def term_step_bes_state_soc_quadratic(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
-        w_bes = 1 / (3 * (self.x_bes_max - self.x_bes_min) ** 2)
+        scaling = 1 / ( (self.x_bes_max - self.x_bes_min) ** 2)
         term_obj = 0
+        obj_traj = []
         for k in range(self.horizon):
-            term_obj += w_bes * (self.x_bes_max - x_var[self.var_inds["x_bes"], k]) ** 2
-        return term_obj
+            obj_k = scaling * (self.x_bes_max - x_var[self.var_inds["x_bes"], k]) ** 2
+            term_obj += obj_k
+            obj_traj.append(obj_k)
+        return term_obj, obj_traj
 
     def term_step_tes_state_soc_quadratic(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
-        w_tes = 1 / (3 * (self.x_tes_max - self.x_tes_min) ** 2)
+        scaling = 1 / ((self.x_tes_max - self.x_tes_min) ** 2)
         term_obj = 0
+        obj_traj = []
         for k in range(self.horizon):
-            term_obj += w_tes * (self.x_tes_max - x_var[self.var_inds["x_tes"], k]) ** 2
-        return term_obj
+            obj_k = scaling * (self.x_tes_max - x_var[self.var_inds["x_tes"], k]) ** 2
+
+            term_obj += obj_k
+            obj_traj.append(obj_k)
+
+        return term_obj, obj_traj
 
     def term_step_h2s_state_soc_quadratic(
         self, uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
     ):
-        w_h2s = 1 / (3 * (self.x_h2s_max - self.x_h2s_min) ** 2)
+        scaling = 1 / ( (self.x_h2s_max - self.x_h2s_min) ** 2)
         term_obj = 0
+        obj_traj = []
         for k in range(self.horizon):
-            term_obj += w_h2s * (self.x_h2s_max - x_var[self.var_inds["x_h2s"], k]) ** 2
-        return term_obj
+            obj_k = scaling * (self.x_h2s_max - x_var[self.var_inds["x_h2s"], k]) ** 2
+            term_obj += obj_k
+            obj_traj.append(obj_k)
+        return term_obj, obj_traj
 
     def get_objective_var_inds(self):
         # Set up indices for objective terms flexibly

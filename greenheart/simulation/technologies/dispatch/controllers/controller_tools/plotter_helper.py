@@ -2,11 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import casadi as ca
 
+
 class MPCPlotter:
     def __init__(self, mpc):
         self.mpc = mpc
 
-    def plot_saved_trajectories(self):
+    def plot_saved_trajectories(self, n=100):
 
         n_nodes = len(self.mpc.node_order)
         fig, ax = plt.subplots(
@@ -19,42 +20,33 @@ class MPCPlotter:
         ax[0, 3].set_title("Output")
         # ax[0, 4].set_title("Split")
 
-        # for i, node in enumerate(list(RTS.G.nodes)):
+        o_lab = self.mpc.oco_label
+        mct_lab = self.mpc.mct_label
+        n_lab = self.mpc.n_label
+        p_lab = self.mpc.p_label
+
+        bound_kwargs = dict(linewidth=.75, color="black")
+
         for i, node in enumerate(self.mpc.node_order):
 
             ax[i, 0].set_ylabel("\n".join(node.split("_")))
 
-            # 0 - disturbance, 1 - control input, 2 - states, 3- outputs total, 4 - outputs split
-
-            # dex_inds = [
-            #     i for i in range(len(self.oex_label)) if node in self.oex_label[i]
-            # ]
-            dco_inds = [
-                i
-                for i in range(len(self.mpc.oco_label))
-                if node in self.mpc.oco_label[i].split(" ")[2]
-            ]
-
-            uct_inds = [
-                i for i in range(len(self.mpc.mct_label)) if node in self.mpc.mct_label[i]
-            ]
-            # usp_inds = [
-            #     i
-            #     for i in range(len(self.msp_label))
-            #     if node in self.msp_label[i].split(" ")[2]
-            # ]
-
-            x_inds = [i for i in range(len(self.mpc.n_label)) if node in self.mpc.n_label[i]]
-            y_inds = [
-                i
-                for i in range(len(self.mpc.p_label))
-                if node in self.mpc.p_label[i].split(" ")[2]
-            ]
+            dco_inds = [i for i in range(len(o_lab)) if node in o_lab[i].split(" ")[2]]
+            uct_inds = [i for i in range(len(mct_lab)) if node in mct_lab[i]]
+            x_inds = [i for i in range(len(n_lab)) if node in n_lab[i]]
+            y_inds = [i for i in range(len(p_lab)) if node in p_lab[i].split(" ")[2]]
 
             colors = ["blue", "orange", "red", "brown", "cyan"]
 
             def plot_one(ax, stored, inds):
-                for j in range(len(self.mpc.step_index_store)):
+                n_traj = len(self.mpc.step_index_store)
+                if n >= n_traj:
+                    j_range = range(n_traj)
+                else:
+                    j_range = range(n_traj - n, n_traj)
+
+
+                for j in j_range:
                     t = np.arange(
                         self.mpc.step_index_store[j],
                         self.mpc.step_index_store[j] + self.mpc.horizon,
@@ -71,8 +63,15 @@ class MPCPlotter:
 
             plot_one(ax[i, 0], self.mpc.dco_store, dco_inds)
             plot_one(ax[i, 1], self.mpc.uct_store, uct_inds)
+            # Add in state bounds
+            if len(self.mpc.bounds_verbose[node]["x_lb"]) > 0:
+                ax[i, 2].axhline(self.mpc.bounds_verbose[node]["x_lb"], **bound_kwargs)
+                ax[i, 2].axhline(self.mpc.bounds_verbose[node]["x_ub"], **bound_kwargs)
+
             plot_one(
-                ax[i, 2], [xst[:, 0 : self.mpc.horizon] for xst in self.mpc.x_store], x_inds
+                ax[i, 2],
+                [xst[:, 0 : self.mpc.horizon] for xst in self.mpc.x_store],
+                x_inds,
             )
             plot_one(
                 ax[i, 3],
@@ -100,7 +99,6 @@ class MPCPlotter:
             fig.align_ylabels()
 
         pass
-
 
     def plot_solution(self, uct, usp, x, ysp, forecast):
 
@@ -168,7 +166,6 @@ class MPCPlotter:
         for i in range(ax.shape[0]):
             for j in range(ax.shape[1]):
                 ax[i, j].legend()
-
 
     # def plot_trajectory(self, step_index=None):
 
