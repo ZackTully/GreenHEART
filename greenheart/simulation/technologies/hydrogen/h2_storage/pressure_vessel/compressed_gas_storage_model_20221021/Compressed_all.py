@@ -29,8 +29,8 @@ import os
 import numpy as np
 
 # local imports
-# from Compressed_gas_function import CompressedGasFunction
-from .Compressed_gas_function import CompressedGasFunction
+from greenheart.simulation.technologies.hydrogen.h2_storage.pressure_vessel.compressed_gas_storage_model_20221021.Compressed_gas_function import CompressedGasFunction
+
 
 class PressureVessel():
     def __init__(self, Wind_avai=80, H2_flow=200, cdratio=1, Energy_cost=0.07, cycle_number=1, parent_path=os.path.abspath(os.path.dirname(__file__)), spread_sheet_name="Tankinator.xlsx", verbose=False):
