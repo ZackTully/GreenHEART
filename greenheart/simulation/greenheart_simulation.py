@@ -7,6 +7,11 @@ import pandas as pd
 from attrs import define, field
 import copy
 
+# import time
+
+# while True:
+#     time.sleep(1)
+
 pd.options.mode.chained_assignment = None  # default='warn'
 
 from hopp.simulation import HoppInterface
