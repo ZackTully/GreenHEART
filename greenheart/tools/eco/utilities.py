@@ -22,7 +22,7 @@ from hopp.utilities import load_yaml
 
 from hopp.tools.dispatch import plot_tools
 
-from .finance import adjust_orbit_costs
+from greenheart.tools.eco.finance import adjust_orbit_costs
 
 """
 This function returns the ceiling of a/b (rounded to the nearest greater integer). 

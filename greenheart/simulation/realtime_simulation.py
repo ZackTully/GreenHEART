@@ -49,7 +49,7 @@ from greenheart.simulation.technologies.steel.steel import SteelModel
 from greenheart.simulation.technologies.electricity.battery import Battery
 
 
-from greenheart.tools.eco.utilities import ceildiv
+# from greenheart.tools.eco.utilities import ceildiv
 from hopp.utilities import load_yaml
 
 
@@ -919,11 +919,18 @@ class RealTimeSimulation:
         electrical_generation_timeseries = np.zeros(8760)
         electrolyzer_size_mw = self.config.greenheart_config["electrolyzer"]["rating"]
         n_pem_clusters = int(
-            ceildiv(
-                electrolyzer_size_mw,
+            -(
+                electrolyzer_size_mw //
                 self.config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
             )
         )
+        # from greenheart.tools.eco.utilities import ceildiv
+        # n_pem_clusters = int(
+        #     ceildiv(
+        #         electrolyzer_size_mw,
+        #         config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
+        #     )
+        # )
         electrolyzer_capex_kw = self.config.greenheart_config["electrolyzer"][
             "electrolyzer_capex"
         ]
