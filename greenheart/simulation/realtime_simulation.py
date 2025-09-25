@@ -49,10 +49,8 @@ from greenheart.simulation.technologies.steel.steel import SteelModel
 from greenheart.simulation.technologies.electricity.battery import Battery
 
 
-# from greenheart.tools.eco.utilities import ceildiv
+from greenheart.tools.eco.utilities import ceildiv
 from hopp.utilities import load_yaml
-
-
 
 
 # Simulation model for greenheart components
@@ -74,8 +72,6 @@ class RealTimeSimulation:
         # else:
         #     self.rts_config = load_yaml(self.config.greenheart_config["realtime_simulation"])
 
-
-
         self.component_config = load_yaml(self.rts_config["component_config"])
         self.hi = hopp_interface
 
@@ -89,9 +85,8 @@ class RealTimeSimulation:
         else:
             self.start_index = 0
 
-
         # Set up logging that writes to the topmost file
-        
+
         if current_process().name == "MainProcess":
             self.worker_id = 0
         else:
@@ -101,24 +96,20 @@ class RealTimeSimulation:
 
         # self.log_id = str(self.worker_id)+": "
 
-
         # existing_loggers = logging.getLogger().manager.loggerDict
-
 
         # if ("sweep_logger" in existing_loggers.keys()):
         # if "logging" in self.rts_config:
 
         #     # sweep_logger = existing_loggers["sweep_logger"]
         #     # sweep_logger_fname = Path(sweep_logger.handlers[0].baseFilename)
-            
-
 
         #     datetime_string = datetime.datetime.now().strftime("%H_%M_%S")
 
         #     # main_fname = self.rts_config["logging"]["main_fpath"].parts[-1].split(".")[0]
         #     main_fpath  = self.rts_config["logging"]["main_fpath"]
 
-        #     main_fname = "sweeplog_" + self.rts_config["logging"]["main_datestring"] 
+        #     main_fname = "sweeplog_" + self.rts_config["logging"]["main_datestring"]
 
         #     log_fname = main_fpath / "temp" / (main_fname + f"__RTS_log_{self.worker_id}_at_{datetime_string}.log")
 
@@ -132,7 +123,6 @@ class RealTimeSimulation:
 
         # else:
         #     self.logger = logging.getLogger()
-
 
         # self.logger.info(self.log_id + "Dispatch config: \n" + "="*100)
         # self.logger.info(pprint.pformat(self.rts_config["dispatch"]))
@@ -153,7 +143,7 @@ class RealTimeSimulation:
 
         self.logger = logging.getLogger(f"SIMULATION {log_config['case_description']}")
         self.logger.setLevel(logging.DEBUG)
-    
+
         queue_handler = handlers.QueueHandler(log_config["queue"])
         queue_handler.setLevel(logging.DEBUG)
         self.logger.addHandler(queue_handler)
@@ -421,8 +411,6 @@ class RealTimeSimulation:
 
         self.dispatcher = dispatcher
 
-
-
         self.setup_ctrl_sysid()
 
         gen_profiles = {}
@@ -448,42 +436,50 @@ class RealTimeSimulation:
                                                 method="perfect_method",
                                                 method_config = {}
                                             ))
-        
+
         self.forecaster = Forecast(self.forecast_config, hybrid_profile, self.config)
 
         # Loop for everything downstream of generation
         error_feedback = False
         t0 = time.time()
 
-        for i in range(random.randint(1, 100)):
-            random.randint(0, 100)
-
-        # r = random.randint(0, 255)
-        # g = random.randint(0, 255)
-        # b = random.randint(0, 255)
-
-        r = int(np.random.rand() * 255)
-        g = int(np.random.rand() * 255)
-        b = int(np.random.rand() * 255)
-
-        tqdm_color = f"#{r:02x}{g:02x}{b:02x}"
-
         total = np.min([self.stop_index, 8760]) - np.max([0, self.start_index])
 
+        if self.verbose:
 
-        # colors = [ "RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN", "WHITE"]
-        colors = ["#32a852", "#a010b0", "#c81b3b", "#ddac2e", "#c95517", "#2926da", "#22dcb3", "#c2b1cf"]
-        tqdm_color = colors[self.worker_id % len(colors)]
-        # with tqdm.tqdm(total=total, desc=self.case_description, position=position, colour=color, leave=False) as pbar:
+            colors = [
+                "#32a852",
+                "#a010b0",
+                "#c81b3b",
+                "#ddac2e",
+                "#c95517",
+                "#2926da",
+                "#22dcb3",
+                "#c2b1cf",
+            ]
+            tqdm_color = colors[self.worker_id % len(colors)]
 
-        for i in tqdm.tqdm(
-            range(len(hybrid_profile)),
-            desc=self.case_description,
-            position=self.worker_id + 1,
-            leave=False,
-            colour=tqdm_color,
-        ):
-        # for i in range(len(hybrid_profile)):
+            time_iterable = tqdm.tqdm(
+                range(len(hybrid_profile)),
+                desc=self.case_description,
+                position=self.worker_id + 1,
+                leave=False,
+                colour=tqdm_color,
+            )
+
+        else:
+            time_iterable = range(len(hybrid_profile))
+
+        for i in time_iterable:
+
+        # for i in tqdm.tqdm(
+        #     range(len(hybrid_profile)),
+        #     desc=self.case_description,
+        #     position=self.worker_id + 1,
+        #     leave=False,
+        #     colour=tqdm_color,
+        # ):
+            # for i in range(len(hybrid_profile)):
 
             if i > self.stop_index:
                 print("stopping at realtime simulator stop index")
@@ -492,9 +488,7 @@ class RealTimeSimulation:
             if i < self.start_index:
                 continue
 
-
             forecast = self.forecaster.get_forecast(measurement=hybrid_profile[i], step_index=i)
-
 
             x0 = self.get_state_measurement(step_index=i)
 
@@ -919,18 +913,11 @@ class RealTimeSimulation:
         electrical_generation_timeseries = np.zeros(8760)
         electrolyzer_size_mw = self.config.greenheart_config["electrolyzer"]["rating"]
         n_pem_clusters = int(
-            -(
-                electrolyzer_size_mw //
+            ceildiv(
+                electrolyzer_size_mw,
                 self.config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
             )
         )
-        # from greenheart.tools.eco.utilities import ceildiv
-        # n_pem_clusters = int(
-        #     ceildiv(
-        #         electrolyzer_size_mw,
-        #         config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
-        #     )
-        # )
         electrolyzer_capex_kw = self.config.greenheart_config["electrolyzer"][
             "electrolyzer_capex"
         ]
@@ -1649,5 +1636,3 @@ class StandinNode:
 
 
         return output, u_passthrough, u_curtail
-
-
