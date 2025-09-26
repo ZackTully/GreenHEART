@@ -923,63 +923,63 @@ class Capturing(list):
         sys.stdout = self._stdout
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    from pathlib import Path
-    from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
-    from hopp.simulation.technologies.sites.site_info import SiteInfo
-    from greenheart.simulation.realtime_simulation import RealTimeSimulation
+#     from pathlib import Path
+#     from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
+#     from hopp.simulation.technologies.sites.site_info import SiteInfo
+#     from greenheart.simulation.realtime_simulation import RealTimeSimulation
 
-    class HOPPSystem:
-        def __init__(self, site):
-            self.site = site
+#     class HOPPSystem:
+#         def __init__(self, site):
+#             self.site = site
 
-    class HOPPInterface:
-        def __init__(self, site):
-            self.system = HOPPSystem(site)
+#     class HOPPInterface:
+#         def __init__(self, site):
+#             self.system = HOPPSystem(site)
 
-    # config_root = Path(__file__).parents[0] / "dispatch_inputs"
-    config_root = Path(__file__).parents[5]/ "tests" / "greenheart" / "test_dispatch" / "dispatch_inputs"
+#     # config_root = Path(__file__).parents[0] / "dispatch_inputs"
+#     config_root = Path(__file__).parents[5]/ "tests" / "greenheart" / "test_dispatch" / "dispatch_inputs"
 
-    fname_hopp_config = str(config_root / "plant/hopp_config_mn.yaml")
-    fname_greenheart_config = str(config_root / "plant/greenheart_config_onshore_mn.yaml")
-    fname_turbine_config = str(
-        config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml"
-    )
-    fname_floris_config = str(config_root / "floris/floris_input_lbw_6MW.yaml")
-
-
-    config = GreenHeartSimulationConfig(
-        fname_hopp_config,
-        fname_greenheart_config,
-        fname_turbine_config,
-        fname_floris_config,
-        verbose=False,
-        show_plots=False,
-        save_plots=False,
-        use_profast=True,
-        post_processing=True,
-        incentive_option=1,
-        plant_design_scenario=1,
-        output_level=8,
-    )
-
-    config.realtime_simulation = True
-
-    hopp_site = SiteInfo(**config.hopp_config["site"])
-    hi = HOPPInterface(hopp_site)
-    simulator = RealTimeSimulation(config, hi)
+#     fname_hopp_config = str(config_root / "plant/hopp_config_mn.yaml")
+#     fname_greenheart_config = str(config_root / "plant/greenheart_config_onshore_mn.yaml")
+#     fname_turbine_config = str(
+#         config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml"
+#     )
+#     fname_floris_config = str(config_root / "floris/floris_input_lbw_6MW.yaml")
 
 
-    mpc_config = config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
+#     config = GreenHeartSimulationConfig(
+#         fname_hopp_config,
+#         fname_greenheart_config,
+#         fname_turbine_config,
+#         fname_floris_config,
+#         verbose=False,
+#         show_plots=False,
+#         save_plots=False,
+#         use_profast=True,
+#         post_processing=True,
+#         incentive_option=1,
+#         plant_design_scenario=1,
+#         output_level=8,
+#     )
+
+#     config.realtime_simulation = True
+
+#     hopp_site = SiteInfo(**config.hopp_config["site"])
+#     hi = HOPPInterface(hopp_site)
+#     simulator = RealTimeSimulation(config, hi)
+
+
+#     mpc_config = config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
     
-    # Minimal required attributes for instantiation
-    ctrl = DispatchModelPredictiveController(
-        config=config,
-        simulation_graph=simulator.G,
-        node_order=simulator.node_order,
-        edge_order=simulator.edge_order,
-        mpc_config=mpc_config,
-    )
+#     # Minimal required attributes for instantiation
+#     ctrl = DispatchModelPredictiveController(
+#         config=config,
+#         simulation_graph=simulator.G,
+#         node_order=simulator.node_order,
+#         edge_order=simulator.edge_order,
+#         mpc_config=mpc_config,
+#     )
 
-    []
+#     []

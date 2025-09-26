@@ -20,7 +20,7 @@ class GreenheartDispatchOutput:
 
 
 class GreenheartDispatch:
-    controller: DispatchHeuristicController | DispatchHeuristicController
+    controller: DispatchHeuristicController | DispatchModelPredictiveController
     def __init__(self, hopp_interface, GHconfig, simulator=None, dispatch_config=None):
 
         # self.setup_control_model(GHconfig)
