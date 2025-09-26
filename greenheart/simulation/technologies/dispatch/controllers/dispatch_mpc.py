@@ -729,7 +729,7 @@ class DispatchModelPredictiveController:
 
         active_obj_uw = {k:v for k, v in self.objective_manager.obj_terms_uw_traj.items() if k in self.term_keys}
 
-        if np.any([sol.value(v) > 1 for vals in active_obj_uw.values() for v in vals] ):
+        if np.any([sol.value(v) > 1.0001 for vals in active_obj_uw.values() for v in vals] ):
             self.gradient_helper.print_objective_trajectory_values(sol, terms=self.term_keys, weighted=False)
             pass
         

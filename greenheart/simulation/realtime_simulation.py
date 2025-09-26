@@ -61,16 +61,13 @@ class RealTimeSimulation:
 
         self.case_description = case_description
 
-        self.verbose = True
+        self.verbose = False
         self.save_sysid = False
 
         self.config = config
         self.rts_config = self.config.greenheart_config["realtime_simulation"]
 
-        # if isinstance(self.config.greenheart_config["realtime_simulation"], dict):
-        #     self.rts_config = self.config.greenheart_config["realtime_simulation"]
-        # else:
-        #     self.rts_config = load_yaml(self.config.greenheart_config["realtime_simulation"])
+    
 
         self.component_config = load_yaml(self.rts_config["component_config"])
         self.hi = hopp_interface
