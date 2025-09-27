@@ -210,14 +210,18 @@ class DispatchModelPredictiveController:
     #     self.setup_optimization()
 
     def setup_logging(self, log_config):
-        self.logger = logging.getLogger(f"MPC {log_config['case_description']}")
-        self.logger.setLevel(logging.DEBUG)
+        if log_config["queue"] is None:
+            self.logger = log_config["logger"]
 
-        queue_handler = handlers.QueueHandler(log_config["queue"])
-        queue_handler.setLevel(logging.DEBUG)
-        self.logger.addHandler(queue_handler)
+        else:
+            self.logger = logging.getLogger(f"MPC {log_config['case_description']}")
+            self.logger.setLevel(logging.DEBUG)
 
-        self.logger.info("Logger initialized")
+            queue_handler = handlers.QueueHandler(log_config["queue"])
+            queue_handler.setLevel(logging.DEBUG)
+            self.logger.addHandler(queue_handler)
+
+        self.logger.info("MPC logger initialized")
 
     def setup_solution_storage(self):
         self.step_index_store = []
