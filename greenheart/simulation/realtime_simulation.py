@@ -61,12 +61,16 @@ class RealTimeSimulation:
 
         self.case_description = case_description
 
-        self.verbose = True
-        self.save_sysid = False
 
         self.config = config
         self.rts_config = self.config.greenheart_config["realtime_simulation"]
 
+
+        options = self.rts_config.get("options", {})
+
+        self.tqdm_progress = options.get("tqdm_progress", False)
+        self.verbose = options.get("verbose", True)
+        self.save_sysid = options.get("save_sysid", False)
     
 
         self.component_config = load_yaml(self.rts_config["component_config"])
@@ -413,7 +417,7 @@ class RealTimeSimulation:
 
         total = np.min([self.stop_index, 8760]) - np.max([0, self.start_index])
 
-        if self.verbose:
+        if self.tqdm_progress:
 
             colors = [
                 "#32a852",
@@ -440,14 +444,6 @@ class RealTimeSimulation:
 
         for i in time_iterable:
 
-        # for i in tqdm.tqdm(
-        #     range(len(hybrid_profile)),
-        #     desc=self.case_description,
-        #     position=self.worker_id + 1,
-        #     leave=False,
-        #     colour=tqdm_color,
-        # ):
-            # for i in range(len(hybrid_profile)):
 
             if i > self.stop_index:
                 print("stopping at realtime simulator stop index")
@@ -478,14 +474,7 @@ class RealTimeSimulation:
                 self.G, hybrid_profile[i] + grid_power, i
             )
 
-            # if (not (i % 80)) and (self.verbose):
-            #     print(
-            #         f"\r {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {(1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)) :.2f} seconds longer \t\t\t\t",
-            #         end="",
-            #     )
-            # pbar.update(1)
 
-            # if (not i % 250):
             if (time.time() - t_log_last > 60) or (i == self.stop_index):
                 self.logger.info(f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer")
                 t_log_last = time.time()
@@ -493,7 +482,9 @@ class RealTimeSimulation:
             self.record_states(i, self.G, grid_power)
             # Check on the error
 
-            self.save_ctrl_for_sysid(step_index=i)
+
+            if self.save_sysid:
+                self.save_ctrl_for_sysid(step_index=i)
 
             if self.dispatcher.use_MPC:
                 sim_edges_full = self.system_states[:, i, :]
@@ -662,8 +653,7 @@ class RealTimeSimulation:
 
     def save_ctrl_for_sysid(self, step_index=None):
 
-        if not self.save_sysid:
-            return 
+ 
 
         # Think about doing this with the un-simplified system model rather than the simplified one with coupling
 
