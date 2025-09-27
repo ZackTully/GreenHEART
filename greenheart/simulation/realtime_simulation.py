@@ -61,12 +61,16 @@ class RealTimeSimulation:
 
         self.case_description = case_description
 
-        self.verbose = False
-        self.save_sysid = False
 
         self.config = config
         self.rts_config = self.config.greenheart_config["realtime_simulation"]
 
+
+        options = self.rts_config.get("options", {})
+
+        self.tqdm_progress = options.get("tqdm_progress", False)
+        self.verbose = options.get("verbose", True)
+        self.save_sysid = options.get("save_sysid", False)
     
 
         self.component_config = load_yaml(self.rts_config["component_config"])
@@ -89,41 +93,7 @@ class RealTimeSimulation:
         else:
             self.worker_id = current_process()._identity[0]-1
 
-        # self.worker_id = 0
 
-        # self.log_id = str(self.worker_id)+": "
-
-        # existing_loggers = logging.getLogger().manager.loggerDict
-
-        # if ("sweep_logger" in existing_loggers.keys()):
-        # if "logging" in self.rts_config:
-
-        #     # sweep_logger = existing_loggers["sweep_logger"]
-        #     # sweep_logger_fname = Path(sweep_logger.handlers[0].baseFilename)
-
-        #     datetime_string = datetime.datetime.now().strftime("%H_%M_%S")
-
-        #     # main_fname = self.rts_config["logging"]["main_fpath"].parts[-1].split(".")[0]
-        #     main_fpath  = self.rts_config["logging"]["main_fpath"]
-
-        #     main_fname = "sweeplog_" + self.rts_config["logging"]["main_datestring"]
-
-        #     log_fname = main_fpath / "temp" / (main_fname + f"__RTS_log_{self.worker_id}_at_{datetime_string}.log")
-
-        #     # lconfig = logging.config(filename = log_fname, level=logging.INFO, format="%(message)s", force=True)
-        #     logger = logging.getLogger("RTS logger")
-        #     logger.setLevel(logging.INFO)
-        #     handler = logging.FileHandler(log_fname)
-        #     handler.setLevel(logging.INFO)
-        #     logger.addHandler(handler)
-        #     self.logger = logger
-
-        # else:
-        #     self.logger = logging.getLogger()
-
-        # self.logger.info(self.log_id + "Dispatch config: \n" + "="*100)
-        # self.logger.info(pprint.pformat(self.rts_config["dispatch"]))
-        # self.logger.info("="*100 + "\n")
 
         if "logging" in self.rts_config:
             # pprint.pprint(self.rts_config)
@@ -138,14 +108,18 @@ class RealTimeSimulation:
 
     def setup_logging(self, log_config):
 
-        self.logger = logging.getLogger(f"SIMULATION {log_config['case_description']}")
-        self.logger.setLevel(logging.DEBUG)
+        if log_config["queue"] is None:
+            self.logger = log_config["logger"]
 
-        queue_handler = handlers.QueueHandler(log_config["queue"])
-        queue_handler.setLevel(logging.DEBUG)
-        self.logger.addHandler(queue_handler)
+        else:
+            self.logger = logging.getLogger(f"SIMULATION {log_config['case_description']}")
+            self.logger.setLevel(logging.DEBUG)
 
-        self.logger.info("Logger initialized")
+            queue_handler = handlers.QueueHandler(log_config["queue"])
+            queue_handler.setLevel(logging.DEBUG)
+            self.logger.addHandler(queue_handler)
+
+        self.logger.info("Simulation logger initialized")
 
     def setup_simulation_model(self, config, hopp_interface):
 
@@ -439,10 +413,11 @@ class RealTimeSimulation:
         # Loop for everything downstream of generation
         error_feedback = False
         t0 = time.time()
+        t_log_last = time.time()
 
         total = np.min([self.stop_index, 8760]) - np.max([0, self.start_index])
 
-        if self.verbose:
+        if self.tqdm_progress:
 
             colors = [
                 "#32a852",
@@ -469,14 +444,6 @@ class RealTimeSimulation:
 
         for i in time_iterable:
 
-        # for i in tqdm.tqdm(
-        #     range(len(hybrid_profile)),
-        #     desc=self.case_description,
-        #     position=self.worker_id + 1,
-        #     leave=False,
-        #     colour=tqdm_color,
-        # ):
-            # for i in range(len(hybrid_profile)):
 
             if i > self.stop_index:
                 print("stopping at realtime simulator stop index")
@@ -507,20 +474,17 @@ class RealTimeSimulation:
                 self.G, hybrid_profile[i] + grid_power, i
             )
 
-            # if (not (i % 80)) and (self.verbose):
-            #     print(
-            #         f"\r {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {(1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)) :.2f} seconds longer \t\t\t\t",
-            #         end="",
-            #     )
-            # pbar.update(1)
 
-            if (not i % 250):
+            if (time.time() - t_log_last > 60) or (i == self.stop_index):
                 self.logger.info(f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer")
+                t_log_last = time.time()
 
             self.record_states(i, self.G, grid_power)
             # Check on the error
 
-            self.save_ctrl_for_sysid(step_index=i)
+
+            if self.save_sysid:
+                self.save_ctrl_for_sysid(step_index=i)
 
             if self.dispatcher.use_MPC:
                 sim_edges_full = self.system_states[:, i, :]
@@ -689,8 +653,7 @@ class RealTimeSimulation:
 
     def save_ctrl_for_sysid(self, step_index=None):
 
-        if not self.save_sysid:
-            return 
+ 
 
         # Think about doing this with the un-simplified system model rather than the simplified one with coupling
 
