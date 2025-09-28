@@ -9,6 +9,7 @@ from io import StringIO
 import pickle
 import logging
 from logging import handlers
+import traceback
 
 import time
 
@@ -657,9 +658,18 @@ class DispatchModelPredictiveController:
             self.store_solve_stats(sol_stats, step_index)
             successful_optimization = True
             []
-        except:
+        except Exception as e:
+            self.logger.debug(e)
+            self.logger.debug(traceback.format_exc())
+
             # If the optimization does not solve, dig into the issues
-            self.unpack_bad_solution(step_index=step_index, forecast=forecast, x0=x0)
+            violation_desc = self.unpack_bad_solution(step_index=step_index, forecast=forecast, x0=x0)
+            self.logger.debug(violation_desc)
+
+
+            # Think about adding more debug information to the logger here
+            # Gradients
+
             sol = self.opti.debug
             successful_optimization = False
 
@@ -765,6 +775,8 @@ class DispatchModelPredictiveController:
 
         violations = []
 
+        violation_summary = ""
+
         i = 0
         while i < len(output):
             if output[i].startswith("------- i = "):
@@ -787,6 +799,7 @@ class DispatchModelPredictiveController:
                     print_line = (
                         str(num_desc).ljust(45) + code_desc.ljust(130) + at_desc
                     )
+                    violation_summary += print_line + "\n"
                     if self.verbose:
                         pprint.pprint(print_line, width=200)
                 i += 4
@@ -817,7 +830,7 @@ class DispatchModelPredictiveController:
         self.bad_solve_step.append(step_index)
         self.bad_solve_violation.append(np.max(np.abs(violations)))
 
-        # plt.close()
+        return violation_summary 
 
     def print_block_matrices(
         self, mat, in_labels, out_labels, no_space=False, save_description=False

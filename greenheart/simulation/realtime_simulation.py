@@ -476,7 +476,21 @@ class RealTimeSimulation:
 
 
             if (time.time() - t_log_last > 60) or (i == self.stop_index):
-                self.logger.info(f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer")
+
+                prog_step = f"{i}/{len(hybrid_profile)}"
+                prog_percent = f"{(i / len(hybrid_profile)* 100) :.1f}%"
+                prog_elapsed = f"{(time.time() - t0) / 3600:.3f} hours"
+                prog_remaining = f"{((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.3f} hours"
+                prog_str = f"Step = {prog_step}, {prog_percent}, {prog_elapsed} elapsed, {prog_remaining} remaining"
+
+
+                # prog_str = f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer"
+
+
+
+
+                self.logger.info(prog_str)
+                # self.logger.info(f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer")
                 t_log_last = time.time()
 
             self.record_states(i, self.G, grid_power)
