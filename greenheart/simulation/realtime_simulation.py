@@ -385,6 +385,9 @@ class RealTimeSimulation:
     def simulate(self, dispatcher: GreenheartDispatch, hopp_results):
         # Get generation signals
 
+        if self.verbose:
+            self.logger.info(f"{self.case_description}, Simulation started ")
+
         self.dispatcher = dispatcher
 
         self.setup_ctrl_sysid()
@@ -405,6 +408,8 @@ class RealTimeSimulation:
 
         hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
         self.hybrid_profile = hybrid_profile
+
+        assert not np.any(np.isnan(self.hybrid_profile))
 
         self.forecast_config = self.rts_config.get("forecast",
                                             dict(
