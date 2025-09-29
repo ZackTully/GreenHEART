@@ -633,10 +633,20 @@ class DispatchModelPredictiveController:
             )
 
         self.update_optimization_parameters(x0, forecast)
+
+
+
+
         if self.warm_start_with_previous_solution:
+            
+
+
+
             if hasattr(self, "x_init") and self.prev_success:
                 # Then the optimization has been run at least once and there should
                 # be initial values from the previous solution to borrow
+
+                self.opti.set_initial(self.opti.x, np.zeros(self.opti.x.shape))
 
                 overlap = self.horizon - (step_index - self.step_index_store[-1])
                 self.opti.set_initial(
@@ -652,6 +662,37 @@ class DispatchModelPredictiveController:
                     self.opt_vars["yex"][:, :overlap], self.ys_init[:, -overlap:]
                 )
 
+
+                uct_feas, usp_feas, x_feas, yex_feas, yco_feas, ucur_feas = self.control_model.compute_feasible_initial_values(x0, forecast, self.opti, start_index = overlap)
+                self.opti.set_initial(self.opt_vars["uct"], uct_feas)
+                self.opti.set_initial(self.opt_vars["usp"], usp_feas)
+                self.opti.set_initial(self.opt_vars["x"], x_feas)
+                self.opti.set_initial(self.opt_vars["yex"], yex_feas)
+                self.opti.set_initial(self.opt_vars["yco"], yco_feas)
+                self.opti.set_initial(self.opt_vars["gridcurtail"], ucur_feas)
+
+
+                # self.gradient_helper.check_initial_values(self.opti)
+
+                # g_init = self.opti.value(self.opti.g, self.opti.initial())
+                # lbg_init = self.opti.value(self.opti.lbg, self.opti.initial())
+                # ubg_init = self.opti.value(self.opti.ubg, self.opti.initial())
+
+
+
+
+                []
+
+            else:
+                uct_feas, usp_feas, x_feas, yex_feas, yco_feas, ucur_feas = self.control_model.compute_feasible_initial_values(x0, forecast)
+                self.opti.set_initial(self.opt_vars["uct"], uct_feas)
+                self.opti.set_initial(self.opt_vars["usp"], usp_feas)
+                self.opti.set_initial(self.opt_vars["x"], x_feas)
+                self.opti.set_initial(self.opt_vars["yex"], yex_feas)
+                self.opti.set_initial(self.opt_vars["yco"], yco_feas)
+                self.opti.set_initial(self.opt_vars["gridcurtail"], ucur_feas)
+
+                # self.gradient_helper.check_initial_values(self.opti)
 
         try:
             sol = self.opti.solve()
