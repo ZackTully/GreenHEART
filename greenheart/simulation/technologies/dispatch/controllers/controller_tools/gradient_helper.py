@@ -27,6 +27,48 @@ class GradientHelper:
                 setattr(self, attr, getattr(self.mpc, attr))
 
 
+
+    def check_initial_values(self, opti):
+
+
+        tol = 1e-6
+
+        # Get all (scalarised) dual variables as a symbolic column vector.
+        lam_g = opti.value(opti.lam_g, opti.initial())
+
+        g_init = opti.value(opti.g, opti.initial())
+        lbg_init = opti.value(opti.lbg, opti.initial())
+        ubg_init = opti.value(opti.ubg, opti.initial())
+
+
+        lb_bool = g_init >= lbg_init - tol
+        ub_bool = g_init <= ubg_init + tol
+
+
+        # np.all(g_init >= lbg_init - tol)
+        # np.all(g_init <= ubg_init + tol)
+
+        np.where(~ub_bool)[0].astype(int)
+        np.where(~lb_bool)[0].astype(int)
+
+
+        for i in range(g_init.shape[0]):
+            if not lb_bool[i]:
+                opti.g[i]
+                opti.lbg[i]
+
+
+
+                pass
+            if not ub_bool[i]:
+                pass
+
+
+
+
+        []
+
+
     def cast_numpy(self, arr):
         if isinstance(arr, scipy.sparse.spmatrix):
             arr = arr.toarray()
