@@ -60,6 +60,17 @@ class RealTimeSimulation:
     def __init__(self, config, hopp_interface, case_description = None):
 
         self.case_description = case_description
+        if self.case_description is not None:
+            if "case" in case_description:
+                self.worker_id=int(case_description.split("case_")[1].split(".")[0].split("_")[0])
+            else:
+                self.worker_id=0
+
+        elif current_process().name == "MainProcess":
+            # Set up logging that writes to the topmost file
+            self.worker_id = 0
+        else:
+            self.worker_id = current_process()._identity[0]-1
 
 
         self.config = config
@@ -86,12 +97,6 @@ class RealTimeSimulation:
         else:
             self.start_index = 0
 
-        # Set up logging that writes to the topmost file
-
-        if current_process().name == "MainProcess":
-            self.worker_id = 0
-        else:
-            self.worker_id = current_process()._identity[0]-1
 
 
 
