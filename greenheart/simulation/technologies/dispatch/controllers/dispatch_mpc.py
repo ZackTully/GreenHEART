@@ -652,8 +652,12 @@ class DispatchModelPredictiveController:
                     self.opt_vars["yex"][:, :overlap], self.ys_init[:, -overlap:]
                 )
 
+
         try:
             sol = self.opti.solve()
+
+            # self.logger.info(sol)
+
             sol_stats = sol.stats()
             self.store_solve_stats(sol_stats, step_index)
             successful_optimization = True
