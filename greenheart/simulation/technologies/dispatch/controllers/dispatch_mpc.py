@@ -55,7 +55,8 @@ class DispatchModelPredictiveController:
         self.verbose = False
 
         if "logging" in self.mpc_config:
-            self.setup_logging(self.mpc_config.pop("logging"))
+            self.logging_config = self.mpc_config.pop("logging")
+            self.setup_logging(self.logging_config)
 
         self.plotter = MPCPlotter(mpc=self)
         self.debug_helper = DebugHelper(mpc=self)
@@ -246,6 +247,8 @@ class DispatchModelPredictiveController:
         self.iter_count_store = []
         self.t_wall_total_store = []
         self.t_proc_total_store = []
+
+        self.bad_solutions_saved = 0
 
         self.bad_solve_count = 0
         self.bad_solve_step = []
@@ -598,7 +601,7 @@ class DispatchModelPredictiveController:
             if len(stderr_msg) > 0:
                 log_msg = self.debug_helper.process_stderr(stderr_msg)
                 if log_msg is not None: 
-                    self.logger.warning(log_msg)
+                    self.logger.warning(f"{step_index = }:\nlog_msg")
 
             sol_stats = sol.stats()
             self.store_solve_stats(sol_stats, step_index)
@@ -606,7 +609,7 @@ class DispatchModelPredictiveController:
             []
         except Exception as e:
             self.logger.debug(e)
-            self.logger.debug(traceback.format_exc())
+            # self.logger.debug(traceback.format_exc())
 
             # If the optimization does not solve, dig into the issues
             violation_desc = self.unpack_bad_solution(step_index=step_index, forecast=forecast, x0=x0)
@@ -751,30 +754,28 @@ class DispatchModelPredictiveController:
                 i += 4
             i += 1
 
-        # self.plot_trajectory_generic(self.opti.debug, forecast)
-        # self.plotter.plot_trajectory_generic(self.opti.debug, forecast)
 
-        np.set_printoptions(linewidth=200, suppress=True, precision=4)
+        # np.set_printoptions(linewidth=200, suppress=True, precision=4)
 
-        # if not self.debug_mode:
-        #     self.save_state_for_debug(x0, forecast, step_index)
 
-        # if not (np.max(np.abs(violations)) <= 1e-3):
-        #     self.check_gradients(self.opti.debug)
-        #     []
+        # if True:
+        if np.max(np.abs(violations)) > 1e-3:
+            self.gradient_helper.check_gradients(self.opti.debug)
 
-        # assert np.max(np.abs(violations)) <= 1e3, f"violation too large at step index {step_index}"
 
-        if np.max(np.abs(violations)) > 1e3:
-            self.check_gradients(self.opti.debug, print_jacs=self.verbose)
-            if not self.debug_mode:
-                self.save_state_for_debug(x0, forecast, step_index)
 
-                raise AssertionError(f"violation too large at step index {step_index}")
+            # if not self.debug_mode:
+            #     self.debug_helper.save_state_for_debug(x0, forecast, step_index)
+
+            #     raise AssertionError(f"violation too large at step index {step_index}")
 
         self.bad_solve_count += 1
         self.bad_solve_step.append(step_index)
         self.bad_solve_violation.append(np.max(np.abs(violations)))
+
+        if self.bad_solutions_saved < 20:
+            self.debug_helper.save_state_for_debug(x0, forecast, step_index)
+            self.bad_solutions_saved += 1
 
         return violation_summary 
 
