@@ -10,6 +10,8 @@ import pickle
 import logging
 from logging import handlers
 import traceback
+import contextlib
+import io
 
 import time
 
@@ -501,114 +503,6 @@ class DispatchModelPredictiveController:
         #     obj_terms_uw2=self.obj_terms_uw_man,
         # )
 
-    # def objective_step(
-    #     self,
-    #     x,
-    #     uct,
-    #     usp,
-    #     yco,
-    #     yex,
-    #     gridcurtail=None,
-    #     var_inds=None,
-    # ):
-
-    #     # =============================================================================
-    #     # ==                                                                         ==
-    #     # ==                                Objective                                ==
-    #     # ==                                                                         ==
-    #     # =============================================================================
-    #     obj_terms = {}
-
-    #     term_keys = ["output_tracking", "gridcurtail"]
-
-    #     obj_terms.update(
-    #         {"output_tracking": {"w": 1e9, "expr": (self.reference - yex) ** 2}}
-    #     )
-
-    #     obj_terms.update({"gridcurtail": {"w": 1e-4, "expr": gridcurtail**2}})
-
-    #     if "battery" in self.node_order:
-    #         simu = uct[var_inds["uct_charge_bes"]] * uct[var_inds["uct_discharge_bes"]]
-    #         obj_terms.update({"bes_simultaneous": {"w": 1e0, "expr": simu}})
-    #         state = (x[var_inds["x_bes"]] - self.ref_bes_state) ** 2
-    #         obj_terms.update({"bes_state": {"w": self.weight_bes_state, "expr": state}})
-    #         term_keys.append("bes_simultaneous")
-
-    #     if "hydrogen_storage" in self.node_order:
-    #         simu = uct[var_inds["uct_charge_h2s"]] * uct[var_inds["uct_discharge_h2s"]]
-    #         obj_terms.update({"h2s_simultaneous": {"w": 1e0, "expr": simu}})
-    #         state = (x[var_inds["x_h2s"]] - self.ref_h2s_state) ** 2
-    #         obj_terms.update({"h2s_state": {"w": self.weight_h2s_state, "expr": state}})
-    #         term_keys.append("h2s_simultaneous")
-
-    #     if "thermal_energy_storage" in self.node_order:
-    #         simu = uct[var_inds["uct_charge_tes"]] * uct[var_inds["uct_discharge_tes"]]
-    #         obj_terms.update({"tes_simultaneous": {"w": 1e0, "expr": simu}})
-    #         state = (x[var_inds["x_tes"]] - self.ref_tes_state) ** 2
-    #         obj_terms.update({"tes_state": {"w": self.weight_tes_state, "expr": state}})
-
-    #         if self.weights["tes_simultaneous"] > 0:
-    #             term_keys.append("tes_simultaneous")
-    #         term_keys.append("tes_state")
-
-    #     if self.use_config_weights:
-    #         for key in self.weights.keys():
-    #             if key in obj_terms:
-    #                 obj_terms[key]["w"] = self.weights[key]
-
-    #     if hasattr(self, "term_keys"):
-    #         obj_term_keys = self.term_keys
-    #     else:
-    #         obj_term_keys = term_keys
-
-    #     objective = 0
-    #     for term in obj_term_keys:
-    #         objective += obj_terms[term]["w"] * obj_terms[term]["expr"]
-
-    #     obj_terms.update({"objective": {"w": 1, "expr": objective}})
-    #     return objective, obj_terms
-
-    # def terminal_objective(self, x_h):
-
-    #     obj_terms = {}
-
-    #     term_keys = []
-
-    #     if "battery" in self.node_order:
-    #         if "bes_terminal" in self.weights.keys():
-    #             w_bes = self.weights["bes_terminal"]
-    #         else:
-    #             w_bes = 1
-    #         ex_bes = (self.ref_bes_state - x_h[0]) ** 2
-    #         obj_terms.update({"bes_terminal": {"w": w_bes, "expr": ex_bes}})
-    #         term_keys.append("bes_terminal")
-
-    #     if "hydrogen_storage" in self.node_order:
-    #         if "h2s_terminal" in self.weights.keys():
-    #             w_h2s = self.weights["h2s_terminal"]
-    #         else:
-    #             w_h2s = 1
-    #         ex_h2s = (self.ref_h2s_state - x_h[2]) ** 2
-    #         obj_terms.update({"h2s_terminal": {"w": w_h2s, "expr": ex_h2s}})
-    #         term_keys.append("h2s_terminal")
-
-    #     if "thermal_energy_storage" in self.node_order:
-    #         if "tes_terminal" in self.weights.keys():
-    #             w_tes = self.weights["tes_terminal"]
-    #         else:
-    #             w_tes = 1
-    #         ex_tes = (self.ref_tes_state - x_h[1]) ** 2
-    #         obj_terms.update({"tes_terminal": {"w": w_tes, "expr": ex_tes}})
-    #         term_keys.append("tes_terminal")
-
-    #     objective = 0
-
-    #     # TODO make the terminal terms be relient on the term keys too
-
-    #     for term in term_keys:
-    #         objective += obj_terms[term]["w"] * obj_terms[term]["expr"]
-
-    #     return objective, obj_terms
 
     def update_optimization_parameters(self, x0, src_forecast):
         self.opti.set_value(self.opt_params["dex"], src_forecast)
@@ -695,7 +589,17 @@ class DispatchModelPredictiveController:
                 # self.gradient_helper.check_initial_values(self.opti)
 
         try:
-            sol = self.opti.solve()
+            stderr_buffer = io.StringIO()
+            # Use this workaround to capture casadi NaN detected errors
+            with contextlib.redirect_stderr(stderr_buffer):
+                sol = self.opti.solve()
+
+            stderr_msg = stderr_buffer.getvalue()
+            if len(stderr_msg) > 0:
+                log_msg = self.debug_helper.process_stderr(stderr_msg)
+                if log_msg is not None: 
+                    self.logger.warning(log_msg)
+
             sol_stats = sol.stats()
             self.store_solve_stats(sol_stats, step_index)
             successful_optimization = True
