@@ -1448,10 +1448,10 @@ def save_energy_flows(
 
     filepath = os.path.abspath(output_dir + "data/production/")
 
-    if not os.path.exists(filepath):
-        os.makedirs(filepath)
+    # if not os.path.exists(filepath):
+    #     os.makedirs(filepath)
 
-    df.to_csv(os.path.join(filepath, "energy_flows.csv"))
+    # df.to_csv(os.path.join(filepath, "energy_flows.csv"))
 
     return output
 
@@ -1553,28 +1553,28 @@ def post_process_simulation(
         output_dir + "data/lcoe/",
         output_dir + "data/lcoh/",
     ]
-    for sp in savepaths:
-        if not os.path.exists(sp):
-            os.makedirs(sp)
+    # for sp in savepaths:
+    #     if not os.path.exists(sp):
+    #         os.makedirs(sp)
 
-    pf_lcoh.get_cost_breakdown().to_csv(
-        savepaths[2]
-        + "cost_breakdown_lcoh_design%i_incentive%i_%sstorage.csv"
-        % (
-            plant_design_number,
-            incentive_option,
-            greenheart_config["h2_storage"]["type"],
-        )
-    )
-    pf_lcoe.get_cost_breakdown().to_csv(
-        savepaths[1]
-        + "cost_breakdown_lcoe_design%i_incentive%i_%sstorage.csv"
-        % (
-            plant_design_number,
-            incentive_option,
-            greenheart_config["h2_storage"]["type"],
-        )
-    )
+    # pf_lcoh.get_cost_breakdown().to_csv(
+    #     savepaths[2]
+    #     + "cost_breakdown_lcoh_design%i_incentive%i_%sstorage.csv"
+    #     % (
+    #         plant_design_number,
+    #         incentive_option,
+    #         greenheart_config["h2_storage"]["type"],
+    #     )
+    # )
+    # pf_lcoe.get_cost_breakdown().to_csv(
+    #     savepaths[1]
+    #     + "cost_breakdown_lcoe_design%i_incentive%i_%sstorage.csv"
+    #     % (
+    #         plant_design_number,
+    #         incentive_option,
+    #         greenheart_config["h2_storage"]["type"],
+    #     )
+    # )
 
     # create dataframe for saving all the stuff
     greenheart_config["design_scenario"] = design_scenario
@@ -1620,18 +1620,18 @@ def post_process_simulation(
 
         # save ORBIT cost information
         ob_df = pd.DataFrame(orbit_capex_breakdown, index=[0]).transpose()
-        savedir = output_dir + "data/orbit_costs/"
-        if not os.path.exists(savedir):
-            os.makedirs(savedir)
-        ob_df.to_csv(
-            savedir
-            + "orbit_cost_breakdown_lcoh_design%i_incentive%i_%sstorage.csv"
-            % (
-                plant_design_number,
-                incentive_option,
-                greenheart_config["h2_storage"]["type"],
-            )
-        )
+        # savedir = output_dir + "data/orbit_costs/"
+        # if not os.path.exists(savedir):
+        #     os.makedirs(savedir)
+        # ob_df.to_csv(
+        #     savedir
+        #     + "orbit_cost_breakdown_lcoh_design%i_incentive%i_%sstorage.csv"
+        #     % (
+        #         plant_design_number,
+        #         incentive_option,
+        #         greenheart_config["h2_storage"]["type"],
+        #     )
+        # )
         ###############################
 
         ###################### Save export system breakdown from ORBIT ###################
@@ -1664,18 +1664,18 @@ def post_process_simulation(
 
         # save ORBIT cost information
         ob_df = pd.DataFrame(orbit_capex_breakdown, index=[0]).transpose()
-        savedir = output_dir + "data/orbit_costs/"
-        if not os.path.exists(savedir):
-            os.makedirs(savedir)
-        ob_df.to_csv(
-            savedir
-            + "orbit_cost_breakdown_with_onshore_substation_lcoh_design%i_incentive%i_%sstorage.csv"
-            % (
-                plant_design_number,
-                incentive_option,
-                greenheart_config["h2_storage"]["type"],
-            )
-        )
+        # savedir = output_dir + "data/orbit_costs/"
+        # if not os.path.exists(savedir):
+        #     os.makedirs(savedir)
+        # ob_df.to_csv(
+        #     savedir
+        #     + "orbit_cost_breakdown_with_onshore_substation_lcoh_design%i_incentive%i_%sstorage.csv"
+        #     % (
+        #         plant_design_number,
+        #         incentive_option,
+        #         greenheart_config["h2_storage"]["type"],
+        #     )
+        # )
 
     ##################################################################################
     if (
@@ -1683,25 +1683,25 @@ def post_process_simulation(
         and hopp_results["hybrid_plant"].battery
     ):
         savedir = output_dir + "figures/production/"
-        if not os.path.exists(savedir):
-            os.makedirs(savedir)
-        if show_plots or save_plots: 
-            plot_tools.plot_generation_profile(
-                hopp_results["hybrid_plant"],
-                start_day=0,
-                n_days=10,
-                plot_filename=os.path.abspath(savedir + "generation_profile.pdf"),
-                font_size=14,
-                power_scale=1 / 1000,
-                solar_color="r",
-                wind_color="b",
-                # wave_color="g",
-                discharge_color="b",
-                charge_color="r",
-                gen_color="g",
-                price_color="r",
-                # show_price=False,
-            )
+        # if not os.path.exists(savedir):
+        #     os.makedirs(savedir)
+        # if show_plots or save_plots: 
+        #     plot_tools.plot_generation_profile(
+        #         hopp_results["hybrid_plant"],
+        #         start_day=0,
+        #         n_days=10,
+        #         plot_filename=os.path.abspath(savedir + "generation_profile.pdf"),
+        #         font_size=14,
+        #         power_scale=1 / 1000,
+        #         solar_color="r",
+        #         wind_color="b",
+        #         # wave_color="g",
+        #         discharge_color="b",
+        #         charge_color="r",
+        #         gen_color="g",
+        #         price_color="r",
+        #         # show_price=False,
+        #     )
     else:
         print(
             "generation profile not plotted because HoppInterface does not have a "
@@ -1721,10 +1721,10 @@ def post_process_simulation(
 
     # save hydrogen information
     key = "Hydrogen Hourly Production [kg/hr]"
-    np.savetxt(
-        output_dir + "h2_usage",
-        electrolyzer_physics_results["H2_Results"][key],
-        header="# " + key
-    )
+    # np.savetxt(
+    #     output_dir + "h2_usage",
+    #     electrolyzer_physics_results["H2_Results"][key],
+    #     header="# " + key
+    # )
 
     return annual_energy_breakdown, hourly_energy_breakdown
