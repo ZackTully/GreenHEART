@@ -572,13 +572,6 @@ class DispatchModelPredictiveController:
                 self.opti.set_initial(self.opt_vars["gridcurtail"], ucur_feas)
 
 
-                # self.gradient_helper.check_initial_values(self.opti)
-
-                # g_init = self.opti.value(self.opti.g, self.opti.initial())
-                # lbg_init = self.opti.value(self.opti.lbg, self.opti.initial())
-                # ubg_init = self.opti.value(self.opti.ubg, self.opti.initial())
-
-
 
 
                 []
