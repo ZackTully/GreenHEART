@@ -60,11 +60,23 @@ class ThermalEnergyStorage:
             / 3600
             * self.M_hot_max
         )
+        self.H_hot_min_kWh = (
+            self.particle.H(self.T_hot_target + self.C2K)
+            / (self.particle.molar_mass / 1000)
+            / 3600
+            * self.M_hot_min
+        )
         self.H_buffer_max_kWh = (
             self.particle.H(self.T_buffer_target + self.C2K)
             / (self.particle.molar_mass / 1000)
             / 3600
             * self.M_buffer_max
+        )
+        self.H_buffer_min_kWh = (
+            self.particle.H(self.T_buffer_target + self.C2K)
+            / (self.particle.molar_mass / 1000)
+            / 3600
+            * self.M_buffer_min
         )
 
         self.H_capacity_kWh = (
@@ -86,9 +98,11 @@ class ThermalEnergyStorage:
         []
 
     def _SOC(self):
-        return (
-            self.delta_H(self.T_buffer, self.T_hot) * self.M_hot
-        ) / self.H_capacity_kWh
+        return (self.tank_H("hot") - self.H_hot_min_kWh) / (self.H_hot_max_kWh - self.H_hot_min_kWh)
+        # return self.tank_H("hot") / self.H_capacity_kWh
+        # return (
+        #     self.delta_H(self.T_buffer, self.T_hot) * self.M_hot
+        # ) / self.H_capacity_kWh
         # return (self.tank_H("hot") - self.tank_H("buffer")) / self.H_capacity_kWh
 
     def tank_H(self, which=None):
@@ -178,7 +192,6 @@ class ThermalEnergyStorage:
         else:
             unused_power = available_power - P_charge_desired_kWh
 
-        self.P_used = P_charge_desired_kWh
 
 
         # P_charge_desired_kWh = np.min([available_power, P_charge_desired_kWh])
@@ -191,8 +204,9 @@ class ThermalEnergyStorage:
             [m_charge, self.m_charge_max_kgphr, self.M_buffer - self.M_buffer_min]
         )
 
-        assert m_charge_sat >= 0
+        additional_unused_power = self.delta_H(self.T_buffer, self.T_hot_target) * max((m_charge - m_charge_sat), 0)
 
+        assert m_charge_sat >= 0
         # Choose m_discharge
 
         # FIXME dont take the lifting power out of the heat energy out
@@ -206,7 +220,8 @@ class ThermalEnergyStorage:
 
         assert m_discharge_sat >= 0
 
-        return m_charge_sat, m_discharge_sat, unused_power
+        self.P_used = P_charge_desired_kWh - additional_unused_power
+        return m_charge_sat, m_discharge_sat, unused_power+ additional_unused_power
 
     def step_model(self, m_charge, m_discharge, step_index):
 
@@ -309,29 +324,25 @@ class ThermalEnergyStorage:
         D = np.array([[0, 1], [-1, 0]])
         F = np.array([[0], [1]])
 
-        # data_ss = np.array([[ 9.75562185e-01,  1.00363595e-01,  2.84716728e+00],
-        #     [-1.17146624e-06,  1.36263323e-06,  9.98524094e-01]])
-
-
-        # A = np.array([data_ss[0,0, None]])
-        # B = np.array([data_ss[0, 1:]])
-        # E = np.array([data_ss[0, 1, None]])
-
-        # C = np.array([[data_ss[1, 0]], [0]])
-        # D = np.array([data_ss[1, 1:], [-1, 0]])
-        # F = np.array([[data_ss[1,1]], [1]])
-
 
         
 
         bounds_dict = {
             "u_lb": np.array([0, 0]),
             "u_ub": np.array([self.max_charge_kWhphr, self.max_discharge_kWhphr]),
-            "x_lb": np.array([0]),
-            "x_ub": np.array([self.H_capacity_kWh]),
+            "x_lb": np.array([self.H_hot_min_kWh]),
+            "x_ub": np.array([self.H_hot_max_kWh]),
             "y_lb": np.array([None, None]),
             "y_ub": np.array([None, None]),
         }
+        # bounds_dict = {
+        #     "u_lb": np.array([0, 0]),
+        #     "u_ub": np.array([self.max_charge_kWhphr, self.max_discharge_kWhphr]),
+        #     "x_lb": np.array([0]),
+        #     "x_ub": np.array([self.H_capacity_kWh]),
+        #     "y_lb": np.array([None, None]),
+        #     "y_ub": np.array([None, None]),
+        # }
 
 
         control_model = ControlModel(

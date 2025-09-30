@@ -57,6 +57,9 @@ class DispatchModelPredictiveController:
         if "logging" in self.mpc_config:
             self.logging_config = self.mpc_config.pop("logging")
             self.setup_logging(self.logging_config)
+        else:
+            self.logging_config = {}
+            self.logger = logging.getLogger()
 
         self.plotter = MPCPlotter(mpc=self)
         self.debug_helper = DebugHelper(mpc=self)
