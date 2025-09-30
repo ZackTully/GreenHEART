@@ -12,7 +12,7 @@ class Forecast:
 
     def __init__(self, config, true_forecast, greenheart_config=None):
         self.config = config
-        self.forecast_horizon = config["horizon"]
+        # self.forecast_horizon = config["horizon"]
         self.forecast_method = config["method"]
 
         self.step_index = 0
@@ -22,14 +22,17 @@ class Forecast:
             mpc_horizon = self.greenheart_config.greenheart_config[
                 "realtime_simulation"
             ]["dispatch"]["mpc"]["horizon"]
-            if mpc_horizon != self.forecast_horizon:
-                self.forecast_horizon = mpc_horizon
+            # if mpc_horizon != self.forecast_horizon:
+                # self.forecast_horizon = mpc_horizon
+            self.forecast_horizon = mpc_horizon
+        else:
+            self.forecast_horizon = config["horizon"]
 
         self.true_forecast = true_forecast
         self.perfect_forecast_profile = np.concatenate(
             [
                 self.true_forecast,
-                self.true_forecast[-1] * np.ones(self.forecast_horizon * 2),
+                self.true_forecast[-1] * np.ones(self.forecast_horizon * 10),
             ]
         )
         # getattr(self, f"_setup_{self.forecast_method}")(self.config["method_config"])
@@ -97,6 +100,11 @@ class Forecast:
     def _setup_filter_method(self):
 
         wc = self.config["method_config"]["w_cutoff"]
+        Ts = self.config["method_config"]["Ts"]
+
+        # Number of samples 
+        self.n_cutoff = int(2 * np.pi / wc / Ts)
+
 
 
         K = 1
@@ -111,45 +119,30 @@ class Forecast:
 
         TF_s = si.TransferFunction(b_s, a_s)
 
-        TF_z = TF_s.to_discrete(dt=self.config["method_config"]["Ts"])
+        TF_z = TF_s.to_discrete(dt=Ts)
 
         a_z, b_z = TF_z.den, TF_z.num
 
         self.filter_den = a_z
         self.filter_num = b_z
 
-
-        pass
-
     def _make_forecast_filter_method(self, measurement, step_index):
 
-        d_perfect = self._forecast_perfect(measurement, step_index)
+        # d_perfect = self._forecast_perfect(measurement, step_index)
+
+        d_perfect = self.perfect_forecast_profile[
+            step_index : step_index + max(self.forecast_horizon, self.n_cutoff)
+        ]
+
 
         # d_filtered = si.lfilter(self.filter_num, self.filter_den, d_perfect)
         d_filtered = si.filtfilt(self.filter_num, self.filter_den, d_perfect)
 
+        # TODO May need to set the first value of the forecast to be the same as the measured disturbance. 
 
-        return d_filtered
 
-    # def _make_forecast_average_method(self ):
-    #     pass
+        return d_filtered[0:self.forecast_horizon]
 
-    # def _make_forecast_naive_method(self):
-    #     pass
-
-    # def _make_forecast_seasonal_naive_method(self):
-    #     pass
-
-    # def _make_forecast_drift_method(self):
-    #     pass
-
-    # @property
-    # def forecast_perfect(self):
-    #     return self.perfect_forecast_profile[self.step_index: self.step_index + self.forecast_horizon]
-
-    # @property
-    # def forecast_persistence(self):
-    #     return
 
 
 def plot_interp_options():
@@ -225,7 +218,7 @@ if __name__ == "__main__":
         type="lpf",
         order=1,
         Ts = 3600,
-        w_cutoff=2 * np.pi / (18 * 3600),
+        w_cutoff=2 * np.pi / (40 * 3600),
     )
 
     horizon = 24

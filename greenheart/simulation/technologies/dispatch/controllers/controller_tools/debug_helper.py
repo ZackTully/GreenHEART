@@ -2,12 +2,30 @@ import numpy as np
 import datetime
 from pathlib import Path
 import json
-
+import re
+import pprint
+import logging
 
 class DebugHelper:
     def __init__(self, mpc):
         self.mpc = mpc
         pass
+
+
+    def process_stderr(self, err):
+        err = err.splitlines()
+
+        err_counts = {}
+
+        for ln in err:
+            msg = re.search(r'\((.*?)\)', err[0]).group(0)
+            if msg in err_counts:
+                err_counts[msg] += 1
+            else:
+                err_counts.update({msg: 0})
+
+
+        return pprint.pformat(err_counts)
 
     def save_state_for_debug(self, x0, forecast, step_index):
 
@@ -15,8 +33,26 @@ class DebugHelper:
 
         CM = self.mpc.control_model
 
-        datetime_string = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S-%s")
-        dir_path = "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/saved_data/mpc_saved_states"
+        datetime_string = datetime.datetime.now().strftime("%Y_%m_%d--%H_%M_%S-%s")
+
+        # try to extract a file path from the mpc logger and if that doesn't work, then don't save the output
+        base_path = None
+        for handler in self.mpc.logger.handlers:
+            if isinstance(handler, logging.FileHandler):
+                log_fname = Path(handler.baseFilename)
+
+                for i, parent in enumerate(log_fname.parents):
+                    if parent.stem == "logs":
+                        base_path = parent
+
+        if base_path is None:
+            return 0
+        
+        dir_path = base_path / "mpc_saved_states"
+
+
+        # dir_path = "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/saved_data/mpc_saved_states"
+        # dir_path = Path(__file__)
         dir = f"{dir_path}/mpcstate_{datetime_string}_step{step_index}"
         # Path(dir).mkdir(parents=True, exist_ok=True)
         Path(dir_path).mkdir(parents=True, exist_ok=True)
@@ -214,3 +250,10 @@ class DebugHelper:
         self.mpc.x_h2s_min = float(state_dict["x_h2s_min"])
 
         []
+
+
+if __name__ == "__main__":
+
+    err='CasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]\nCasADi - 2025-09-29 16:29:23 WARNING("solver:nlp_f failed: NaN detected for output f, at (row 0, col 0).") [.../casadi/core/oracle_function.cpp:408]'
+    dh = DebugHelper(mpc=[])
+    dh.process_stderr(err)
