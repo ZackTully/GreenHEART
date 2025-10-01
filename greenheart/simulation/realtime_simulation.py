@@ -602,7 +602,7 @@ class RealTimeSimulation:
     def get_state_measurement(self, step_index):
         # x0 = np.zeros(len([node for node in self.node_order if (node in ["battery", "hydrogen_storage", "thermal_energy_storage"])]))
         x0 = []
-        for state_node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
+        for state_node in ["battery", "thermal_energy_storage",  "hydrogen_storage"]:
             if state_node in self.G:
                 model: Union[HydrogenStorage, ThermalEnergyStorage, Battery] = (
                     self.G.nodes[state_node]["ionode"].model
@@ -610,11 +610,11 @@ class RealTimeSimulation:
                 if state_node == "battery":
                     if model.use_hopp_outputs:
                         if (step_index == 0) or (step_index == self.start_index):
-                            state = (
+                            state = [(
                                 model.hopp_battery.config.initial_SOC
                                 / 100
                                 * model.hopp_battery.config.system_capacity_kwh
-                            )
+                            )]
                         else:
                             min_soc_violation = (
                                 model.hopp_battery.outputs.SOC[step_index - 1]
@@ -631,19 +631,21 @@ class RealTimeSimulation:
                                 pass
                             else:
                                 pass
-                            state = (
+                            state = [(
                                 model.hopp_battery.outputs.SOC[step_index - 1]
                                 / 100
                                 * model.hopp_battery.config.system_capacity_kwh
-                            )
+                            )]
                     else:
-                        state = model.storage_state
+                        state = [model.storage_state]
                 elif state_node == "hydrogen_storage":
-                    state = model.storage_state
+                    state = [model.storage_state]
                 elif state_node == "thermal_energy_storage":
-                    state = model._SOC() * model.H_capacity_kWh
+                    # state = model._SOC() * model.H_capacity_kWh
+                    state = [model.tank_H("hot"), model.M_hot]
                 x0.append(state)
-        x0 = np.array(x0)
+        # x0 = np.array(x0)
+        x0 = np.concatenate(x0)
         return x0
 
     def setup_ctrl_sysid(self):

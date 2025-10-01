@@ -170,9 +170,16 @@ class ThermalEnergyStorage:
         # P_charge_desired_kWh = np.max([dispatch, 0])
         # Q_discharge_desired_kWh = -np.min([dispatch, 0])
 
+        self.P_charge_desired_kWh = P_charge_desired_kWh
+        self.Q_discharge_desired_kWh = Q_discharge_desired_kWh
+
         m_charge, m_discharge, unused_power = self.low_level_controller(
             available_power, P_charge_desired_kWh, Q_discharge_desired_kWh, step_index
         )
+
+        self.m_charge = m_charge
+        self.m_discharge = m_discharge
+        self.unused_power = unused_power
 
         Q_out_kWh = self.step_model(m_charge, m_discharge, step_index)
 
@@ -292,10 +299,21 @@ class ThermalEnergyStorage:
         self.T_hot_store = np.zeros(duration)
         self.T_buffer_store = np.zeros(duration)
 
+        self.H_hot_store = np.zeros(duration)
+        self.H_buffer_store = np.zeros(duration)
+
         self.SOC_store = np.zeros(duration)
 
         self.Q_out_store = np.zeros(duration)
         self.P_used_store = np.zeros(duration)
+
+
+        self.P_charge_des_store = np.zeros(duration)
+        self.Q_discharge_des_store = np.zeros(duration)
+
+        self.m_charge_store = np.zeros(duration)
+        self.m_discharge_store = np.zeros(duration)
+        self.unused_power_store = np.zeros(duration)
 
     def store_step(self, step_index):
 
@@ -305,36 +323,63 @@ class ThermalEnergyStorage:
         self.T_hot_store[step_index] = self.T_hot
         self.T_buffer_store[step_index] = self.T_buffer
 
+        self.H_hot_store[step_index] = self.tank_H("hot")
+        self.H_buffer_store[step_index] = self.tank_H("buffer")
+
         self.SOC_store[step_index] = self._SOC()
 
         self.Q_out_store[step_index] = self.Q_out_kWh
         self.P_used_store[step_index] = self.P_used
 
+        self.P_charge_des_store[step_index] = self.P_charge_desired_kWh
+        self.Q_discharge_des_store[step_index] = self.Q_discharge_desired_kWh
+
+        self.m_charge_store[step_index] = self.m_charge
+        self.m_discharge_store[step_index] = self.m_discharge
+        self.unused_power_store[step_index] = self.unused_power
+
     def create_control_model(self):
         m = 2
-        n = 1
+        n = 2
         p = 1
         o = 1
 
-        A = np.array([[1 - self.Q_loss_rate_kWhphr]])
-        # A = np.array([[0.975562185090931]])
-        B = np.array([[1, -1]])
-        E = np.array([[0]])
-        C = np.array([[0], [0]])
+        A = np.array([[1.00665816, -0.00247259], [0.02881832, 0.99000026]])
+        B = np.array([[1.1939346, -1.27682378], [3.30606126, -3.83598422]])
+        E = np.array([[0], [0]])
+        C = np.array([[0, 0], [0, 0]])
         D = np.array([[0, 1], [-1, 0]])
         F = np.array([[0], [1]])
-
-
-        
 
         bounds_dict = {
             "u_lb": np.array([0, 0]),
             "u_ub": np.array([self.max_charge_kWhphr, self.max_discharge_kWhphr]),
-            "x_lb": np.array([self.H_hot_min_kWh]),
-            "x_ub": np.array([self.H_hot_max_kWh]),
+            "x_lb": np.array([self.H_hot_min_kWh, self.M_hot_min]),
+            "x_ub": np.array([self.H_hot_max_kWh, self.M_hot_max]),
             "y_lb": np.array([None, None]),
             "y_ub": np.array([None, None]),
         }
+        # m = 2
+        # n = 1
+        # p = 1
+        # o = 1
+
+        # A = np.array([[1 - self.Q_loss_rate_kWhphr]])
+        # # A = np.array([[0.975562185090931]])
+        # B = np.array([[1, -1]])
+        # E = np.array([[0]])
+        # C = np.array([[0], [0]])
+        # D = np.array([[0, 1], [-1, 0]])
+        # F = np.array([[0], [1]])
+
+        # bounds_dict = {
+        #     "u_lb": np.array([0, 0]),
+        #     "u_ub": np.array([self.max_charge_kWhphr, self.max_discharge_kWhphr]),
+        #     "x_lb": np.array([self.H_hot_min_kWh]),
+        #     "x_ub": np.array([self.H_hot_max_kWh]),
+        #     "y_lb": np.array([None, None]),
+        #     "y_ub": np.array([None, None]),
+        # }
         # bounds_dict = {
         #     "u_lb": np.array([0, 0]),
         #     "u_ub": np.array([self.max_charge_kWhphr, self.max_discharge_kWhphr]),
@@ -354,6 +399,7 @@ class ThermalEnergyStorage:
         control_model.set_disturbance_reshape([1, 0, 0])
 
         control_model.constraints(y_position=[1], constraint_type=["greater"])
+        # control_model.constraints(y_position=[1], constraint_type=["greater"])
 
         return control_model
 
