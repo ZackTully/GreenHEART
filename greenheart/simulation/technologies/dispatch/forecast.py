@@ -131,7 +131,7 @@ class Forecast:
         # d_perfect = self._forecast_perfect(measurement, step_index)
 
         d_perfect = self.perfect_forecast_profile[
-            step_index : step_index + max(self.forecast_horizon, self.n_cutoff)
+            step_index : step_index + 2*max(self.forecast_horizon, self.n_cutoff)
         ]
 
 
@@ -139,8 +139,6 @@ class Forecast:
         d_filtered = si.filtfilt(self.filter_num, self.filter_den, d_perfect)
 
         # TODO May need to set the first value of the forecast to be the same as the measured disturbance. 
-
-
         return d_filtered[0:self.forecast_horizon]
 
 
@@ -218,7 +216,7 @@ if __name__ == "__main__":
         type="lpf",
         order=1,
         Ts = 3600,
-        w_cutoff=2 * np.pi / (40 * 3600),
+        w_cutoff=2 * np.pi / (12 * 3600),
     )
 
     horizon = 24

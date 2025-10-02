@@ -1503,6 +1503,8 @@ class RealTimeSimulation:
                     ]
                 )
                 ax[i, j].yaxis.tick_right()
+                t = ax[i,j].yaxis.get_offset_text()
+                t.set_x(1.01)
                 # if ax.shape[1] == 1:
                 #     ax[i, j].set_yticks([])
                 ax[i, j].axhline(0, linewidth=0.5, color="black", alpha=0.5, zorder=0.5)

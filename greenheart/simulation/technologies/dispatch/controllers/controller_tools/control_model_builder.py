@@ -44,22 +44,24 @@ class ControlModelBuilder:
 
         if partial_traj:
 
-            x_var = np.atleast_2d(opti.value(self.mpc.opt_vars["x"], opti.initial()))
-            uct_var = np.atleast_2d(opti.value(self.mpc.opt_vars["uct"], opti.initial()))
-            usp_var = np.atleast_2d(opti.value(self.mpc.opt_vars["usp"], opti.initial()))
-            yex_var = np.atleast_2d(opti.value(self.mpc.opt_vars["yex"], opti.initial()))
-            yco_var = np.atleast_2d(opti.value(self.mpc.opt_vars["yco"], opti.initial()))
-            ucur_var = np.atleast_2d(opti.value(self.mpc.opt_vars["gridcurtail"], opti.initial()))
+            x_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["x"], opti.initial())))
+            uct_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["uct"], opti.initial())))
+            usp_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["usp"], opti.initial())))
+            yex_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["yex"], opti.initial())))
+            yco_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["yco"], opti.initial())))
+            ucur_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["gridcurtail"], opti.initial())))
+
+
             x_var[:, 0] = x0
 
         else:
 
-            x_var = np.atleast_2d(np.zeros(self.mpc.opt_vars["x"].shape))
-            uct_var = np.atleast_2d(np.zeros(self.mpc.opt_vars["uct"].shape))
-            usp_var = np.atleast_2d(np.zeros(self.mpc.opt_vars["usp"].shape))
-            yex_var = np.atleast_2d(np.zeros(self.mpc.opt_vars["yex"].shape))
-            yco_var = np.atleast_2d(np.zeros(self.mpc.opt_vars["yco"].shape))
-            ucur_var = np.atleast_2d(np.zeros(self.mpc.opt_vars["gridcurtail"].shape))
+            x_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["x"].shape)))
+            uct_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["uct"].shape)))
+            usp_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["usp"].shape)))
+            yex_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["yex"].shape)))
+            yco_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["yco"].shape)))
+            ucur_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["gridcurtail"].shape)))
 
             x_var[:, 0] = x0
 
@@ -70,7 +72,7 @@ class ControlModelBuilder:
             if k < start_index-1:
                 continue
 
-            xk = x_var[ :, k, None]
+            xk = x_var[ :, k]
             dk = np.atleast_2d(forecast[k])
             uctk = np.zeros((self.mct, 1))
             uspk = np.zeros((self.msp, 1))
@@ -111,15 +113,22 @@ class ControlModelBuilder:
             # assert np.all(np.abs(ygt) <= tol)
 
 
-            x_var[:, k+1, None] = xkp1
-            uct_var[:, k, None] = uctk
-            usp_var[:, k, None] = uspk
-            yex_var[:, k, None] = yexk
-            yco_var[:, k, None] = yco[self.mpc.yco_ub_ind]
-            ucur_var[:, k, None] = ucurk
+            x_var[:, k+1] = ca.evalf(xkp1)
+            uct_var[:, k] = ca.evalf(uctk)
+            usp_var[:, k] = ca.evalf(uspk)
+            yex_var[:, k] = ca.evalf(yexk)
+            yco_var[:, k] = ca.evalf(yco[self.mpc.yco_ub_ind])
+            ucur_var[:, k] = ca.evalf(ucurk)
+            # x_var[:, k+1, None] = xkp1
+            # uct_var[:, k, None] = uctk
+            # usp_var[:, k, None] = uspk
+            # yex_var[:, k, None] = yexk
+            # yco_var[:, k, None] = yco[self.mpc.yco_ub_ind]
+            # ucur_var[:, k, None] = ucurk
 
 
         return uct_var, usp_var, x_var, yex_var, yco_var, ucur_var
+        # return ca.evalf(uct_var), ca.evalf(usp_var), ca.evalf(x_var), ca.evalf(yex_var), ca.evalf(yco_var), ca.evalf(ucur_var)
 
 
 
@@ -183,16 +192,17 @@ class ControlModelBuilder:
         P_el = np.ones((1, 2)) @ X
 
         # Hacky for electrolyzer only right now
-        if self.NL_EL_order == 1:
+        if self.mpc.NL_EL_order == 1:
             # 1st order fit
-            popt = np.array([0.01885931])
+            popt = ca.MX(np.array([0.01885931]))
+
             Y = popt[0] * P_el
 
-        elif self.NL_EL_order == 2:
+        elif self.mpc.NL_EL_order == 2:
             # 2nd order fit
             popt = np.array([-2.28481418e-09, 2.08294629e-02])
             Y = popt[0] * P_el**2 + popt[1] * P_el
-        elif self.NL_EL_order == 3:
+        elif self.mpc.NL_EL_order == 3:
             # 3rd order fit
             popt = np.array([1.28840632e-15, -4.33591254e-09, 2.15782895e-02])
             Y = popt[0] * P_el**3 + popt[1] * P_el**2 + popt[2] * P_el
@@ -205,13 +215,13 @@ class ControlModelBuilder:
         X_block_li = X_block[self.cols_li]
         X_block_nl = X_block[self.cols_nl]
 
-        ss_lili = self.block_ss[self.rows_li, self.cols_li]
-        ss_linl = self.block_ss[self.rows_li, self.cols_nl]
-        ss_nlli = self.block_ss[self.rows_nl, self.cols_li]
-        ss_nlnl = self.block_ss[self.rows_nl, self.cols_nl]
+        ss_lili = ca.MX(self.block_ss[self.rows_li, self.cols_li])
+        ss_linl = ca.MX(self.block_ss[self.rows_li, self.cols_nl])
+        ss_nlli = ca.MX(self.block_ss[self.rows_nl, self.cols_li])
+        ss_nlnl = ca.MX(self.block_ss[self.rows_nl, self.cols_nl])
 
         Y_block_li = ss_lili @ X_block_li + ss_linl @ X_block_nl
-        if self.use_NL_electrolzyer:
+        if self.mpc.use_NL_electrolzyer:
             Y_block_nl = ss_nlli @ X_block_li + self.nonlinear_block(X_block_nl)
         else:
             Y_block_nl = ss_nlli @ X_block_li + ss_nlnl @ X_block_nl

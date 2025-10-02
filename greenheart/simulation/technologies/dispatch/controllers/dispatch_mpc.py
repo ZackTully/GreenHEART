@@ -584,6 +584,12 @@ class DispatchModelPredictiveController:
                 self.opti.set_initial(self.opt_vars["yex"], yex_feas)
                 self.opti.set_initial(self.opt_vars["yco"], yco_feas)
                 self.opti.set_initial(self.opt_vars["gridcurtail"], ucur_feas)
+                # self.opti.set_initial(self.opt_vars["uct"], uct_feas)
+                # self.opti.set_initial(self.opt_vars["usp"], usp_feas)
+                # self.opti.set_initial(self.opt_vars["x"], x_feas)
+                # self.opti.set_initial(self.opt_vars["yex"], yex_feas)
+                # self.opti.set_initial(self.opt_vars["yco"], yco_feas)
+                # self.opti.set_initial(self.opt_vars["gridcurtail"], ucur_feas)
 
                 # self.gradient_helper.check_initial_values(self.opti)
 
