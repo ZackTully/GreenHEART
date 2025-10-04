@@ -199,8 +199,6 @@ class ThermalEnergyStorage:
         else:
             unused_power = available_power - P_charge_desired_kWh
 
-
-
         # P_charge_desired_kWh = np.min([available_power, P_charge_desired_kWh])
 
         m_charge = (self.eta_electric_heater * P_charge_desired_kWh) / (
@@ -307,7 +305,6 @@ class ThermalEnergyStorage:
         self.Q_out_store = np.zeros(duration)
         self.P_used_store = np.zeros(duration)
 
-
         self.P_charge_des_store = np.zeros(duration)
         self.Q_discharge_des_store = np.zeros(duration)
 
@@ -354,7 +351,14 @@ class ThermalEnergyStorage:
         bounds_dict = {
             "u_lb": np.array([0, 0]),
             "u_ub": np.array([self.max_charge_kWhphr, self.max_discharge_kWhphr]),
-            "x_lb": np.array([self.H_hot_min_kWh, self.M_hot_min]),
+            "x_lb": np.array(
+                [
+                    self.H_hot_min_kWh
+                    + 0.01 * (self.H_hot_max_kWh - self.H_hot_min_kWh),
+                    self.M_hot_min + 0.01 * (self.M_hot_max - self.M_hot_min),
+                ]
+            ),
+            # "x_lb": np.array([self.H_hot_min_kWh, self.M_hot_min]),
             "x_ub": np.array([self.H_hot_max_kWh, self.M_hot_max]),
             "y_lb": np.array([None, None]),
             "y_ub": np.array([None, None]),
@@ -388,7 +392,6 @@ class ThermalEnergyStorage:
         #     "y_lb": np.array([None, None]),
         #     "y_ub": np.array([None, None]),
         # }
-
 
         control_model = ControlModel(
             A, B, C, D, E, F, bounds=bounds_dict, discrete=True

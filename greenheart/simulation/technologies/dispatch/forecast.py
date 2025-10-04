@@ -139,7 +139,9 @@ class Forecast:
         d_filtered = si.filtfilt(self.filter_num, self.filter_den, d_perfect)
 
         # TODO May need to set the first value of the forecast to be the same as the measured disturbance. 
-        return d_filtered[0:self.forecast_horizon]
+        d_trunc = d_filtered[0:self.forecast_horizon]
+        d_trunc = np.where(d_trunc >= 0, d_trunc, 0 )
+        return d_trunc
 
 
 
