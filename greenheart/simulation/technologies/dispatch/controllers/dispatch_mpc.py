@@ -727,7 +727,7 @@ class DispatchModelPredictiveController:
         violations = []
 
         violation_summary = ""
-
+        tol = 1e-3
         i = 0
         while i < len(output):
             if output[i].startswith("------- i = "):
@@ -741,7 +741,8 @@ class DispatchModelPredictiveController:
                 violation = float(num_desc.split("viol ")[1].split(")")[0])
                 violations.append(violation)
 
-                if violation >= 1e-3:
+                # if violation >= 1e-3:
+                if violation >= tol:
                     if "opti.subject" in code_desc:
                         code_desc = code_desc.split("opti.subject_to(")[1][:-1]
                     else:
@@ -761,7 +762,7 @@ class DispatchModelPredictiveController:
 
 
         # if True:
-        if np.max(np.abs(violations)) > 1e-3:
+        if np.max(np.abs(violations)) > tol:
             self.gradient_helper.check_gradients(self.opti.debug)
 
 
@@ -779,7 +780,10 @@ class DispatchModelPredictiveController:
             self.debug_helper.save_state_for_debug(x0, forecast, step_index)
             self.bad_solutions_saved += 1
 
-        return violation_summary 
+        if violation_summary == "":
+            return f"Bad solve but no constraint violations larger than tol ({tol})"
+        else:
+            return violation_summary 
 
     def print_block_matrices(
         self, mat, in_labels, out_labels, no_space=False, save_description=False

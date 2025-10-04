@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from pathlib import Path
 import datetime
-
+import sys
 import pprint
 import logging
 from logging import handlers
@@ -107,6 +107,10 @@ class RealTimeSimulation:
             self.setup_logging(self.rts_config.pop("logging"))
         else:
             self.logger = logging.getLogger()
+            self.logger.setLevel(logging.DEBUG)
+            terminal_handler = logging.StreamHandler(sys.stdout)
+            terminal_handler.setLevel(logging.DEBUG)
+            self.logger.addHandler(terminal_handler)
 
         self.setup_simulation_model(config, hopp_interface)
         self.setup_record_keeping()
@@ -555,7 +559,25 @@ class RealTimeSimulation:
                 mpc_edges = mpc_edges_permuted
 
                 edge_error = sim_edges - mpc_edges
-                # edge_percent_error = (sim_edges - mpc_edges) / (0.5 * (sim_edges + mpc_edges))
+
+                edge_percent_error = (sim_edges - mpc_edges) / (0.5 * (sim_edges + mpc_edges))
+                tol = 0.15
+                ignore_tol = 100
+                if np.any(np.abs(edge_percent_error) > tol):
+                    erronious_indices = np.where(np.abs(edge_percent_error) > tol)[0]
+                    erronious_edges = [self.edge_order[i] for i in erronious_indices]
+
+                    if np.all(np.abs(sim_edges[erronious_indices] < ignore_tol )) and np.all(np.abs(mpc_edges[erronious_indices] < ignore_tol )):
+                        pass
+                    else:
+
+                        self.logger.warning(f"MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}")
+                        self.logger.warning(f"Sim edges: {  {str(self.edge_order[k]): str(sim_edges[k]) for k in erronious_indices}    }")
+                        self.logger.warning(f"MPC edges: {  {str(self.edge_order[k]): str(mpc_edges[k]) for k in erronious_indices}    }")
+
+                        raise AssertionError(f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}")
+
+
 
                 error_dict = {
                     str(self.edge_order[k]): edge_error[k]
