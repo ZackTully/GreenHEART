@@ -32,9 +32,15 @@ class Forecast:
         self.perfect_forecast_profile = np.concatenate(
             [
                 self.true_forecast,
-                self.true_forecast[-1] * np.ones(self.forecast_horizon * 10),
+                np.flip(self.true_forecast)
             ]
         )
+        # self.perfect_forecast_profile = np.concatenate(
+        #     [
+        #         self.true_forecast,
+        #         self.true_forecast[-1] * np.ones(self.forecast_horizon * 10),
+        #     ]
+        # )
         # getattr(self, f"_setup_{self.forecast_method}")(self.config["method_config"])
 
         self.make_forecast = getattr(self, f"_make_forecast_{self.forecast_method}")
