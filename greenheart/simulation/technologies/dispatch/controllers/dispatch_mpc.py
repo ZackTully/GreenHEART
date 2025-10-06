@@ -101,14 +101,18 @@ class DispatchModelPredictiveController:
             self.traversal_order = system_graph["traversal_order"]
 
             self.control_model.build_control_model(self.traversal_order, self.G)
+            self.mpc_config["references"] = self.mpc_config.get("references", {})
 
             if "battery" in self.node_order:
+                self.mpc_config["references"]["bes"] = self.mpc_config["references"].get("bes", 1)
                 self.get_battery_graph_info()
 
             if "hydrogen_storage" in self.node_order:
+                self.mpc_config["references"]["h2s"] = self.mpc_config["references"].get("h2s", 1)
                 self.get_hydrogen_storage_graph_info()
 
             if "thermal_energy_storage" in self.node_order:
+                self.mpc_config["references"]["tes"] = self.mpc_config["references"].get("tes", 1)
                 self.get_thermal_energy_storage_graph_info()
 
         self.objective_manager = Objective(
@@ -178,8 +182,9 @@ class DispatchModelPredictiveController:
         self.x_bes_max = self.G.nodes["battery"]["ionode"].model.max_capacity_kWh
         self.x_bes_min = self.G.nodes["battery"]["ionode"].model.min_capacity_kWh
 
-        bes_soc_ref = self.mpc_config["references"]["bes"]
-        self.ref_bes_state = bes_soc_ref * self.x_bes_max
+        self.bes_soc_ref = self.mpc_config["references"]["bes"]
+        # self.bes_soc_ref = self.mpc_config.get("references", {}).get("bes", 1)
+        self.ref_bes_state = self.bes_soc_ref * self.x_bes_max
 
         self.weight_bes_state = 1e-4 / self.ref_bes_state
 
@@ -189,8 +194,12 @@ class DispatchModelPredictiveController:
         self.x_h2s_max = graph_h2s.max_capacity_kg
         self.x_h2s_min = graph_h2s.min_capacity_kg
 
-        h2s_soc_ref = self.mpc_config["references"]["h2s"]
-        self.ref_h2s_state = h2s_soc_ref * self.x_h2s_max
+        # self.h2s_soc_ref = self.mpc_config.get("references", {}).get("h2s", 1)
+        self.h2s_soc_ref = self.mpc_config["references"]["h2s"]
+
+
+
+        self.ref_h2s_state = self.h2s_soc_ref * self.x_h2s_max
         self.weight_h2s_state = 1e-1 / self.ref_h2s_state
 
     def get_thermal_energy_storage_graph_info(self):
@@ -200,8 +209,14 @@ class DispatchModelPredictiveController:
         self.x_tes_min = 0
         # self.x_tes_min = simulation_graph.nodes["thermal_energy_storage"]["ionode"].model.H_buffer_max_kWh
 
-        tes_soc_ref = self.mpc_config["references"]["tes"]
-        self.ref_tes_state = tes_soc_ref * self.x_tes_max
+
+
+        # self.tes_soc_ref = self.mpc_config.get("references", {}).get("tes", 1)
+        self.tes_soc_ref = self.mpc_config["references"]["tes"]
+
+
+
+        self.ref_tes_state = self.tes_soc_ref * self.x_tes_max
         self.weight_tes_state = 1e-4 / self.ref_tes_state
 
     # def set_no_shortfall_bool(self, no_shortfall: bool):

@@ -316,7 +316,13 @@ class Objective:
         term_obj = 0
         obj_traj = []
         for k in range(self.horizon):
-            obj_k = scaling * (self.x_bes_max - x_var[self.var_inds["x_bes"], k]) ** 2
+
+            # obj_k = scaling * (self.x_bes_max - x_var[self.var_inds["x_bes"], k]) ** 2
+
+            obj_k = (self.soc_bes_ref - x_var[self.var_inds["x_bes"], k] / self.x_bes_max)**2
+
+
+            
             term_obj += obj_k
             obj_traj.append(obj_k)
         return term_obj, obj_traj
@@ -328,7 +334,8 @@ class Objective:
         term_obj = 0
         obj_traj = []
         for k in range(self.horizon):
-            obj_k = scaling * (self.x_tes_max - x_var[self.var_inds["x_tes"], k]) ** 2
+            # obj_k = scaling * (self.x_tes_max - x_var[self.var_inds["x_tes"], k]) ** 2
+            obj_k = (self.soc_tes_ref - x_var[self.var_inds["x_tes"], k]/ self.x_tes_max)**2
 
             term_obj += obj_k
             obj_traj.append(obj_k)
@@ -342,7 +349,10 @@ class Objective:
         term_obj = 0
         obj_traj = []
         for k in range(self.horizon):
-            obj_k = scaling * (self.x_h2s_max - x_var[self.var_inds["x_h2s"], k]) ** 2
+            # obj_k = scaling * (self.x_h2s_max - x_var[self.var_inds["x_h2s"], k]) ** 2
+            obj_k = (self.soc_h2s_ref - x_var[self.var_inds["x_h2s"], k] / self.x_h2s_max)
+
+
             term_obj += obj_k
             obj_traj.append(obj_k)
         return term_obj, obj_traj
