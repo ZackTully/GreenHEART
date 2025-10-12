@@ -24,7 +24,6 @@ def make_node(name="test", model=None):
         model=model,
         expected_inputs=expected_inputs,
         expected_outputs=expected_outputs,
-        splitting_node=False,
         in_degree=1,
         out_degree=1,
     )
@@ -92,8 +91,8 @@ def test_store_curtail():
 
 def test_format_model_output_electrolyzer():
     node = make_node(name="electrolyzer")
-    y_model = np.array([1, 2])
-    u_passthrough = np.array([1, 2, 3])
+    y_model = np.array([1])
+    u_passthrough = np.array([1, 2])
     result = node.format_model_output(y_model, u_passthrough)
     assert result.shape == (1, 4)
     # Temperature should be set to T_electrolyzer_output
@@ -102,16 +101,16 @@ def test_format_model_output_electrolyzer():
 
 def test_format_model_output_hydrogen_storage():
     node = make_node(name="hydrogen_storage")
-    y_model = np.array([1, 2])
-    u_passthrough = np.array([1, 2, 3])
+    y_model = np.array([1])
+    u_passthrough = np.array([1, 2])
     result = node.format_model_output(y_model, u_passthrough)
     assert result[0, 3] == node.T_hydrogen_storage_output
 
 
 def test_format_model_output_heat_exchanger():
     node = make_node(name="heat_exchanger")
-    y_model = np.array([1, 2])
-    u_passthrough = np.array([1, 2, 3])
+    y_model = np.array([1])
+    u_passthrough = np.array([1, 2])
     result = node.format_model_output(y_model, u_passthrough)
     assert result[0, 3] == node.model.Tout_desired
 
@@ -131,15 +130,6 @@ def test_splitting_fractional():
     assert outgoing_edges[3, 0] == model_output[0, 3]
 
 
-# def test_splitting_absolute():
-#     node = make_node()
-#     node.splitting_method = "absolute"
-#     model_output = np.array([[1,2,3,4]])
-#     u_split = np.array([1,1,1,1])
-#     step_index = 0
-#     outgoing_edges, split_curtail = node.splitting(model_output, u_split, step_index)
-#     assert outgoing_edges.shape[0] == 4
-#     assert split_curtail.shape[0] == 4
 
 
 def test_step_runs():

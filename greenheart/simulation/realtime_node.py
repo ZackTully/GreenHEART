@@ -22,23 +22,30 @@ from greenheart.simulation.technologies.dispatch.control_model import ControlMod
 class Node:
     def __init__(
         self,
-        name,
+        name: str,
         model,
-        expected_inputs,
-        expected_outputs,
-        splitting_node,
-        in_degree=None,
-        out_degree=None,
+        expected_inputs: dict,
+        expected_outputs: dict,
+        in_degree: int,
+        out_degree: int,
     ):
+        """
+        Node for each of the subsystems at the nodes of the RealTimeSimulator graph.
+        This node class wraps around each of the subsystem models and translates the
+        graph edges into subsystem inputs for each of the steppable models.
 
-        # self.T_electrolyzer_output = 80 # [C]
+        Args:
+            name (str): name
+            model (): steppable model of the subsystem represented at this node.
+            expected_inputs (dict): dict of input domains.
+            expected_outputs (dict): dict of output domains.
+            in_degree (int): Number of incoming edges.
+            out_degree (int): Number of outgoing edges.
+        """
+
         self.T_electrolyzer_output = 20  # [C]
-        # self.T_hydrogen_storage_output = 80 # [C]
         self.T_hydrogen_storage_output = 20  # [C]
-        if name == "heat_exchanger":
-            print(
-                f"{self.T_electrolyzer_output = }, {self.T_hydrogen_storage_output = }"
-            )
+
         self.inputs = expected_inputs
         self.input_list = [
             self.inputs["power"],
@@ -57,7 +64,6 @@ class Node:
 
         self.name = name
         self.model = model
-        self.splitting_node = splitting_node
         if self.name == "generation":
             self.in_degree = 1
         else:
@@ -93,9 +99,16 @@ class Node:
     def __repr__(self):
         return self.name
 
-    def consolidate_incoming_edges(self, incoming_edges):
+    def consolidate_incoming_edges(self, incoming_edges: list) -> np.ndarray:
+        """
+        Take a list of one or more graph edges as inputs and consolidate into one edge
 
-        # Take a list of one or more graph edges as inputs and consolidate into one edge
+        Args:
+            incoming_edges (list): list of 4-length numpy arrays representing the incoming edges.
+
+        Returns:
+            np.ndarray: consolidated inputs
+        """
 
         node_input = np.sum(incoming_edges, axis=0)
         # Temperature = mass-weighted sum of incoming temperatures
@@ -106,60 +119,95 @@ class Node:
 
         return node_input
 
-    def format_model_input(self, node_input):
+    def format_model_input(self, node_input: list | np.ndarray) -> list | float:
+        """
+        Take a single graph edge as input with power, heat, H2 mass and temperature
+        reformat to only the arguments that the model needs
 
-        # Take a single graph edge as input with power, heat, H2 mass and temperature
-        # reformat to only the arguments that the model needs
+        Args:
+            node_input (list | np.ndarray):
+
+        Returns:
+            list | float: _description_
+        """
 
         model_input = node_input[np.where(self.input_list)]
         return model_input
 
-    def step(self, incoming_edges, u_control, u_split, step_index):
+    def step(
+        self,
+        incoming_edges: list,
+        u_control: np.ndarray,
+        u_split: np.ndarray,
+        step_index: int,
+    ) -> np.ndarray:
+        """
+        Step this node forward one timestep. Called by RealTimeSimulator
 
+        Args:
+            incoming_edges (list): list of 4-length numpy arrays representing the incoming edges.
+            u_control (np.ndarry): Control inputs for the steppable subsystem model if any.
+            u_split (np.ndarray): Splitting fraction for the subsystem model outputs to control how much of the output goes to each outgoing edge.
+            step_index (int):
+
+        Returns:
+            np.ndarray: list of 4-length numpy arrays representing the outgoing edges
+        """
+
+        # Consolidate inputs and format the disturbance
         node_input = self.consolidate_incoming_edges(incoming_edges)
         model_disturbance = self.format_model_input(node_input)
+
         if self.name == "generation":
             model_disturbance = self.model.output
 
-        self.store_disturbance(model_disturbance, step_index=step_index)
+        # Step subsystem model
         y_model, u_passthrough, u_curtail = self.model.step(
             model_disturbance, u_control, step_index
         )
 
-        # assert y_model >= 0
-
+        # Format outputs
         model_output = self.format_model_output(y_model, u_passthrough)
         outgoing_edges, split_curtail = self.splitting(
             model_output, u_split, step_index
         )
+
+        # Store input history
+        self.store_disturbance(model_disturbance, step_index=step_index)
         self.store_passthrough(u_passthrough=u_passthrough, step_index=step_index)
-        self.store_curtail(
-            u_curtail=u_curtail, split_curtail=split_curtail, step_index=step_index
-        )
+        self.store_curtail(u_curtail, split_curtail, step_index)
 
         return outgoing_edges
 
     def store_disturbance(self, model_disturbance, step_index=0):
-        # if model_disturbance.shape[0] > 0:
         if self.inputs["T"]:
             self.disturbance_store[step_index, :] = model_disturbance[0:-1]
         else:
             self.disturbance_store[step_index, :] = model_disturbance
 
     def store_passthrough(self, u_passthrough=None, step_index=0):
-        # if self.inputs["T"]:
-        #     self.u_passthrough_store[step_index, :] = u_passthrough[0:-1]
-        # else:
         self.u_passthrough_store[step_index, :] = u_passthrough
 
     def store_curtail(self, u_curtail=None, split_curtail=None, step_index=0):
-        # if self.inputs["T"]:
-        #     self.u_curtail_store[step_index, :] = u_curtail[0:-1]
-        # else:
         self.u_curtail_store[step_index, :] = u_curtail
         self.u_curtail_split_store[step_index, :] = split_curtail
 
-    def format_model_output(self, y_model, u_passthrough):
+    def format_model_output(
+        self,
+        y_model: np.ndarray | float,
+        u_passthrough: np.ndarray | float,
+    ) -> np.ndarray:
+        """
+        Format the model outputs translating from the steppable model output to the 
+        graph edge format expected by RealTimeSimulator.
+
+        Args:
+            y_model (np.ndarray | float): Steppable subsystem model output
+            u_passthrough (np.ndarray | float): Subsystem model input that could not be used
+
+        Returns:
+            np.ndarray: 4-length array in the format of a graph edge.
+        """    
         output_passthrough = np.zeros((1, 4))
 
         if self.inputs["T"]:
@@ -169,7 +217,8 @@ class Node:
 
         output_model = np.zeros((1, 4))
         output_model[0, np.where(self.output_list)] = y_model
-
+ 
+        # Set the appropriate output temperature if relevant.
         if self.name == "electrolyzer":
             output_model[0, 3] = self.T_electrolyzer_output  # degree C
             output_passthrough[0, 3] = self.T_electrolyzer_output
@@ -190,8 +239,18 @@ class Node:
         )
         return model_output
 
-    def splitting(self, model_output, u_split, step_index):
+    def splitting(self, model_output:np.ndarray, u_split:np.ndarray, step_index:int) -> tuple[np.ndarray, np.ndarray]:
+        """_summary_
 
+        Args:
+            model_output (np.ndarray): _description_
+            u_split (np.ndarray): _description_
+            step_index (int): _description_
+
+        Returns:
+            outgoing_edges (np.ndarray): 
+            split_curtail (np.ndarray):
+        """
         if (u_split < 0).any():
             assert np.min(u_split) >= -1, f"{u_split = }"
             u_split = np.where(u_split < 0, 0.0, u_split)
@@ -208,16 +267,6 @@ class Node:
         outgoing_edges[:, 3] = model_output[0, 3]  # fix temperature
 
         split_curtail = model_output - np.sum(outgoing_edges, axis=0)
-        # split_curtail = np.subtract(model_output, outgoing_edges)
-
-        # self.store_curtail(split_curtail=split_curtail, step_index=step_index)
-
-        # Double check that splitting hasn't changed the total output
-        # assert np.isclose(
-        #     np.sum(outgoing_edges, axis=0)[0:3], model_output[0, 0:3], 1e-6
-        # ).all()
-
-        # np.sum(outgoing_edges, axis=0)[0:3]- model_output[0, 0:3]
 
         assert np.all(outgoing_edges >= -1)
 
@@ -225,18 +274,22 @@ class Node:
 
 
 class StandinNode:
+    """
+    Standin node to be used as a subsystem model for those subsystems that don't have a 
+    subsystem model. This class is used by the generation node. 
+    """    
     def __init__(self, out_degree=1):
         self.output = 0
         self.out_degree = 1
-        # self.out_degree = out_degree
         self.create_control_model()
 
     def create_control_model(self):
+        """
+        Control model state space equation for the generation node. 
+        """        
         n = 0
         m = 0
         p = 1
-        # m = self.out_degree
-        # p = self.out_degree
         o = 1
 
         A = np.zeros((n, n))
@@ -244,7 +297,6 @@ class StandinNode:
         C = np.zeros((p, n))
         D = np.zeros((p, m))
         E = np.zeros((n, o))
-        # F = np.zeros((p, o))
         F = np.array([[1]])
 
         bounds_dict = {
@@ -267,7 +319,17 @@ class StandinNode:
         self.output = output
 
     def step(self, input, dispatch=None, step_index=None):
+        """
+        Step method for the generation node.
 
+        Args:
+            input (_type_): _description_
+            dispatch (_type_, optional): _description_. Defaults to None.
+            step_index (_type_, optional): _description_. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         u_passthrough = 0
         if dispatch >= -1:
             dispatch = np.max([0.0, dispatch[0]])
@@ -275,8 +337,6 @@ class StandinNode:
         u_curtail = dispatch
         actual_curtail = min(dispatch, input[0])
         output = self.output - actual_curtail
-        # output = self.output - u_curtail
-
         if output < 0:
             if output > -1:
                 output = 0.0
@@ -316,21 +376,12 @@ def setup_battery_node(G, config, hi, component_config):
             "model_outputs": outputs,
         }
     }
-
     return component_dict
 
 
 def setup_electrolyzer_node(G, config, hi, component_config):
-
     electrical_generation_timeseries = np.zeros(8760)
     electrolyzer_size_mw = config.greenheart_config["electrolyzer"]["rating"]
-    # n_pem_clusters = int(
-    #     -(
-    #         electrolyzer_size_mw //
-    #         config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
-    #     )
-    # )
-    # from greenheart.tools.eco.utilities import ceildiv
     n_pem_clusters = int(
         ceildiv(
             electrolyzer_size_mw,
@@ -436,12 +487,3 @@ def setup_steel_node(G, config, hi, component_config):
 
     return component_dict
 
-
-if __name__ == "__main__":
-
-    step_index = 10
-    graph_input = np.array([[0, 0, 0, 0]])
-    node_dispatch_split = np.array([[1, 0]])
-    node_dispatch_control = np.array([[0]])
-
-    pass
