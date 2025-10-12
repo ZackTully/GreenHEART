@@ -17,6 +17,8 @@ import time
 
 from hopp.utilities import load_yaml
 
+# from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
+
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.control_model_builder import ControlModelBuilder
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.gradient_helper import GradientHelper
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.plotter_helper import MPCPlotter
@@ -26,24 +28,31 @@ from greenheart.simulation.technologies.dispatch.controllers.controller_tools.de
 
 class DispatchModelPredictiveController:
 
-    step_index_store: list
-    uct_store: list
-    usp_store: list
-    dco_store: list
-
     def __init__(
         self,
-        config,
-        simulation_graph,
-        saved_state=None,
-        node_order=None,
-        edge_order=None,
-        mpc_config=None,
-        p_opts={"print_time": False, "verbose": False, "record_time":True},
-        s_opts={"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":1e5},
-        # s_opts={"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":2e5},
-        debug_mode=False,
+        config:GreenHeartSimulationConfig,
+        simulation_graph:nx.Graph,
+        saved_state:dict=None,
+        node_order:list=None,
+        edge_order:list=None,
+        mpc_config:dict=None,
+        p_opts:dict={"print_time": False, "verbose": False, "record_time":True},
+        s_opts:dict={"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":1e5},
+        debug_mode:bool=False,
     ):
+        """_summary_
+
+        Args:
+            config (GreenHeartSimulationConfig): _description_
+            simulation_graph (nx.Graph): nx.Graph instance from RealtimeSimulator containing subsystem models
+            saved_state (dict, optional): dict with information required to re-instatiate the MPC in a particular saved state. Defaults to None.
+            node_order (list, optional): node order, Defaults to None.
+            edge_order (list, optional): edge order, Defaults to None.
+            mpc_config (dict, optional): Defaults to None.
+            p_opts (_type_, optional): Printing options for casadi. Defaults to {"print_time": False, "verbose": False, "record_time":True}.
+            s_opts (_type_, optional): Solver options passed to ipopt through casadi. Defaults to {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":1e5}.
+            debug_mode (bool, optional): Should be set to true if loading a saved state file. Defaults to False.
+        """
         self.G = simulation_graph
 
         self.node_order = node_order
