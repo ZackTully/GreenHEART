@@ -17,6 +17,7 @@ import time
 
 from hopp.utilities import load_yaml
 
+# This import cannot be uncommented or else it leads to a circular import
 # from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
 
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.control_model_builder import ControlModelBuilder
@@ -30,7 +31,7 @@ class DispatchModelPredictiveController:
 
     def __init__(
         self,
-        config:GreenHeartSimulationConfig,
+        config,
         simulation_graph:nx.Graph,
         saved_state:dict=None,
         node_order:list=None,

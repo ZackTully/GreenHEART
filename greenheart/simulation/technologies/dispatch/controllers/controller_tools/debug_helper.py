@@ -163,10 +163,12 @@ class DebugHelper:
         for key in state_dict["labels"].keys():
             setattr(self, f"{key}_label", state_dict["labels"][key])
             setattr(self.mpc, f"{key}_label", state_dict["labels"][key])
+            setattr(self.mpc.control_model, f"{key}_label", state_dict["labels"][key])
 
         for key in state_dict["dimensions"].keys():
             setattr(self, key, np.sum(state_dict["dimensions"][key]))
             setattr(self.mpc, key, np.sum(state_dict["dimensions"][key]))
+            setattr(self.mpc.control_model, key, np.sum(state_dict["dimensions"][key]))
 
         self.mpc.node_order = state_dict["node_order"]
         self.mpc.edge_order = state_dict["edge_order"]

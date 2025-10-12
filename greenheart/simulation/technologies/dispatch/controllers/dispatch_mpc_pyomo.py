@@ -2244,79 +2244,79 @@ class Capturing(list):
 
 
 
-if __name__ == "__main__":
-    from pathlib import Path
+# if __name__ == "__main__":
+#     from pathlib import Path
 
-    from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
-    from greenheart.simulation.realtime_simulation import RealTimeSimulation
-    from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import    DispatchModelPredictiveController as mpc_ca
-    from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc_pyomo import DispatchModelPredictiveController
-    from hopp.simulation.technologies.sites.site_info import SiteInfo
+#     from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
+#     from greenheart.simulation.realtime_simulation import RealTimeSimulation
+#     from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc import    DispatchModelPredictiveController as mpc_ca
+#     from greenheart.simulation.technologies.dispatch.controllers.dispatch_mpc_pyomo import DispatchModelPredictiveController
+#     from hopp.simulation.technologies.sites.site_info import SiteInfo
 
-    config_root = Path(
-        "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/greenHEART/input-files"
-    )
+#     config_root = Path(
+#         "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/01-minnesota-steel/greenHEART/input-files"
+#     )
 
-    fname_hopp_config = str(config_root / "plant/hopp_config_mn.yaml")
-    fname_greenheart_config = str(config_root / "plant/greenheart_config_onshore_mn.yaml")
-    fname_turbine_config = str(
-        config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml"
-    )
-    fname_floris_config = str(config_root / "floris/floris_input_lbw_6MW.yaml")
+#     fname_hopp_config = str(config_root / "plant/hopp_config_mn.yaml")
+#     fname_greenheart_config = str(config_root / "plant/greenheart_config_onshore_mn.yaml")
+#     fname_turbine_config = str(
+#         config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml"
+#     )
+#     fname_floris_config = str(config_root / "floris/floris_input_lbw_6MW.yaml")
 
-    config = GreenHeartSimulationConfig(
-        fname_hopp_config,
-        fname_greenheart_config,
-        fname_turbine_config,
-        fname_floris_config,
-        verbose=False,
-        show_plots=False,
-        save_plots=False,
-        use_profast=True,
-        post_processing=True,
-        incentive_option=1,
-        plant_design_scenario=1,
-        output_level=8,
-    )
+#     config = GreenHeartSimulationConfig(
+#         fname_hopp_config,
+#         fname_greenheart_config,
+#         fname_turbine_config,
+#         fname_floris_config,
+#         verbose=False,
+#         show_plots=False,
+#         save_plots=False,
+#         use_profast=True,
+#         post_processing=True,
+#         incentive_option=1,
+#         plant_design_scenario=1,
+#         output_level=8,
+#     )
 
-    hopp_site = SiteInfo(**config.hopp_config["site"])
-
-
-    class hopp_system:
-        def __init__(self, site):
-            self.site = site
+#     hopp_site = SiteInfo(**config.hopp_config["site"])
 
 
-    class hopp_interface:
-        def __init__(self, site):
-            self.system = hopp_system(site)
+#     class hopp_system:
+#         def __init__(self, site):
+#             self.site = site
 
 
-    hi = hopp_interface(hopp_site)
-    simulator = RealTimeSimulation(config, hi)
-
-    mpc_config = config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
-
-    # mpc_config["weights"]["output_tracking"] *= 1e-7
-
-    horizon = 3
-    mpc_config["horizon"] = horizon
-    mpc = DispatchModelPredictiveController(
-        config,
-        simulator.G,
-        node_order=simulator.node_order,
-        edge_order=simulator.edge_order,
-        mpc_config=mpc_config,
-    )
-    mpc.warm_start_with_previous_solution = False
-    mpc.no_shortfall = False
-
-    x0 = np.array([1800000.   , 3238578.913,  783000.   ])
-    forecast = np.array([ 94841.828,  81526.197, 118532.144, 111062.737, 235747.435, 234696.2  ])
-
-    # mpc.update_optimization_parameters(x0, forecast)
-    uct, usp, curtail, grid, obj_values_uw = mpc.compute_trajectory(x0, forecast, ret_obj=True)
+#     class hopp_interface:
+#         def __init__(self, site):
+#             self.system = hopp_system(site)
 
 
+#     hi = hopp_interface(hopp_site)
+#     simulator = RealTimeSimulation(config, hi)
 
-    []
+#     mpc_config = config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
+
+#     # mpc_config["weights"]["output_tracking"] *= 1e-7
+
+#     horizon = 3
+#     mpc_config["horizon"] = horizon
+#     mpc = DispatchModelPredictiveController(
+#         config,
+#         simulator.G,
+#         node_order=simulator.node_order,
+#         edge_order=simulator.edge_order,
+#         mpc_config=mpc_config,
+#     )
+#     mpc.warm_start_with_previous_solution = False
+#     mpc.no_shortfall = False
+
+#     x0 = np.array([1800000.   , 3238578.913,  783000.   ])
+#     forecast = np.array([ 94841.828,  81526.197, 118532.144, 111062.737, 235747.435, 234696.2  ])
+
+#     # mpc.update_optimization_parameters(x0, forecast)
+#     uct, usp, curtail, grid, obj_values_uw = mpc.compute_trajectory(x0, forecast, ret_obj=True)
+
+
+
+#     []
