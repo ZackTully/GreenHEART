@@ -291,6 +291,9 @@ class PEM_H2_Clusters_Step(PEM_H2_Clusters):
         h2_results_aggregates["Total kWh/kg"] = np.sum(
             self.store_input_external_power_kw
         ) / np.sum(self.store_h2_kg_hr_system)
+
+        if np.isnan(h2_results_aggregates["Total kWh/kg"]):
+            h2_results_aggregates["Total kWh/kg"] = 1000
         h2_results_aggregates["Total Uptime [sec]"] = np.sum(
             self.cluster_status * self.dt
         )

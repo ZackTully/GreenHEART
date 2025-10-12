@@ -20,6 +20,9 @@ class Compressor:
         self.p_outlet = p_outlet # bar
         self.flow_rate_kg_d = flow_rate_kg_d # kg/day
 
+        if self.flow_rate_kg_d == 0:
+            self.flow_rate_kg_d = 1 / 365
+
         self.n_compressors = n_compressors # At least 2 compressors are recommended for operation at any given time
         self.n_comp_back_up = 1 # Often times, an extra compressor is purchased and installed so that the system can operate at a higher availability.
         self.sizing_safety_factor = sizing_safety_factor # typically oversized. Default to oversize by 10%

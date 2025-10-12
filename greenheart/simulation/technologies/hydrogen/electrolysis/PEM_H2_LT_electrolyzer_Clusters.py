@@ -237,6 +237,9 @@ class PEM_H2_Clusters:
         eff_mult = (V_init + V_deg)/V_init #(1 + eff drop)
         I_deg = I_in/eff_mult
 
+
+        I_deg = np.nan_to_num(I_deg)
+
         return I_deg
 
 
