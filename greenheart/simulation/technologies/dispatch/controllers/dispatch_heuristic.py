@@ -147,60 +147,6 @@ class DispatchHeuristicController:
 
         assert (np.array(list(split_dict.values())) >= 0).all()
 
-
-
-
-        # power_to_hydrogen = available_power * self.ratio_to_hydrogen
-        # bes2el = np.max([0, self.power_h2_setpoint - power_to_hydrogen])
-
-        # split_dict.update({("generation", "electrolyzer"): power_to_hydrogen})
-        # split_dict.update({("battery", "electrolyzer"): bes2el})
-
-        # h2_generation = (
-        #     power_to_hydrogen + bes2el
-        # ) / self.electrolyzer_efficiency_kwhpkg
-
-        # h2s_charging = np.max([0, h2_generation - self.h2_setpoint])
-        # h2s_discharging = np.max([0, -(h2_generation - self.h2_setpoint)])
-
-        # ctrl_dict.update({"h2s_charge": h2s_charging, "h2s_discharge": h2s_discharging})
-
-        # split_dict.update({("electrolyzer", "hydrogen_storage"): h2s_charging})
-        # split_dict.update(
-        #     {("electrolyzer", "heat_exchanger"): h2_generation - h2s_charging}
-        # )
-
-        # power_to_heating = available_power * self.ratio_to_heating
-        # tes_charging = np.max([0, -(self.power_heat_setpoint - power_to_heating)])
-        # tes_discharging = np.max([0, (self.power_heat_setpoint - power_to_heating)])
-        # ctrl_dict.update({"tes_charge": tes_charging, "tes_discharge": tes_discharging})
-
-        # split_dict.update({("generation", "thermal_energy_storage"): tes_charging})
-        # split_dict.update({("battery", "thermal_energy_storage"): 0})
-
-        # split_dict.update(
-        #     {("generation", "heat_exchanger"): power_to_heating - tes_charging}
-        # )
-        # split_dict.update({("battery", "heat_exchanger"): 0})
-
-        # # split_dict.update({("thermal_energy_storage", "heat_exchanger"): tes_discharging})
-
-        # power_to_steel = available_power * self.ratio_to_steel
-        # split_dict.update({("generation", "steel"): power_to_steel})
-        # bes2steel = np.max([0, self.power_steel_setpoint - power_to_steel])
-        # split_dict.update({("battery", "steel"): bes2steel})
-
-        # bes_charging = available_power - np.sum(
-        #     [split_dict[key] for key in split_dict.keys() if key[0] == "generation"]
-        # )
-        # bes_discharging = np.sum(
-        #     [split_dict[key] for key in split_dict.keys() if key[0] == "battery"]
-        # )
-
-        # ctrl_dict.update({"bes_charge": bes_charging, "bes_discharge": bes_discharging})
-
-        # split_dict.update({("generation", "battery"): bes_charging})
-
         for node in list(G.nodes):
             G.nodes[node].update({"dispatch_split": np.array([1])})
             G.nodes[node].update({"dispatch_ctrl": np.array([0])})
