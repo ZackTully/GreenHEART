@@ -11,7 +11,7 @@ class StandinModel:
 
     def step(self, model_disturbance, u_control, step_index):
         # Returns y_model, u_passthrough, u_curtail
-        return 200, np.array([10, 20, 30]), np.array([100, 200, 300])
+        return 200, np.array([10, 20]), np.array([100, 200])
 
 
 def make_node(name="test", model=None):
@@ -71,7 +71,6 @@ def test_store_disturbance_T_true():
 
     # Only the first two are stored because the last one is temperature, which is not saved
     assert np.all(node.disturbance_store[0, :] == disturbance[0:2])
-
 
 
 

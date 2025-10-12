@@ -9,14 +9,13 @@ from greenheart.simulation.technologies.heat.heat_storage.thermal_energy_storage
 from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master_STEP import (
     run_PEM_clusters_step,
 )
-
 from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage import (
     HydrogenStorage,
 )
 from greenheart.simulation.technologies.steel.steel import SteelModel
-
 from greenheart.simulation.technologies.electricity.battery import Battery
-# from greenheart.tools.eco.utilities import ceildiv
+
+from greenheart.tools.eco.utilities import ceildiv
 from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
 
@@ -148,21 +147,25 @@ class Node:
             self.disturbance_store[step_index, :] = model_disturbance
 
     def store_passthrough(self, u_passthrough=None, step_index=0):
-        if self.inputs["T"]:
-            self.u_passthrough_store[step_index, :] = u_passthrough[0:-1]
-        else:
-            self.u_passthrough_store[step_index, :] = u_passthrough
+        # if self.inputs["T"]:
+        #     self.u_passthrough_store[step_index, :] = u_passthrough[0:-1]
+        # else:
+        self.u_passthrough_store[step_index, :] = u_passthrough
 
     def store_curtail(self, u_curtail=None, split_curtail=None, step_index=0):
-        if self.inputs["T"]:
-            self.u_curtail_store[step_index, :] = u_curtail[0:-1]
-        else:
-            self.u_curtail_store[step_index, :] = u_curtail
+        # if self.inputs["T"]:
+        #     self.u_curtail_store[step_index, :] = u_curtail[0:-1]
+        # else:
+        self.u_curtail_store[step_index, :] = u_curtail
         self.u_curtail_split_store[step_index, :] = split_curtail
 
     def format_model_output(self, y_model, u_passthrough):
         output_passthrough = np.zeros((1, 4))
-        output_passthrough[0, np.where(self.input_list)] = u_passthrough
+
+        if self.inputs["T"]:
+            output_passthrough[0, np.where(self.input_list[:-1])] = u_passthrough
+        else:
+            output_passthrough[0, np.where(self.input_list)] = u_passthrough
 
         output_model = np.zeros((1, 4))
         output_model[0, np.where(self.output_list)] = y_model
@@ -321,19 +324,19 @@ def setup_electrolyzer_node(G, config, hi, component_config):
 
     electrical_generation_timeseries = np.zeros(8760)
     electrolyzer_size_mw = config.greenheart_config["electrolyzer"]["rating"]
-    n_pem_clusters = int(
-        -(
-            electrolyzer_size_mw //
-            config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
-        )
-    )
-    # from greenheart.tools.eco.utilities import ceildiv
     # n_pem_clusters = int(
-    #     ceildiv(
-    #         electrolyzer_size_mw,
+    #     -(
+    #         electrolyzer_size_mw //
     #         config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
     #     )
     # )
+    # from greenheart.tools.eco.utilities import ceildiv
+    n_pem_clusters = int(
+        ceildiv(
+            electrolyzer_size_mw,
+            config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
+        )
+    )
     electrolyzer_capex_kw = config.greenheart_config["electrolyzer"][
         "electrolyzer_capex"
     ]
@@ -421,8 +424,6 @@ def setup_heat_exchanger_node(G, config, hi, component_config):
 
 
 def setup_steel_node(G, config, hi, component_config):
-    # config = config.greenheart_config["steel"]["costs"]["feedstocks"]
-
     inputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
     outputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
     component_dict = {
