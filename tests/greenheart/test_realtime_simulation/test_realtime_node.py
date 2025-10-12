@@ -68,26 +68,23 @@ def test_store_disturbance_T_true():
     node = make_node()
     disturbance = np.array([1, 2, 3])
     node.store_disturbance(disturbance, step_index=0)
-    assert np.all(node.disturbance_store[0, :] == disturbance)
+
+    # Only the first two are stored because the last one is temperature, which is not saved
+    assert np.all(node.disturbance_store[0, :] == disturbance[0:2])
 
 
-# def test_store_disturbance_T_false():
-#     node = make_node(T=False)
-#     disturbance = np.array([1, 2, 3])
-#     node.store_disturbance(disturbance, step_index=0)
-#     assert np.all(node.disturbance_store[0, :] == disturbance)
 
 
 def test_store_passthrough():
     node = make_node()
     u_passthrough = np.array([1, 2, 3])
-    node.store_passthrough(u_passthrough=u_passthrough, step_index=0)
-    assert np.all(node.u_passthrough_store[0, :3] == u_passthrough)
+    node.store_passthrough(u_passthrough=u_passthrough[0:2], step_index=0)
+    assert np.all(node.u_passthrough_store[0, :] == u_passthrough[0:2])
 
 
 def test_store_curtail():
     node = make_node()
-    u_curtail = np.array([1, 2, 3])
+    u_curtail = np.array([1, 2])
     split_curtail = np.array([4, 5, 6, 7])
     node.store_curtail(u_curtail=u_curtail, split_curtail=split_curtail, step_index=0)
     assert np.all(node.u_curtail_store[0, :3] == u_curtail)
@@ -96,8 +93,8 @@ def test_store_curtail():
 
 def test_format_model_output_electrolyzer():
     node = make_node(name="electrolyzer")
-    y_model = np.array([1, 2, 3, 4])
-    u_passthrough = np.array([1, 2, 3, 4])
+    y_model = np.array([1, 2])
+    u_passthrough = np.array([1, 2, 3])
     result = node.format_model_output(y_model, u_passthrough)
     assert result.shape == (1, 4)
     # Temperature should be set to T_electrolyzer_output
@@ -106,16 +103,16 @@ def test_format_model_output_electrolyzer():
 
 def test_format_model_output_hydrogen_storage():
     node = make_node(name="hydrogen_storage")
-    y_model = np.array([1, 2, 3, 4])
-    u_passthrough = np.array([1, 2, 3, 4])
+    y_model = np.array([1, 2])
+    u_passthrough = np.array([1, 2, 3])
     result = node.format_model_output(y_model, u_passthrough)
     assert result[0, 3] == node.T_hydrogen_storage_output
 
 
 def test_format_model_output_heat_exchanger():
     node = make_node(name="heat_exchanger")
-    y_model = np.array([1, 2, 3, 4])
-    u_passthrough = np.array([1, 2, 3, 4])
+    y_model = np.array([1, 2])
+    u_passthrough = np.array([1, 2, 3])
     result = node.format_model_output(y_model, u_passthrough)
     assert result[0, 3] == node.model.Tout_desired
 
@@ -150,7 +147,7 @@ def test_step_runs():
     node = make_node()
     incoming_edges = np.array([[1, 2, 3, 4]])
     u_control = np.array([1])
-    u_split = np.array([1, 1, 1, 1])
+    u_split = np.array([1])
     step_index = 0
     outgoing_edges = node.step(incoming_edges, u_control, u_split, step_index)
     assert outgoing_edges.shape[0] == 4

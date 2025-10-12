@@ -61,7 +61,7 @@ def get_inputs(
     # load eco inputs
     greenheart_config = load_yaml(filename_greenheart_config)
 
-    if isinstance(greenheart_config["realtime_simulation"], str):
+    if isinstance(greenheart_config.get("realtime_simulation", None), str):
         greenheart_config["realtime_simulation"] = load_yaml(greenheart_config["realtime_simulation"])
 
 

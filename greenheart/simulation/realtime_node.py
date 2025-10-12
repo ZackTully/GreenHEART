@@ -148,13 +148,16 @@ class Node:
             self.disturbance_store[step_index, :] = model_disturbance
 
     def store_passthrough(self, u_passthrough=None, step_index=0):
-        # if self.inputs["T"]:
-        #     self.u_passthrough_store[step_index, :] = u_passthrough[0:3]
-        # else:
-        self.u_passthrough_store[step_index, :] = u_passthrough
+        if self.inputs["T"]:
+            self.u_passthrough_store[step_index, :] = u_passthrough[0:-1]
+        else:
+            self.u_passthrough_store[step_index, :] = u_passthrough
 
     def store_curtail(self, u_curtail=None, split_curtail=None, step_index=0):
-        self.u_curtail_store[step_index, :] = u_curtail
+        if self.inputs["T"]:
+            self.u_curtail_store[step_index, :] = u_curtail[0:-1]
+        else:
+            self.u_curtail_store[step_index, :] = u_curtail
         self.u_curtail_split_store[step_index, :] = split_curtail
 
     def format_model_output(self, y_model, u_passthrough):
