@@ -19,17 +19,20 @@ class ControlModelBuilder:
         q_pkgh2 = self.Dgtct[3, 5]  # 3.847 kWh heat per kg h2
         p_ptls = self.Dgtct[4, 5] / m_h2_ptls
 
-
-
-
-        # eta_el = self.Dzesp[2, 2]
-        # eta_el = self.Dzesp[2, 1]
         if self.mpc.debug_mode:
-            el_col = [i for i in range(self.msp) if self.msp_label[i].endswith("(to electrolyzer)")][0]
-            el_row = [i for i in range(self.pze) if self.pze_label[i].endswith("electrolyzer")][0]
+            el_col = [
+                i
+                for i in range(self.msp)
+                if self.msp_label[i].endswith("(to electrolyzer)")
+            ][0]
+            el_row = [
+                i for i in range(self.pze) if self.pze_label[i].endswith("electrolyzer")
+            ][0]
             eta_el = self.Dzesp[el_row, el_col]
         else:
-            eta_el = self.mpc.G.nodes["electrolyzer"]["ionode"].model.control_model.F[0, 0]
+            eta_el = self.mpc.G.nodes["electrolyzer"]["ionode"].model.control_model.F[
+                0, 0
+            ]
 
         m_h2_total = r_y / m_h2_ptls
         q_total = m_h2_total * -q_pkgh2

@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal as si
 
+
 class Forecast:
 
     generation_profile: np.ndarray
@@ -19,21 +20,21 @@ class Forecast:
 
         if greenheart_config is not None:
             self.greenheart_config = greenheart_config
-            mpc_horizon = self.greenheart_config.greenheart_config[
+            self.dispatch_config = self.greenheart_config.greenheart_config[
                 "realtime_simulation"
-            ]["dispatch"]["mpc"]["horizon"]
-            # if mpc_horizon != self.forecast_horizon:
-                # self.forecast_horizon = mpc_horizon
-            self.forecast_horizon = mpc_horizon
+            ]["dispatch"]
+            if "mpc" in self.dispatch_config:
+
+                mpc_horizon = self.dispatch_config["mpc"]["horizon"]
+                self.forecast_horizon = mpc_horizon
+            else:
+                self.forecast_horizon = 24
         else:
             self.forecast_horizon = config["horizon"]
 
         self.true_forecast = true_forecast
         self.perfect_forecast_profile = np.concatenate(
-            [
-                self.true_forecast,
-                np.flip(self.true_forecast)
-            ]
+            [self.true_forecast, np.flip(self.true_forecast)]
         )
         # self.perfect_forecast_profile = np.concatenate(
         #     [
@@ -108,13 +109,11 @@ class Forecast:
         wc = self.config["method_config"]["w_cutoff"]
         Ts = self.config["method_config"]["Ts"]
 
-        # Number of samples 
+        # Number of samples
         self.n_cutoff = int(2 * np.pi / wc / Ts)
 
-
-
         K = 1
-        alpha =  wc
+        alpha = wc
         tau = 1 / alpha
 
         # Denominator
@@ -137,18 +136,16 @@ class Forecast:
         # d_perfect = self._forecast_perfect(measurement, step_index)
 
         d_perfect = self.perfect_forecast_profile[
-            step_index : step_index + 2*max(self.forecast_horizon, self.n_cutoff)
+            step_index : step_index + 2 * max(self.forecast_horizon, self.n_cutoff)
         ]
-
 
         # d_filtered = si.lfilter(self.filter_num, self.filter_den, d_perfect)
         d_filtered = si.filtfilt(self.filter_num, self.filter_den, d_perfect)
 
-        # TODO May need to set the first value of the forecast to be the same as the measured disturbance. 
-        d_trunc = d_filtered[0:self.forecast_horizon]
-        d_trunc = np.where(d_trunc >= 0, d_trunc, 0 )
+        # TODO May need to set the first value of the forecast to be the same as the measured disturbance.
+        d_trunc = d_filtered[0 : self.forecast_horizon]
+        d_trunc = np.where(d_trunc >= 0, d_trunc, 0)
         return d_trunc
-
 
 
 def plot_interp_options():
@@ -223,7 +220,7 @@ if __name__ == "__main__":
     filter_config = dict(
         type="lpf",
         order=1,
-        Ts = 3600,
+        Ts=3600,
         w_cutoff=2 * np.pi / (12 * 3600),
     )
 
@@ -299,9 +296,10 @@ if __name__ == "__main__":
 
     hybrid_profile = np.where(hybrid_profile < 0, 0, hybrid_profile)
 
-
     # data_root = Path(__file__).parent / "data"
-    data_root = Path("/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/experimental_code/control_theory/forecasting/filtering/data")
+    data_root = Path(
+        "/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/experimental_code/control_theory/forecasting/filtering/data"
+    )
 
     # Load some data files
     solar_data = np.load(data_root / "solar_data.npz")
@@ -309,15 +307,12 @@ if __name__ == "__main__":
     wind_data = np.load(data_root / "wind_data.npz")
     wind_generation = np.load(data_root / "wind_generation.npz")
 
-
     hybrid_profile = wind_generation["generation"] + solar_generation["generation"]
-
 
     def plot_forecaster(forecaster, ax):
         ax.plot(t, hybrid_profile, alpha=0.75, color="black", linewidth=2, label="Data")
         sim_length = 100
         ax.set_xlim([0, sim_length + forecaster.forecast_horizon])
-
 
         for i in range(sim_length):
             if i % 12:

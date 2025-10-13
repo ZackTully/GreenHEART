@@ -4,6 +4,62 @@ import networkx as nx
 
 
 from greenheart.simulation.technologies.steel.steel import Feedstocks
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.control_model_builder import ControlModelBuilder
+from hopp.utilities import load_yaml
+
+
+class SimpleSystemController:
+    def __init__(self, config, simulation_graph, node_order, edge_order, dispatch_config):
+        self.config = config
+        self.node_order = node_order
+        self.edge_order = edge_order
+
+        system_graph = load_yaml(
+            config.greenheart_config["realtime_simulation"]["system"][
+                "system_graph_config"
+            ]
+        )
+        self.traversal_order = system_graph["traversal_order"]
+        self.G = simulation_graph
+
+        self.control_model = ControlModelBuilder(mpc=self)
+        self.control_model.build_control_model(self.traversal_order, self.G)
+        pass
+
+
+    def step(self, G, available_power, forecast, x_measured, step_index):
+
+        for node in list(G.nodes):
+            G.nodes[node].update({"dispatch_split": np.array([[1]])})
+            G.nodes[node].update({"dispatch_ctrl": np.array([[0]])})
+
+        mean_power = 500e3
+
+        bes_charge = max(available_power - mean_power, 0)
+        bes_discharge = max(mean_power - available_power, 0)
+
+
+        # Battery charging and discharging
+        uct = np.array([bes_charge, bes_discharge])
+
+        # Generation splitting
+        usp = np.array([bes_charge, available_power - bes_charge])
+
+        G.nodes["generation"].update({"dispatch_ctrl": np.array([[0]])})
+        G.nodes["generation"].update({"grid_purchase": np.array([[0]])})
+
+        for node in self.control_model.uct_order.keys():
+            if len(self.control_model.uct_order[node]) > 0:
+                G.nodes[node]["dispatch_ctrl"] = uct
+
+        for node in self.control_model.usp_order.keys():
+            if len(self.control_model.usp_order[node]) >= 1:
+                G.nodes[node]["dispatch_split"] = usp
+
+        return G
+
+
+
 
 
 class DispatchHeuristicController:

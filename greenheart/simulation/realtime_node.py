@@ -372,7 +372,7 @@ class StandinNode:
         """
         u_passthrough = 0
         if dispatch >= -1:
-            dispatch = np.max([0.0, dispatch[0]])
+            dispatch = np.max([0.0, dispatch[0,0]])
         assert dispatch >= 0
         u_curtail = dispatch
         actual_curtail = min(dispatch, input[0])

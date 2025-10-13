@@ -56,7 +56,6 @@ def make_realtime_simulator(system="full"):
 
     simulator = RealTimeSimulation(config, hi)
     dispatcher = GreenheartDispatch(
-        hi,
         config,
         simulator,
         dispatch_config=config.greenheart_config["realtime_simulation"]["dispatch"],
@@ -87,10 +86,10 @@ def simple_system_RTS_run():
 
 
 def test_RTS_full_system_runs(full_system_RTS_run):
-
     # Shouldn't raise
     pass
 
 
-def test_RTS_simple_system(simple_system_RTS_run):
+def test_RTS_simple_system_runs(simple_system_RTS_run):
+    # Shouldn't raise
     pass

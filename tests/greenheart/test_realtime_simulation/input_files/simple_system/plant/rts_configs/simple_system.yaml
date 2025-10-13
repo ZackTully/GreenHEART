@@ -12,41 +12,7 @@ forecast:
   method: perfect_persistence_interp
   method_config:
     perfect_fraction: 0
-
+    
 dispatch:
-  update_period : 1
-  mpc:
-    horizon: 6
-    reference: 100
-    weights:
-      output_tracking: 1.0e+1
-      gridcurtail: 1.0e+1
-      bes_simultaneous: 1.0e+6
-      h2s_simultaneous: 1.0e+6
-      bes_soc_state: 1.0e-1
-      tes_soc_state: 1.0e-1
-      h2s_soc_state: 1.0e-1
-      objective: 1
-    terms:
-      [
-      output_tracking,
-      gridcurtail,
-      bes_simultaneous,
-      h2s_simultaneous,
-      bes_soc_state,
-      tes_soc_state,
-      h2s_soc_state,
-      ]
-      
-    options:
-      use_config_weights: True
-      warm_start: True
-      use_NL_electrolyzer: False
-      NL_order: 1
-      only_bounded_yco: True
-      no_shortfall: True
-      terminal_cost: False
-      terminal_constraint: False
-
-    references:
-      tes: 0.3
+  update_period: 1
+  simple_system: 

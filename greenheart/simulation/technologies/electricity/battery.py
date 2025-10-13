@@ -23,9 +23,9 @@ class Battery:
 
         self.power_fraction = 0.9
 
-        self.update_period = config.greenheart_config["realtime_simulation"][
-            "dispatch"
-        ]["update_period"]
+        # self.update_period = config.greenheart_config["realtime_simulation"][
+        #     "dispatch"
+        # ]["update_period"]
         # self.horizon = config.greenheart_config['realtime_simulation']['dispatch']['mpc']['horizon']
 
         self.hopp_battery = Battery_hopp(
@@ -42,13 +42,14 @@ class Battery:
             )
 
             self.hopp_battery.dispatch.initialize_parameters()
-            self.hopp_battery.dispatch.external_fixed_dispatch = np.zeros(
-                8760
-                + config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"][
-                    "horizon"
-                ]
-                + 24
-            )
+            self.hopp_battery.dispatch.external_fixed_dispatch = np.zeros(8760 + 2190)
+            # self.hopp_battery.dispatch.external_fixed_dispatch = np.zeros(
+            #     8760
+            #     + config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"][
+            #         "horizon"
+            #     ]
+            #     + 24
+            # )
 
         # # self.hopp_battery.dispatch.external_fixed_dispatch = .7 * np.ones(8760)
         # # self.hopp_battery.dispatch.external_fixed_dispatch = 110 * np.ones(8760)

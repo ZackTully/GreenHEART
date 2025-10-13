@@ -551,7 +551,7 @@ def run_simulation(config: GreenHeartSimulationConfig, case_description=None):
 
     if hasattr(config, "realtime_simulation") and config.realtime_simulation:
         simulator = RealTimeSimulation(config, hi, case_description)
-        dispatcher = GreenheartDispatch(hi, config, simulator, dispatch_config=config.greenheart_config["realtime_simulation"]["dispatch"])
+        dispatcher = GreenheartDispatch(config, simulator, dispatch_config=config.greenheart_config["realtime_simulation"]["dispatch"])
         hi.hopp.system.dispatch_builder.dispatcher = dispatcher
     else:
         simulator = None
