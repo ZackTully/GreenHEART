@@ -29,6 +29,7 @@ from greenheart.simulation.realtime_node import (
     setup_steel_node,
 )
 from greenheart.tools.simulation.realtime_helper import RealTimeSimulationHelper
+from hopp.utilities import load_yaml
 
 
 class RealTimeSimulation:
@@ -58,9 +59,13 @@ class RealTimeSimulation:
         self.stop_index = self.rts_config.get("stop_index", 8760)
         self.start_index = self.rts_config.get("start_index", 0)
 
-        self.component_config = yaml.safe_load(
-            open(self.rts_config["component_config"], "r")
-        )
+        if isinstance(self.rts_config["component_config"], str):
+            self.component_config = yaml.safe_load(
+                open(self.rts_config["component_config"], "r")
+            )
+        else:
+            self.component_config = self.rts_config["component_config"]
+
         self.hi = hopp_interface
 
         self.rts_helper = RealTimeSimulationHelper(self)
@@ -125,10 +130,15 @@ class RealTimeSimulation:
             if key in GH_tech_options:
                 GH_techs.append(key)
 
-        graph_config_fpath = config.greenheart_config["realtime_simulation"]["system"][
-            "system_graph_config"
-        ]
-        graph_config = yaml.safe_load(open(graph_config_fpath, "r"))
+        # graph_config_fpath = config.greenheart_config["realtime_simulation"]["system"][
+        #     "system_graph_config"
+        # ]
+        # graph_config = yaml.safe_load(open(graph_config_fpath, "r"))
+
+        graph_config = self.rts_config["system"]["system_graph_config"]
+        if isinstance(graph_config, str):
+            graph_config = yaml.safe_load(open(graph_config, "r"))
+
         network_config = graph_config["network"]
 
         edges = network_config
@@ -430,7 +440,6 @@ class RealTimeSimulation:
             sim_edges[j] = np.sum(sim_edges_full[j, 0:-1])
         return sim_edges
 
-
     def get_mpc_edge_permutation(self, mpc_edges):
         permutation = np.zeros(mpc_edges.shape, dtype=int)
         for k in range(len(self.edge_order)):
@@ -451,7 +460,7 @@ class RealTimeSimulation:
                 )
             ]
             permutation[k] = index[0]
-        
+
         self.mpc_permutation = permutation
 
     def get_mpc_edges(self, i):
@@ -463,10 +472,9 @@ class RealTimeSimulation:
         else:
             idx = np.where(idx_store == self.dispatcher.previous_update)[0][0]
 
-
         mpc_edges = self.dispatcher.controller.ysp_store[idx]
         mpc_edges = mpc_edges[0:-1, i - self.dispatcher.previous_update]
-        
+
         if not hasattr(self, "mpc_permutation"):
             self.get_mpc_edge_permutation(mpc_edges)
 

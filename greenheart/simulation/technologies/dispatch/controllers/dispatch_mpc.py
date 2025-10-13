@@ -20,11 +20,21 @@ from hopp.utilities import load_yaml
 # This import cannot be uncommented or else it leads to a circular import
 # from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
 
-from greenheart.simulation.technologies.dispatch.controllers.controller_tools.control_model_builder import ControlModelBuilder
-from greenheart.simulation.technologies.dispatch.controllers.controller_tools.gradient_helper import GradientHelper
-from greenheart.simulation.technologies.dispatch.controllers.controller_tools.plotter_helper import MPCPlotter
-from greenheart.simulation.technologies.dispatch.controllers.controller_tools.objective_helper import Objective
-from greenheart.simulation.technologies.dispatch.controllers.controller_tools.debug_helper import DebugHelper
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.control_model_builder import (
+    ControlModelBuilder,
+)
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.gradient_helper import (
+    GradientHelper,
+)
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.plotter_helper import (
+    MPCPlotter,
+)
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.objective_helper import (
+    Objective,
+)
+from greenheart.simulation.technologies.dispatch.controllers.controller_tools.debug_helper import (
+    DebugHelper,
+)
 
 
 class DispatchModelPredictiveController:
@@ -32,14 +42,14 @@ class DispatchModelPredictiveController:
     def __init__(
         self,
         config,
-        simulation_graph:nx.Graph,
-        saved_state:dict=None,
-        node_order:list=None,
-        edge_order:list=None,
-        mpc_config:dict=None,
-        p_opts:dict={"print_time": False, "verbose": False, "record_time":True},
-        s_opts:dict={"print_level": 0, "compl_inf_tol": 1e-3, "max_iter":1e5},
-        debug_mode:bool=False,
+        simulation_graph: nx.Graph,
+        saved_state: dict = None,
+        node_order: list = None,
+        edge_order: list = None,
+        mpc_config: dict = None,
+        p_opts: dict = {"print_time": False, "verbose": False, "record_time": True},
+        s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5},
+        debug_mode: bool = False,
     ):
         """_summary_
 
@@ -114,15 +124,21 @@ class DispatchModelPredictiveController:
             self.mpc_config["references"] = self.mpc_config.get("references", {})
 
             if "battery" in self.node_order:
-                self.mpc_config["references"]["bes"] = self.mpc_config["references"].get("bes", 1)
+                self.mpc_config["references"]["bes"] = self.mpc_config[
+                    "references"
+                ].get("bes", 1)
                 self.get_battery_graph_info()
 
             if "hydrogen_storage" in self.node_order:
-                self.mpc_config["references"]["h2s"] = self.mpc_config["references"].get("h2s", 1)
+                self.mpc_config["references"]["h2s"] = self.mpc_config[
+                    "references"
+                ].get("h2s", 1)
                 self.get_hydrogen_storage_graph_info()
 
             if "thermal_energy_storage" in self.node_order:
-                self.mpc_config["references"]["tes"] = self.mpc_config["references"].get("tes", 1)
+                self.mpc_config["references"]["tes"] = self.mpc_config[
+                    "references"
+                ].get("tes", 1)
                 self.get_thermal_energy_storage_graph_info()
 
         self.objective_manager = Objective(
@@ -207,8 +223,6 @@ class DispatchModelPredictiveController:
         # self.h2s_soc_ref = self.mpc_config.get("references", {}).get("h2s", 1)
         self.h2s_soc_ref = self.mpc_config["references"]["h2s"]
 
-
-
         self.ref_h2s_state = self.h2s_soc_ref * self.x_h2s_max
         self.weight_h2s_state = 1e-1 / self.ref_h2s_state
 
@@ -219,12 +233,8 @@ class DispatchModelPredictiveController:
         self.x_tes_min = 0
         # self.x_tes_min = simulation_graph.nodes["thermal_energy_storage"]["ionode"].model.H_buffer_max_kWh
 
-
-
         # self.tes_soc_ref = self.mpc_config.get("references", {}).get("tes", 1)
         self.tes_soc_ref = self.mpc_config["references"]["tes"]
-
-
 
         self.ref_tes_state = self.tes_soc_ref * self.x_tes_max
         self.weight_tes_state = 1e-4 / self.ref_tes_state
@@ -344,7 +354,7 @@ class DispatchModelPredictiveController:
         gridcurtail = opti.variable(gridcurtail_sym)
         opti.set_domain(gridcurtail, "real")
 
-        x_var_sym = ca.MX.sym("x_var", self.n, self.horizon+1)
+        x_var_sym = ca.MX.sym("x_var", self.n, self.horizon + 1)
         x_var = opti.variable(x_var_sym)
         opti.set_domain(x_var, "real")
 
@@ -375,7 +385,7 @@ class DispatchModelPredictiveController:
             # x_lb_expr.name = f"x LB h{k}"
             # opti.subject_to(x_lb_expr)
 
-            opti.subject_to( x_var[:, k] >= self.bounds["x_lb"][:, None])
+            opti.subject_to(x_var[:, k] >= self.bounds["x_lb"][:, None])
             opti.subject_to(x_var[:, k] <= self.bounds["x_ub"][:, None])
 
         for k in range(self.horizon):
@@ -478,7 +488,9 @@ class DispatchModelPredictiveController:
             #     objective_terms.append(step_obj_terms)
 
         if self.use_objective_class:
-            objective = self.objective_manager.construct_objective(uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail)
+            objective = self.objective_manager.construct_objective(
+                uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
+            )
             self.obj_terms = self.objective_manager.obj_terms_w
             self.obj_terms_uw = self.objective_manager.obj_terms_uw
         else:
@@ -534,7 +546,6 @@ class DispatchModelPredictiveController:
         #     obj_terms_uw2=self.obj_terms_uw_man,
         # )
 
-
     def update_optimization_parameters(self, x0, src_forecast):
         self.opti.set_value(self.opt_params["dex"], src_forecast)
         self.opti.set_value(self.opt_params["x0"], x0)
@@ -559,13 +570,7 @@ class DispatchModelPredictiveController:
 
         self.update_optimization_parameters(x0, forecast)
 
-
-
-
         if self.warm_start_with_previous_solution:
-            
-
-
 
             if hasattr(self, "x_init") and self.prev_success:
                 # Then the optimization has been run at least once and there should
@@ -587,34 +592,28 @@ class DispatchModelPredictiveController:
                     self.opt_vars["yex"][:, :overlap], self.ys_init[:, -overlap:]
                 )
 
-
-                uct_feas, usp_feas, x_feas, yex_feas, yco_feas, ucur_feas = self.control_model.compute_feasible_initial_values(x0, forecast, self.opti, start_index = overlap)
+                uct_feas, usp_feas, x_feas, yex_feas, yco_feas, ucur_feas = (
+                    self.control_model.compute_feasible_initial_values(
+                        x0, forecast, self.opti, start_index=overlap
+                    )
+                )
                 self.opti.set_initial(self.opt_vars["uct"], uct_feas)
                 self.opti.set_initial(self.opt_vars["usp"], usp_feas)
                 self.opti.set_initial(self.opt_vars["x"], x_feas)
                 self.opti.set_initial(self.opt_vars["yex"], yex_feas)
                 self.opti.set_initial(self.opt_vars["yco"], yco_feas)
                 self.opti.set_initial(self.opt_vars["gridcurtail"], ucur_feas)
-
-
-
-
-                []
 
             else:
-                uct_feas, usp_feas, x_feas, yex_feas, yco_feas, ucur_feas = self.control_model.compute_feasible_initial_values(x0, forecast)
+                uct_feas, usp_feas, x_feas, yex_feas, yco_feas, ucur_feas = (
+                    self.control_model.compute_feasible_initial_values(x0, forecast)
+                )
                 self.opti.set_initial(self.opt_vars["uct"], uct_feas)
                 self.opti.set_initial(self.opt_vars["usp"], usp_feas)
                 self.opti.set_initial(self.opt_vars["x"], x_feas)
                 self.opti.set_initial(self.opt_vars["yex"], yex_feas)
                 self.opti.set_initial(self.opt_vars["yco"], yco_feas)
                 self.opti.set_initial(self.opt_vars["gridcurtail"], ucur_feas)
-                # self.opti.set_initial(self.opt_vars["uct"], uct_feas)
-                # self.opti.set_initial(self.opt_vars["usp"], usp_feas)
-                # self.opti.set_initial(self.opt_vars["x"], x_feas)
-                # self.opti.set_initial(self.opt_vars["yex"], yex_feas)
-                # self.opti.set_initial(self.opt_vars["yco"], yco_feas)
-                # self.opti.set_initial(self.opt_vars["gridcurtail"], ucur_feas)
 
                 # self.gradient_helper.check_initial_values(self.opti)
 
@@ -627,7 +626,7 @@ class DispatchModelPredictiveController:
             stderr_msg = stderr_buffer.getvalue()
             if len(stderr_msg) > 0:
                 log_msg = self.debug_helper.process_stderr(stderr_msg)
-                if log_msg is not None: 
+                if log_msg is not None:
                     self.logger.warning(f"{step_index = }:\nlog_msg")
 
             sol_stats = sol.stats()
@@ -639,9 +638,10 @@ class DispatchModelPredictiveController:
             # self.logger.debug(traceback.format_exc())
 
             # If the optimization does not solve, dig into the issues
-            violation_desc = self.unpack_bad_solution(step_index=step_index, forecast=forecast, x0=x0)
+            violation_desc = self.unpack_bad_solution(
+                step_index=step_index, forecast=forecast, x0=x0
+            )
             self.logger.debug(violation_desc)
-
 
             # Think about adding more debug information to the logger here
             # Gradients
@@ -689,8 +689,7 @@ class DispatchModelPredictiveController:
             key: sol.value(self.obj_terms[key]) for key in self.obj_terms.keys()
         }
         obj_values_uw = {
-            key: sol.value(self.obj_terms_uw[key])
-            for key in self.obj_terms_uw.keys()
+            key: sol.value(self.obj_terms_uw[key]) for key in self.obj_terms_uw.keys()
         }
 
         # self.check_gradients(sol, print_jacs=True)
@@ -716,13 +715,19 @@ class DispatchModelPredictiveController:
             # self.debug_helper.save_state_for_debug(x0, forecast, step_index)
             pass
 
+        active_obj_uw = {
+            k: v
+            for k, v in self.objective_manager.obj_terms_uw_traj.items()
+            if k in self.term_keys
+        }
 
-        active_obj_uw = {k:v for k, v in self.objective_manager.obj_terms_uw_traj.items() if k in self.term_keys}
-
-        if np.any([sol.value(v) > 1.0001 for vals in active_obj_uw.values() for v in vals] ):
-            self.gradient_helper.print_objective_trajectory_values(sol, terms=self.term_keys, weighted=False)
+        if np.any(
+            [sol.value(v) > 1.0001 for vals in active_obj_uw.values() for v in vals]
+        ):
+            self.gradient_helper.print_objective_trajectory_values(
+                sol, terms=self.term_keys, weighted=False
+            )
             pass
-        
 
         # self.gradient_helper.print_objective_values(sol, terms=self.term_keys)
         if (yex < 0.99 * self.reference).any():
@@ -743,7 +748,6 @@ class DispatchModelPredictiveController:
             return uct, usp, curtail, grid, obj_values_uw
         else:
             return uct, usp, curtail, grid
-
 
     def unpack_bad_solution(self, step_index, forecast, x0):
         with Capturing() as output:
@@ -782,15 +786,11 @@ class DispatchModelPredictiveController:
                 i += 4
             i += 1
 
-
         # np.set_printoptions(linewidth=200, suppress=True, precision=4)
-
 
         # if True:
         if np.max(np.abs(violations)) > tol:
             self.gradient_helper.check_gradients(self.opti.debug)
-
-
 
             # if not self.debug_mode:
             #     self.debug_helper.save_state_for_debug(x0, forecast, step_index)
@@ -808,7 +808,7 @@ class DispatchModelPredictiveController:
         if violation_summary == "":
             return f"Bad solve but no constraint violations larger than tol ({tol})"
         else:
-            return violation_summary 
+            return violation_summary
 
     def print_block_matrices(
         self, mat, in_labels, out_labels, no_space=False, save_description=False
@@ -967,7 +967,7 @@ class Capturing(list):
 
 
 #     mpc_config = config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
-    
+
 #     # Minimal required attributes for instantiation
 #     ctrl = DispatchModelPredictiveController(
 #         config=config,

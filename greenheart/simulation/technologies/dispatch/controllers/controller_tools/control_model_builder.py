@@ -3,54 +3,61 @@ import casadi as ca
 import scipy
 import networkx as nx
 
+
 class ControlModelBuilder:
     def __init__(self, mpc):
         self.mpc = mpc
 
-  
     def compute_feasible_initial_values(self, x0, forecast, opti=None, start_index=0):
+
+        # TODO: update this to be less fragile. Get the matrix indices from mpc labels rather than hard coding them
 
         partial_traj = opti is not None
 
-        
-
-
         r_y = self.mpc.reference
         m_h2_ptls = self.Dexct[0, 5]  # 0.01516 tls per kg h2
-        q_pkgh2 = self.Dgtct[3, 5]    # 3.847 kWh heat per kg h2
+        q_pkgh2 = self.Dgtct[3, 5]  # 3.847 kWh heat per kg h2
         p_ptls = self.Dgtct[4, 5] / m_h2_ptls
 
-
-        eta_el = self.Dzesp[2, 2]
-
-
+        # eta_el = self.Dzesp[2, 2]
+        eta_el = self.Dzesp[2, 1]
 
         m_h2_total = r_y / m_h2_ptls
         q_total = m_h2_total * -q_pkgh2
         p_steel_total = p_ptls * -r_y
         p_h2_total = m_h2_total / eta_el
 
-
         p_total = np.sum([q_total, p_steel_total, p_h2_total])
-        p_total_ptls = np.sum([-q_pkgh2/m_h2_ptls, -p_ptls, 1/m_h2_ptls / eta_el])
-
+        p_total_ptls = np.sum([-q_pkgh2 / m_h2_ptls, -p_ptls, 1 / m_h2_ptls / eta_el])
 
         p_available = np.where(forecast >= p_total, p_total, forecast)
         u_curtail = p_available - p_total
         u_curtail = np.where(u_curtail >= 0, u_curtail, 0)
 
-
         available_reference = p_available / p_total_ptls
 
         if partial_traj:
 
-            x_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["x"], opti.initial())))
-            uct_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["uct"], opti.initial())))
-            usp_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["usp"], opti.initial())))
-            yex_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["yex"], opti.initial())))
-            yco_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["yco"], opti.initial())))
-            ucur_var = ca.DM(np.atleast_2d(opti.value(self.mpc.opt_vars["gridcurtail"], opti.initial())))
-
+            x_var = ca.DM(
+                np.atleast_2d(opti.value(self.mpc.opt_vars["x"], opti.initial()))
+            )
+            uct_var = ca.DM(
+                np.atleast_2d(opti.value(self.mpc.opt_vars["uct"], opti.initial()))
+            )
+            usp_var = ca.DM(
+                np.atleast_2d(opti.value(self.mpc.opt_vars["usp"], opti.initial()))
+            )
+            yex_var = ca.DM(
+                np.atleast_2d(opti.value(self.mpc.opt_vars["yex"], opti.initial()))
+            )
+            yco_var = ca.DM(
+                np.atleast_2d(opti.value(self.mpc.opt_vars["yco"], opti.initial()))
+            )
+            ucur_var = ca.DM(
+                np.atleast_2d(
+                    opti.value(self.mpc.opt_vars["gridcurtail"], opti.initial())
+                )
+            )
 
             x_var[:, 0] = x0
 
@@ -61,32 +68,31 @@ class ControlModelBuilder:
             usp_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["usp"].shape)))
             yex_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["yex"].shape)))
             yco_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["yco"].shape)))
-            ucur_var = ca.DM(np.atleast_2d(np.zeros(self.mpc.opt_vars["gridcurtail"].shape)))
+            ucur_var = ca.DM(
+                np.atleast_2d(np.zeros(self.mpc.opt_vars["gridcurtail"].shape))
+            )
 
             x_var[:, 0] = x0
-
 
         tol = 1e-6
 
         for k in range(self.mpc.horizon):
-            if k < start_index-1:
+            if k < start_index - 1:
                 continue
 
-            xk = x_var[ :, k]
+            xk = x_var[:, k]
             dk = np.atleast_2d(forecast[k])
             uctk = np.zeros((self.mct, 1))
             uspk = np.zeros((self.msp, 1))
             ucurk = u_curtail[k]
 
-
             # Set control inputs to meet the heuristic reference
             r_yk = available_reference[k]
 
-
             # generation
             p_gen2steel = r_yk * -p_ptls
-            p_gen2el = r_yk /m_h2_ptls / eta_el
-            p_gen2tes = r_yk * -q_pkgh2/m_h2_ptls
+            p_gen2el = r_yk / m_h2_ptls / eta_el
+            p_gen2tes = r_yk * -q_pkgh2 / m_h2_ptls
 
             # electrolyzer
             m_el2hx = p_gen2el * eta_el
@@ -105,33 +111,21 @@ class ControlModelBuilder:
             uctk[2] = u_charge_tes
             uctk[3] = u_discharge_tes
 
-
-
-            xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(xk, uctk, uspk, dk, ucurk)
+            xkp1, yexk, yco, yze, ygt, yet = self.step_control_model(
+                xk, uctk, uspk, dk, ucurk
+            )
 
             # assert np.all(np.abs(yze) <= tol)
             # assert np.all(np.abs(ygt) <= tol)
 
-
-            x_var[:, k+1] = ca.evalf(xkp1)
+            x_var[:, k + 1] = ca.evalf(xkp1)
             uct_var[:, k] = ca.evalf(uctk)
             usp_var[:, k] = ca.evalf(uspk)
             yex_var[:, k] = ca.evalf(yexk)
             yco_var[:, k] = ca.evalf(yco[self.mpc.yco_ub_ind])
             ucur_var[:, k] = ca.evalf(ucurk)
-            # x_var[:, k+1, None] = xkp1
-            # uct_var[:, k, None] = uctk
-            # usp_var[:, k, None] = uspk
-            # yex_var[:, k, None] = yexk
-            # yco_var[:, k, None] = yco[self.mpc.yco_ub_ind]
-            # ucur_var[:, k, None] = ucurk
-
 
         return uct_var, usp_var, x_var, yex_var, yco_var, ucur_var
-        # return ca.evalf(uct_var), ca.evalf(usp_var), ca.evalf(x_var), ca.evalf(yex_var), ca.evalf(yco_var), ca.evalf(ucur_var)
-
-
-
 
     def step_control_model(self, x_var, uct_var, usp_var, dex_param, grid_curtail):
 
@@ -259,7 +253,6 @@ class ControlModelBuilder:
 
         self.node_order = self.mpc.node_order
         self.edge_order = self.mpc.edge_order
-        
 
         dims = {
             "dims": {
@@ -490,7 +483,10 @@ class ControlModelBuilder:
                 up_node_output_domain = up_cm.output_domain
                 disturbance_index.append(
                     np.where(
-                        np.multiply(   cm.disturbance_permutation, (cm.disturbance_domain * up_node_output_domain))
+                        np.multiply(
+                            cm.disturbance_permutation,
+                            (cm.disturbance_domain * up_node_output_domain),
+                        )
                         # cm.disturbance_permutation
                         # @ (cm.disturbance_domain * up_node_output_domain)
                         == 1
@@ -763,7 +759,6 @@ class ControlModelBuilder:
             setattr(self, key, np.sum(dims[key]))
             setattr(self.mpc, key, np.sum(dims[key]))
 
-
         for key in labels.keys():
             labels[key] = [x for xs in labels[key] for x in xs]
 
@@ -804,7 +799,10 @@ class ControlModelBuilder:
             [
                 np.array([[1] + [0] * (len(G.nodes) - 1)]).T,
                 nx.incidence_matrix(
-                    G, oriented=True, nodelist=self.mpc.node_order, edgelist=self.mpc.edge_order
+                    G,
+                    oriented=True,
+                    nodelist=self.mpc.node_order,
+                    edgelist=self.mpc.edge_order,
                 ).toarray(),
                 np.array([[0] * (len(G.nodes) - 1) + [-1]]).T,
             ],
@@ -1010,8 +1008,6 @@ class ControlModelBuilder:
 
         self.yco_ub_ind = np.sort(yco_ub)
         self.mpc.yco_ub_ind = np.sort(yco_ub)
-        
-
 
         self.uct_order = uct_order
         self.usp_order = usp_order
