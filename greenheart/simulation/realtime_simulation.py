@@ -3,12 +3,11 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from pathlib import Path
-import datetime
 import sys
+import yaml
 import pprint
 import logging
 from logging import handlers
-import random
 import tqdm
 from multiprocessing import current_process
 import traceback
@@ -18,48 +17,20 @@ from typing import Union
 import time
 
 from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
-from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 from greenheart.simulation.realtime_node import Node
 from greenheart.simulation.technologies.dispatch.forecast import Forecast
 
 # Greenheart imports
-
-# from greenheart.simulation.technologies.ammonia.ammonia import (
-#     AmmoniaCapacityModelConfig,
-# )
-
-# from greenheart.simulation.technologies.heat.heat_exchange.heat_exchanger import (
-#     HeatExchanger,
-# )
-# from greenheart.simulation.technologies.heat.heat_storage.thermal_energy_storage import (
-#     ThermalEnergyStorage,
-# )
-
-
-# from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master_STEP import (
-#     run_PEM_clusters_step,
-# )
-
-# from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage import (
-#     HydrogenStorage,
-# )
-# from greenheart.simulation.technologies.steel.steel import SteelModel
-
-# from greenheart.simulation.technologies.electricity.battery import Battery
-
-
-from greenheart.tools.eco.utilities import ceildiv
-from hopp.utilities import load_yaml
 from greenheart.simulation.realtime_node import (
-    StandinNode,
     setup_generation_node,
-    setup_battery_node, 
+    setup_battery_node,
     setup_electrolyzer_node,
     setup_hydrogen_storage_node,
     setup_thermal_energy_storage_node,
     setup_heat_exchanger_node,
     setup_steel_node,
 )
+from greenheart.tools.simulation.realtime_helper import RealTimeSimulationHelper
 
 # Simulation model for greenheart components
 
@@ -68,18 +39,12 @@ class RealTimeSimulation:
     def __init__(self, config, hopp_interface, case_description=None):
 
         self.case_description = case_description
-        if self.case_description is not None:
-            if "case" in case_description:
-                self.worker_id = int(
-                    case_description.split("case_")[1].split(".")[0].split("_")[0]
-                )
-            else:
-                self.worker_id = 0
 
-        elif current_process().name == "MainProcess":
-            # Set up logging that writes to the topmost file
-            self.worker_id = 0
-        else:
+        self.worker_id = 0
+        if (self.case_description is not None) and ("case" in case_description):
+            case_num = case_description.split("case_")[1].split(".")[0].split("_")[0]
+            self.worker_id = int(case_num)
+        elif current_process().name != "MainProcess":
             self.worker_id = current_process()._identity[0] - 1
 
         self.config = config
@@ -91,18 +56,13 @@ class RealTimeSimulation:
         self.verbose = options.get("verbose", True)
         self.save_sysid = options.get("save_sysid", False)
 
-        self.component_config = load_yaml(self.rts_config["component_config"])
+        self.stop_index = self.rts_config.get("stop_index", 8760)
+        self.start_index = self.rts_config.get("start_index", 0)
+
+        self.component_config = yaml.safe_load(
+            open(self.rts_config["component_config"], "r")
+        )
         self.hi = hopp_interface
-
-        if "stop_index" in self.rts_config:
-            self.stop_index = self.rts_config["stop_index"]
-        else:
-            self.stop_index = 8760 + 15
-
-        if "start_index" in self.rts_config:
-            self.start_index = self.rts_config["start_index"]
-        else:
-            self.start_index = 0
 
         if "logging" in self.rts_config:
             # pprint.pprint(self.rts_config)
@@ -119,6 +79,8 @@ class RealTimeSimulation:
         self.setup_simulation_model(config, hopp_interface)
         self.setup_record_keeping()
         self.edge_error_count = 0
+
+        self.rts_helper = RealTimeSimulationHelper(self)
 
     def setup_logging(self, log_config):
 
@@ -157,11 +119,10 @@ class RealTimeSimulation:
             if key in GH_tech_options:
                 GH_techs.append(key)
 
-        # graph_config_fpath = config.greenheart_config["system"]["system_graph_config"]
         graph_config_fpath = config.greenheart_config["realtime_simulation"]["system"][
             "system_graph_config"
         ]
-        graph_config = load_yaml(graph_config_fpath)
+        graph_config = yaml.safe_load(open(graph_config_fpath, "r"))
         network_config = graph_config["network"]
 
         edges = network_config
@@ -185,12 +146,6 @@ class RealTimeSimulation:
         G.add_nodes_from(nodes)
         G.add_edges_from(edges)
 
-        # for degree in list(G.out_degree):
-        #     if degree[1] > 1:
-        #         G.nodes[degree[0]].update({"split": True})
-        #     else:
-        #         G.nodes[degree[0]].update({"split": False})
-
         self.G = G
 
         # Instantiate the individual steppable models of each technology
@@ -203,10 +158,6 @@ class RealTimeSimulation:
 
             if GH_tech == "generation":
                 RT_techs.update(setup_generation_node(*subsystem_args))
-            # elif GH_tech == "curtail":
-            #     RT_techs.update(setup_curtail_node())
-            # elif GH_tech == "output":
-            #     RT_techs.update(setup_output_node())
             elif GH_tech == "battery":
                 RT_techs.update(setup_battery_node(*subsystem_args))
             elif GH_tech == "electrolyzer":
@@ -230,7 +181,6 @@ class RealTimeSimulation:
                 model=RT_techs[node]["model"],
                 expected_inputs=RT_techs[node]["model_inputs"],
                 expected_outputs=RT_techs[node]["model_outputs"],
-                # splitting_node=self.G.nodes[node]["split"],
                 in_degree=self.G.in_degree[node],
                 out_degree=self.G.out_degree[node],
             )
@@ -248,10 +198,6 @@ class RealTimeSimulation:
             )
 
         for node in list(self.G.nodes):
-            # assert (
-            #     not self.G.nodes[node]["model"] == None
-            # ), f"no model for node: {node}"
-
             assert (
                 not self.G.nodes[node]["ionode"].model == None
             ), f"no model for node: {node}"
@@ -264,71 +210,6 @@ class RealTimeSimulation:
         # find which nodes are splitting nodes by which ones have out degree > 1
 
         []
-
-    def plot_system_graph(self):
-
-        fig, ax = plt.subplots(1, 1, layout="constrained")
-        ax.set_axis_off()
-        G = self.G
-
-        # Make multipartite layout for plotting
-        indeg = G.in_degree
-        root_node = [node for node in indeg if node[1] == 0]
-        node_layers = []
-
-        node_layers.append([])
-        if len(root_node) > 1:
-            shortest_path_list = []
-            for rn in root_node:
-                node_layers[0].append(rn[0])
-                shortest_path_list.append(
-                    nx.single_source_shortest_path(G, source=rn[0])
-                )
-        else:
-            node_layers[0].append(root_node[0][0])
-
-            shortest_paths = nx.single_source_shortest_path(G, source=root_node[0][0])
-            shortest_path_list = [shortest_paths]
-
-        for spl in shortest_path_list:
-            for key in spl.keys():
-                path_length = len(spl[key])
-                if len(node_layers) <= path_length:
-                    node_layers.append([])
-
-                node_layers[path_length].append(key)
-        G_comp = nx.DiGraph()
-        for i in range(len(node_layers)):
-            G_comp.add_nodes_from(node_layers[i], layer=i)
-
-        G_comp.add_edges_from(G.edges)
-        layout = nx.multipartite_layout(
-            G_comp, subset_key="layer", align="vertical", scale=1
-        )
-
-        for key in layout.keys():
-            coords = layout[key]
-            coords[0] += np.random.randn(1) * 0.05
-            layout[key] = coords
-
-        if hasattr(self, "print_locs"):
-            layout = self.print_locs
-
-        nodes = nx.draw_networkx_nodes(G, pos=layout, ax=ax)
-        nodes.set_edgecolor("white")
-        nodes.set_facecolor("white")
-        labels = nx.draw_networkx_labels(G, pos=layout, ax=ax)
-        edges = nx.draw_networkx_edges(G, pos=layout, ax=ax)
-
-        # latex_graph = nx.to_latex(G, pos=nx.rescale_layout_dict(layout, scale=3))
-        # latex_graph = nx.to_latex(G, pos=nx.rescale_layout(np.array(list({key:np.array(value) for key, value in layout.items()}.values()), dtype=float), scale=3))
-        # latex_graph = nx.to_latex(G, pos={key: nx.rescale_layout(np.array(value, dtype=float), scale=3) for key, value in layout.items()})
-        latex_graph = nx.to_latex(
-            G,
-            pos={
-                key: np.array(value, dtype=float) * 2 for key, value in layout.items()
-            },
-        )
 
     def step_system_state_function(self, G_dispatch, generation_available, step_index):
 
@@ -403,7 +284,7 @@ class RealTimeSimulation:
 
         self.dispatcher = dispatcher
 
-        self.setup_ctrl_sysid()
+        self.rts_helper.setup_ctrl_sysid()
 
         gen_profiles = {}
 
@@ -526,7 +407,7 @@ class RealTimeSimulation:
             # Check on the error
 
             if self.save_sysid:
-                self.save_ctrl_for_sysid(step_index=i)
+                self.rts_helper.save_ctrl_for_sysid(step_index=i)
 
             if self.dispatcher.use_MPC:
                 sim_edges_full = self.system_states[:, i, :]
@@ -703,118 +584,6 @@ class RealTimeSimulation:
         x0 = np.concatenate(x0)
         return x0
 
-    def setup_ctrl_sysid(self):
-
-        # Make a bunch of dicts with 8760 length
-
-        self.sysid = {}
-
-        for label in self.dispatcher.controller.n_label:
-            self.sysid.update({label: np.zeros(8760)})
-
-        for label in self.dispatcher.controller.mct_label:
-            self.sysid.update({label: np.zeros(8760)})
-
-        for label in self.dispatcher.controller.msp_label:
-            self.sysid.update({label: np.zeros(8760)})
-
-        for label in self.dispatcher.controller.oex_label:
-            self.sysid.update({label: np.zeros(8760)})
-
-        for label in self.dispatcher.controller.pco_label:
-            self.sysid.update({label: np.zeros(8760)})
-
-        for label in self.dispatcher.controller.pex_label:
-            self.sysid.update({label: np.zeros(8760)})
-
-        # pze
-        # pgt - do these need to be recorded here too?
-
-        pass
-
-    def save_ctrl_for_sysid(self, step_index=None):
-
-        # Think about doing this with the un-simplified system model rather than the simplified one with coupling
-
-        # save x uct usp dex inputs
-        # save yco yex yze ygt outputs
-
-        # states
-        for label in self.dispatcher.controller.n_label:
-            node_name = label.split(" ")[2]
-            if node_name == "battery":
-                state = self.G.nodes["battery"]["ionode"].model.storage_state
-            elif node_name == "thermal_energy_storage":
-                state = (
-                    self.G.nodes["thermal_energy_storage"]["ionode"].model._SOC()
-                    * self.G.nodes["thermal_energy_storage"][
-                        "ionode"
-                    ].model.H_capacity_kWh
-                )
-            elif node_name == "hydrogen_storage":
-                state = self.G.nodes["hydrogen_storage"]["ionode"].model.storage_state
-
-            self.sysid[label][step_index] = state
-
-        # control inputs
-
-        for label in self.dispatcher.controller.mct_label:
-            node_name = label.split(" ")[2]
-            uct_index = int(label.split(" ")[1])
-            self.sysid[label][step_index] = self.G.nodes[node_name]["dispatch_ctrl"][
-                uct_index
-            ]
-
-        # splitting inputs
-
-        for label in self.dispatcher.controller.msp_label:
-            source_node = label.split(" ")[2]
-            sink_node = label[label.find("(") + 1 : label.find(")")].split(" ")[1]
-
-            usp_index = int(label.split(" ")[1])
-
-            self.sysid[label][step_index] = self.G.nodes[source_node]["dispatch_split"][
-                usp_index
-            ]
-
-        # disturbance
-
-        # Output stuff
-
-        # yco
-
-        for label in self.dispatcher.controller.pco_label:
-            source_node = label.split(" ")[2]
-            sink_node = label[label.find("(") + 1 : label.find(")")].split(" ")[1]
-
-            output_domain = self.G.nodes[source_node]["ionode"].output_list[0:-1]
-            output_index = np.where(output_domain)[0]
-
-            for i, edge in enumerate(self.edge_order):
-                if (edge[0] == source_node) and (edge[1] == sink_node):
-                    # This is probably the right case then
-                    self.sysid[label][step_index] = self.system_states[
-                        i, step_index, output_index
-                    ]
-
-        # yex
-        yex_label = self.dispatcher.controller.pex_label[0]
-        yex_node = yex_label.split(" ")[-1]
-        self.sysid[yex_label][step_index] = self.G.nodes[yex_node][
-            "ionode"
-        ].model.steel_store_tonne[step_index]
-
-        # dex
-        dex_label = self.dispatcher.controller.oex_label[0]
-        self.sysid[dex_label][step_index] = (
-            self.hybrid_profile[step_index]
-            + self.G.nodes["generation"]["grid_purchase"]
-        )
-        # yze = 0
-        # ygt = 0
-
-        pass
-
     def setup_record_keeping(self):
         duration = 8760
 
@@ -888,176 +657,6 @@ class RealTimeSimulation:
         #     )
 
         []
-
-    # def _setup_generation_node(self):
-    #     inputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
-    #     outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-
-    #     out_degree = self.G.out_degree["generation"]
-
-    #     component_dict = {
-    #         "generation": {
-    #             "model": StandinNode(out_degree),
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-    #     return component_dict
-
-    # def _setup_curtail_node(self):
-    #     inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-    #     outputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
-    #     component_dict = {
-    #         "curtail": {
-    #             "model": StandinNode(),
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-
-    #     return component_dict
-
-    # def _setup_output_node(self):
-    #     inputs = {"power": True, "Qdot": True, "mdot": True, "T": True}
-    #     outputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
-    #     component_dict = {
-    #         "output": {
-    #             "model": StandinNode(),
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-
-    #     return component_dict
-
-    # def _setup_battery_node(self):
-    #     inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-    #     outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-    #     component_dict = {
-    #         "battery": {
-    #             "model": Battery(
-    #                 config=self.config,
-    #                 battery_config=self.config.hopp_config["technologies"]["battery"],
-    #                 hopp_interface=self.hi,
-    #             ),
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-
-    #     return component_dict
-
-    # def _setup_electrolyzer_node(self):
-
-    #     electrical_generation_timeseries = np.zeros(8760)
-    #     electrolyzer_size_mw = self.config.greenheart_config["electrolyzer"]["rating"]
-    #     n_pem_clusters = int(
-    #         ceildiv(
-    #             electrolyzer_size_mw,
-    #             self.config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
-    #         )
-    #     )
-    #     electrolyzer_capex_kw = self.config.greenheart_config["electrolyzer"][
-    #         "electrolyzer_capex"
-    #     ]
-    #     electrolyzer_direct_cost_kw = electrolyzer_capex_kw
-    #     useful_life = self.config.greenheart_config["project_parameters"][
-    #         "project_lifetime"
-    #     ]
-
-    #     pem_param_dict = {
-    #         "eol_eff_percent_loss": self.config.greenheart_config["electrolyzer"][
-    #             "eol_eff_percent_loss"
-    #         ],
-    #         "uptime_hours_until_eol": self.config.greenheart_config["electrolyzer"][
-    #             "uptime_hours_until_eol"
-    #         ],
-    #         "include_degradation_penalty": self.config.greenheart_config[
-    #             "electrolyzer"
-    #         ]["include_degradation_penalty"],
-    #         "turndown_ratio": self.config.greenheart_config["electrolyzer"][
-    #             "turndown_ratio"
-    #         ],
-    #     }
-    #     user_defined_pem_param_dictionary = pem_param_dict
-    #     verbose = False
-
-    #     electrolyzer_model = run_PEM_clusters_step(
-    #         electrical_generation_timeseries,
-    #         electrolyzer_size_mw,
-    #         n_pem_clusters,
-    #         electrolyzer_direct_cost_kw,
-    #         useful_life,
-    #         user_defined_pem_param_dictionary,
-    #         verbose=verbose,
-    #         step_model=self.config.realtime_simulation,
-    #     )
-
-    #     inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-    #     outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
-    #     component_dict = {
-    #         "electrolyzer": {
-    #             "model": electrolyzer_model,
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-    #     return component_dict
-
-    # def _setup_hydrogen_storage_node(self):
-    #     inputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
-    #     outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
-    #     component_dict = {
-    #         "hydrogen_storage": {
-    #             "model": HydrogenStorage(self.component_config["hydrogen_storage"]),
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-
-    #     return component_dict
-
-    # def _setup_thermal_energy_storage_node(self):
-    #     inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-    #     outputs = {"power": False, "Qdot": True, "mdot": False, "T": False}
-    #     component_dict = {
-    #         "thermal_energy_storage": {
-    #             "model": ThermalEnergyStorage(),
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-
-    #     return component_dict
-
-    # def _setup_heat_exchanger_node(self):
-    #     inputs = {"power": True, "Qdot": True, "mdot": True, "T": True}
-    #     outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
-    #     component_dict = {
-    #         "heat_exchanger": {
-    #             "model": HeatExchanger(),
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-
-    #     return component_dict
-
-    # def _setup_steel_node(self):
-
-    #     config = self.config.greenheart_config["steel"]["costs"]["feedstocks"]
-
-    #     inputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
-    #     outputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
-    #     component_dict = {
-    #         "steel": {
-    #             "model": SteelModel(self.config.greenheart_config),
-    #             "model_inputs": inputs,
-    #             "model_outputs": outputs,
-    #         }
-    #     }
-
-    #     return component_dict
 
     def get_component(self, component_name):
         return self.G.nodes[component_name]["ionode"].model
@@ -1237,366 +836,15 @@ class RealTimeSimulation:
         generation_local_data = {"uct": uct, "x": x, "y": y}
         return generation_local_data
 
+    def plot_system_graph(self):
+        self.rts_helper.plot_system_graph()
+
     def plot_edges(self):
-        fig, ax = plt.subplots(
-            len(self.edge_order), 1, sharex="col", layout="constrained"
-        )
-        colors = ["black", "red", "blue"]
-        labels = ["power", "heat", "hydrogen"]
-        for i in range(len(self.edge_order)):
-            for j in range(3):
-                ax[i].fill_between(
-                    np.arange(0, self.system_states.shape[1], 1),
-                    np.zeros(self.system_states.shape[1]),
-                    self.system_states[i, :, j],
-                    step="post",
-                    color=colors[j],
-                    label=labels[j],
-                )
-                ylabel = f"{self.edge_order[i][0][0:4]} to {self.edge_order[i][1][0:4]}"
-                ax[i].set_ylabel(ylabel)
-
-            ax[i].set_ylim([0, ax[i].get_ylim()[1]])
-            ax[i].legend()
-
-        if self.stop_index < 8760:
-            ax[0].set_xlim([0, self.stop_index])
-
-        fig.align_ylabels()
+        self.rts_helper.plot_edges()
 
     def plot_nodes(
         self, data="edges", figsize=(15, 8), hide_yaxis=True, fname=None, save=False
     ):
-        fig, ax = plt.subplots(
-            len(self.node_order),
-            1,
-            sharex="all",
-            sharey="all",
-            layout="constrained",
-            figsize=figsize,
+        self.rts_helper.plot_nodes(
+            data=data, figsize=figsize, hide_yaxis=hide_yaxis, fname=fname, save=save
         )
-
-        ax = ax[:, None]
-
-        if data == "edges":
-
-            # normalized_states = np.zeros(self.system_states.shape)
-            # # for i in range(self.system_states.shape[2]):
-            # #     normalized_states[:, :, i] = np.nan_to_num(
-            # #         self.system_states[:, :, i] / np.max(self.system_states[:, :, i])
-            # #     )
-
-            # normalized_states[:, :, 0] = np.nan_to_num(self.system_states[:, :, 0] / np.max(self.system_states[:, :, [0, 1]]))
-            # normalized_states[:, :, 1] = np.nan_to_num(self.system_states[:, :, 1] / np.max(self.system_states[:, :, [0, 1]]))
-            # normalized_states[:, :, 2] = np.nan_to_num(self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2]))
-
-            normalized_states = np.copy(self.system_states)
-            normalized_states[:, :, 2] *= 54
-
-            plot_states = normalized_states
-        elif data == "error":
-            normalized_states = np.zeros(self.system_states.shape)
-
-            normalized_states[:, :, 0] = np.nan_to_num(
-                self.system_states[:, :, 0] / np.max(self.system_states[:, :, [0, 1]])
-            )
-            normalized_states[:, :, 1] = np.nan_to_num(
-                self.system_states[:, :, 1] / np.max(self.system_states[:, :, [0, 1]])
-            )
-            normalized_states[:, :, 2] = np.nan_to_num(
-                self.system_states[:, :, 2] / np.max(self.system_states[:, :, 2])
-            )
-
-            plot_states = normalized_states
-
-        colors = ["black", "red", "blue"]
-        cmaps = ["Greys", "Reds", "Blues"]
-        edgecolors = ["orange", "yellow", "cyan", "magenta", "green"]
-        labels = ["P", "Q", "H2"]
-        for i in range(len(self.node_order)):
-            node = self.node_order[i]
-
-            ylabel = "\n".join(node.split("_"))
-
-            ax[i, 0].set_ylabel(ylabel)
-
-            incoming = [
-                self.edge_order[k][0]
-                for k in range(len(self.edge_order))
-                if node == self.edge_order[k][1]
-            ]
-            outgoing = [
-                self.edge_order[k][1]
-                for k in range(len(self.edge_order))
-                if node == self.edge_order[k][0]
-            ]
-            in_index = np.array(
-                [
-                    k
-                    for k in range(len(self.edge_order))
-                    if node == self.edge_order[k][1]
-                ]
-            )
-            out_index = np.array(
-                [
-                    k
-                    for k in range(len(self.edge_order))
-                    if node == self.edge_order[k][0]
-                ]
-            )
-            for j in range(3):
-                # for j in [0]
-
-                j_ax = 0
-
-                n_fills = len(in_index) + len(out_index)
-                cmap_level = 0.25
-
-                start = np.zeros(plot_states.shape[1])
-
-                if (node == "generation") and (j == 0):
-                    # ax[i, j_ax].step(
-                    #     np.arange(0, self.system_states.shape[1], 1),
-                    #     -self.hybrid_profile / np.max(self.system_states[:, :, 0]),
-                    #     color="black",
-                    #     linewidth=1,
-                    #     where="post",
-                    #     label="Hybrid gen.",
-                    # )
-                    ax[i, j_ax].fill_between(
-                        np.arange(0, self.system_states.shape[1], 1),
-                        np.zeros(len(self.hybrid_profile)),
-                        self.hybrid_profile,  # / np.max(self.system_states[:, :, 0]),
-                        color=mpl.colormaps[cmaps[j]](0.8),
-                        linewidth=0,
-                        step="post",
-                        label="Hybrid gen.",
-                    )
-                    curtail = self.G.nodes[node]["ionode"].u_curtail_store
-                    grid = self.grid_power_store[0, :]
-                    # curtail = self.G.nodes[node]["ionode"].u_curtail_store / np.max(
-                    #     self.system_states[:, :, 0]
-                    # )
-                    # grid = (
-                    #     self.grid_power_store / np.max(self.system_states[:, :, 0])
-                    # )[0, :]
-                    ax[i, j_ax].fill_between(
-                        np.arange(0, plot_states.shape[1], 1),
-                        self.hybrid_profile,  # / np.max(self.system_states[:, :, 0]),
-                        self.hybrid_profile
-                        + grid,  # / np.max(self.system_states[:, :, 0])
-                        # + grid,
-                        step="post",
-                        alpha=1,
-                        linewidth=0,
-                        label="grid",
-                        color="darkviolet",
-                        # color=mpl.colormaps[cmaps[j]](cmap_level + 0.35),
-                    )
-
-                    stop = -curtail[:, 0]
-                    ax[i, j_ax].fill_between(
-                        np.arange(0, plot_states.shape[1], 1),
-                        start,
-                        start + stop,
-                        step="post",
-                        alpha=1,
-                        linewidth=0,
-                        label=f"curtail",
-                        # color=mpl.colormaps[cmaps[j]](cmap_level - 0.15),
-                        color="orange",
-                    )
-                    start += stop
-
-                if node == "battery":
-
-                    axt = ax[i, 0].twinx()
-
-                    axt.plot(
-                        self.G.nodes["battery"]["ionode"].model.store_storage_state
-                        / self.G.nodes["battery"]["ionode"].model.max_capacity_kWh,
-                        color="black",
-                        linewidth=1,
-                        label="BES SOC",
-                    )
-                    axt.set_ylim([0, 1])
-                    axt.set_yticks([])
-                    bes_soc_legend = axt.get_legend_handles_labels()
-
-                if node == "hydrogen_storage":
-
-                    axt = ax[i, 0].twinx()
-
-                    axt.plot(
-                        self.G.nodes["hydrogen_storage"][
-                            "ionode"
-                        ].model.store_storage_state
-                        / self.G.nodes["hydrogen_storage"][
-                            "ionode"
-                        ].model.max_capacity_kg,
-                        color="blue",
-                        linewidth=1,
-                        label="H2S SOC",
-                    )
-                    axt.set_ylim([0, 1])
-                    axt.set_yticks([])
-                    h2s_soc_legend = axt.get_legend_handles_labels()
-
-                if node == "thermal_energy_storage":
-
-                    axt = ax[i, 0].twinx()
-
-                    axt.plot(
-                        self.G.nodes["thermal_energy_storage"][
-                            "ionode"
-                        ].model.SOC_store,
-                        color="red",
-                        linewidth=1,
-                        label="TES SOC",
-                    )
-                    axt.set_ylim([0, 1])
-                    axt.set_yticks([])
-                    tes_soc_legend = axt.get_legend_handles_labels()
-
-                for k in range(len(in_index)):
-                    stop = plot_states[in_index[k], :, j]
-                    if np.sum(stop) != 0:
-                        ax[i, j_ax].fill_between(
-                            np.arange(0, plot_states.shape[1], 1),
-                            start,
-                            start + stop,
-                            step="post",
-                            alpha=1,
-                            linewidth=0,
-                            label=f"from {incoming[k][0:4]}",
-                            color=mpl.colormaps[cmaps[j]](cmap_level),
-                        )
-
-                    cmap_level += 0.15
-                    start += stop
-
-                start = np.zeros(plot_states.shape[1])
-                if node == "generation":
-                    start = -curtail[:, 0]
-                for k in range(len(out_index)):
-                    stop = -plot_states[out_index[k], :, j]
-                    if np.sum(stop) != 0:
-                        ax[i, j_ax].fill_between(
-                            np.arange(0, plot_states.shape[1], 1),
-                            start,
-                            start + stop,
-                            step="post",
-                            alpha=1,
-                            linewidth=0,
-                            label=f"to {outgoing[k][0:4]}",
-                            color=mpl.colormaps[cmaps[j]](cmap_level),
-                        )
-
-                    start += stop
-                    cmap_level += 0.15
-
-                if (node == "steel") and (j == 2):
-                    steel_output = self.G.nodes["steel"][
-                        "ionode"
-                    ].model.steel_store_tonne
-                    # steel_output = steel_output / np.max(steel_output)
-                    steel_output = steel_output * 4300
-                    ax[i, j_ax].fill_between(
-                        np.arange(0, plot_states.shape[1], 1),
-                        np.zeros(len(steel_output)),
-                        -steel_output,
-                        step="post",
-                        alpha=1,
-                        linewidth=0,
-                        label=f"Steel output",
-                        color="darkgreen",
-                    )
-
-                []
-
-        # ax[0, 0].set_title("Power")
-        # ax[0, 1].set_title("Heat")
-        # ax[0, 2].set_title("Hydrogen")
-
-        # if self.stop_index / self.dispatcher.update_period <= 50:
-        #     xtick_locs = np.arange(0, self.stop_index, self.dispatcher.update_period)
-        #     ax[-1, 0].set_xticks(xtick_locs, xtick_locs, rotation=90)
-        #     # ax[-1, j].tick_params(axis="x", direction="in")
-        # else:
-        #     update_locs = np.arange(0, self.stop_index, self.dispatcher.update_period)
-        #     xtick_locs = np.arange(
-        #         0,
-        #         self.stop_index,
-        #         int(
-        #             np.round(self.stop_index / 50 / self.dispatcher.update_period)
-        #             * self.dispatcher.update_period
-        #         ),
-        #     )
-        #     ax[-1, 0].set_xticks(xtick_locs, xtick_locs, rotation=90)
-        #     []
-
-        legend_kwargs = {
-            "fontsize": 10,
-            "borderpad": 0.2,
-            "handlelength": 1.2,
-            "handleheight": 0.6,
-            "handletextpad": 0.25,
-            # "loc": "upper right",
-            "loc": "upper center",
-            "ncols": 8,
-        }
-
-        for i in range(ax.shape[0]):
-            for j in range(ax.shape[1]):
-                # ax[i,j].set_ylim([0, ax[i,j].get_ylim()[1]])
-                ax[i, j].set_ylim(
-                    [
-                        -np.max(np.abs(ax[i, j].get_ylim())),
-                        np.max(np.abs(ax[i, j].get_ylim())),
-                    ]
-                )
-                ax[i, j].yaxis.tick_right()
-                t = ax[i, j].yaxis.get_offset_text()
-                t.set_x(1.01)
-                # if ax.shape[1] == 1:
-                #     ax[i, j].set_yticks([])
-                ax[i, j].axhline(0, linewidth=0.5, color="black", alpha=0.5, zorder=0.5)
-                ax[i, j].tick_params(axis="x", direction="in")
-
-                if self.node_order[i] == "battery":
-                    handles, labels = ax[i, j].get_legend_handles_labels()
-                    handles.append(bes_soc_legend[0][0])
-                    labels.append(bes_soc_legend[1][0])
-                    ax[i, j].legend(handles, labels, **legend_kwargs)
-
-                elif self.node_order[i] == "hydrogen_storage":
-                    handles, labels = ax[i, j].get_legend_handles_labels()
-                    handles.append(h2s_soc_legend[0][0])
-                    labels.append(h2s_soc_legend[1][0])
-                    ax[i, j].legend(handles, labels, **legend_kwargs)
-                elif self.node_order[i] == "thermal_energy_storage":
-                    handles, labels = ax[i, j].get_legend_handles_labels()
-                    handles.append(tes_soc_legend[0][0])
-                    labels.append(tes_soc_legend[1][0])
-                    ax[i, j].legend(handles, labels, **legend_kwargs)
-                else:
-                    handles, labels = ax[i, j].get_legend_handles_labels()
-
-                ax[i, j].legend(handles, labels, **legend_kwargs)
-
-        # if self.stop_index <= 8760:
-        #     ax[0, 0].set_xlim([0, self.stop_index])
-        # else:
-        #     ax[0, 0].set_xlim([0, 8760])
-
-        ax[0, 0].set_xlim(
-            [np.max([0, self.start_index]), np.min([8760, self.stop_index])]
-        )
-
-        if save:
-
-            fig.savefig(f"{fname}{'_8760.pdf'}", format="pdf")
-            # ax[0,0].set_xlim([2800, 3150])
-            # fig.savefig(f"{fname}{'_zoom.pdf'}", format="pdf")
-
-        []
