@@ -148,6 +148,10 @@ class ThermalEnergyStorage:
             / (self.particle.molar_mass / 1000)
         )
 
+    def get_state_measurement(self, step_index):
+        return self.tank_H("hot"), self.M_hot
+
+
     def step(self, available_power, dispatch, step_index=None):
 
         if dispatch.ndim > 0:

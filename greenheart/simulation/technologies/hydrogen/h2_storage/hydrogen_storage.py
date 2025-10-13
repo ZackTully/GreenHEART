@@ -146,6 +146,9 @@ class HydrogenStorage:
         # return control_massflow
 
 
+    def get_state_measurement(self, step_index):
+        return self.storage_state
+
     def step(self, h2_input, dispatch, step_index):
 
 
@@ -222,7 +225,6 @@ if __name__ == "__main__":
     
     curtail_bottom = np.where(P_avail_curtail > 0, np.abs(P_des), 0)
     ax.fill_between(t, curtail_bottom, curtail_bottom + P_avail_curtail, label="curtail")    
-
 
 
     ax.legend()

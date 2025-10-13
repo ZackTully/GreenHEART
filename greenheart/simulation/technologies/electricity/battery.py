@@ -21,7 +21,6 @@ class Battery:
 
         self.use_hopp_outputs = True
 
-
         self.power_fraction = 0.9
 
         self.update_period = config.greenheart_config["realtime_simulation"][
@@ -39,12 +38,17 @@ class Battery:
                 index_set=hopp_interface.system.dispatch_builder.pyomo_model.forecast_horizon,
                 system_model=self.hopp_battery._system_model,
                 financial_model=self.hopp_battery._financial_model,
-                dispatch_options=hopp_interface.system.dispatch_builder.options
+                dispatch_options=hopp_interface.system.dispatch_builder.options,
             )
 
             self.hopp_battery.dispatch.initialize_parameters()
-            self.hopp_battery.dispatch.external_fixed_dispatch = np.zeros(8760 + config.greenheart_config['realtime_simulation']['dispatch']['mpc']['horizon'] + 24)
-
+            self.hopp_battery.dispatch.external_fixed_dispatch = np.zeros(
+                8760
+                + config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"][
+                    "horizon"
+                ]
+                + 24
+            )
 
         # # self.hopp_battery.dispatch.external_fixed_dispatch = .7 * np.ones(8760)
         # # self.hopp_battery.dispatch.external_fixed_dispatch = 110 * np.ones(8760)
@@ -84,7 +88,7 @@ class Battery:
     #     eta_bes = 0.98
 
     #     # u charge  = disturbance
-    #     # u = u discharge only 
+    #     # u = u discharge only
 
     #     A = np.array([[1]])
     #     B = np.array([[-1/eta_bes]])
@@ -132,7 +136,6 @@ class Battery:
         # data_ss = np.array([[ 9.23946441e-01, -1.14887702e-02,  2.38266353e-01],
         #     [ 1.07312790e-04, -1.29614042e-04,  9.98602962e-01]])
 
-
         # A = np.array([data_ss[0,0, None]])
         # B = np.array([data_ss[0, 1:]])
         # E = np.array([data_ss[0, 1, None]])
@@ -177,7 +180,9 @@ class Battery:
 
     def update_storage_state(self, input_power, step_index=None):
         if self.use_hopp_outputs:
-            self.storage_state = self.hopp_battery.outputs.SOC[step_index] / 100 * self.max_capacity_kWh
+            self.storage_state = (
+                self.hopp_battery.outputs.SOC[step_index] / 100 * self.max_capacity_kWh
+            )
         else:
             # Euler integration
             self.storage_state += input_power * self.dt
@@ -243,23 +248,41 @@ class Battery:
         return model_output, u_model, u_passthrough, u_curtail
         # return control_power
 
+    def get_state_measurement(self, step_index, first_step=False):
+        if self.use_hopp_outputs:
+            hb = self.hopp_battery
+            conf = hb.config
+            if first_step:
+                state = conf.initial_SOC / 100 * conf.system_capacity_kwh
+            else:
+                # min_soc_violation = (hb.outputs.SOC[step_index - 1] - hb._system_model.ParamsCell.minimum_SOC)
+                state = hb.outputs.SOC[step_index - 1] / 100 * conf.system_capacity_kwh
+        else:
+            state = self.storage_state
+
+        return state
 
     def step_hopp_battery(self, available_power, desired_power, step_index):
-        
+
         # self.hopp_battery.dispatch.external_fixed_dispatch = np.concatenate([np.array([ 338166.36,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36, -298530.5 , -195634.7 ,  338166.36,  338166.36,  338166.36,  338166.36,  338166.36,        338166.36,  338166.36,  338166.36,  195363.4 ,  169832.9 ,  192293.9 ,  235234.6 ,  203020.6 ]) / 1e3, 100 * np.ones(8760 - 24)])
-        self.hopp_battery.dispatch.external_fixed_dispatch[step_index] = -desired_power / 1e3
-        self.hopp_battery.dispatch.set_fixed_dispatch(gen=1e-3 * available_power * np.ones(24), grid_limit = 1e9 * np.ones(24), start_time=step_index)
+        self.hopp_battery.dispatch.external_fixed_dispatch[step_index] = (
+            -desired_power / 1e3
+        )
+        self.hopp_battery.dispatch.set_fixed_dispatch(
+            gen=1e-3 * available_power * np.ones(24),
+            grid_limit=1e9 * np.ones(24),
+            start_time=step_index,
+        )
 
         self.hopp_battery.simulate_with_dispatch(n_periods=1, sim_start_time=step_index)
-        
+
         P_battery = self.hopp_battery.outputs.P[step_index]
         model_output = np.max([P_battery, 0])
         assert available_power >= 0, "Sloppy but available should be positive"
 
-
         if available_power <= -P_battery:
-            if (available_power  - -P_battery) < 1:
-                u_passthrough = 0 
+            if (available_power - -P_battery) < 1:
+                u_passthrough = 0
             else:
                 u_passthrough = -1e5
                 assert False, "This case shouldn't happen"
@@ -283,8 +306,6 @@ class Battery:
         else:
             available_power = input
 
-
-
         if isinstance(dispatch, (np.ndarray, list)):
             if len(dispatch) == 1:
                 desired_power = dispatch[0]
@@ -297,9 +318,10 @@ class Battery:
             available_power, desired_power
         )
 
-        hopp_output, hopp_passthrough, hopp_curtail = self.step_hopp_battery(available_power, u_model, step_index)
+        hopp_output, hopp_passthrough, hopp_curtail = self.step_hopp_battery(
+            available_power, u_model, step_index
+        )
         # hopp_output, hopp_passthrough, hopp_curtail = self.step_hopp_battery(available_power, desired_power, step_index)
-
 
         u_model = float(u_model)
         self.update_storage_state(u_model, step_index)

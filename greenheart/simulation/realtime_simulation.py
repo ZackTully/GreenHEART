@@ -12,7 +12,6 @@ import tqdm
 from multiprocessing import current_process
 import traceback
 
-from typing import Union
 
 import time
 
@@ -31,14 +30,24 @@ from greenheart.simulation.realtime_node import (
 )
 from greenheart.tools.simulation.realtime_helper import RealTimeSimulationHelper
 
+
 class RealTimeSimulation:
     def __init__(self, config, hopp_interface, case_description=None):
 
         self.case_description = case_description
 
-
         self.config = config
         self.rts_config = self.config.greenheart_config["realtime_simulation"]
+
+        self.forecast_config = self.rts_config.get(
+            "forecast",
+            None,
+            # dict(
+            #     horizon=self.dispatcher.controller.horizon,
+            #     method="perfect_method",
+            #     method_config={},
+            # ),
+        )
 
         options = self.rts_config.get("options", {})
 
@@ -53,7 +62,7 @@ class RealTimeSimulation:
             open(self.rts_config["component_config"], "r")
         )
         self.hi = hopp_interface
-        
+
         self.rts_helper = RealTimeSimulationHelper(self)
 
         # For setting the line height of the progress bar when running in parallel
@@ -73,10 +82,12 @@ class RealTimeSimulation:
             terminal_handler.setLevel(logging.DEBUG)
             self.logger.addHandler(terminal_handler)
 
-        self.setup_simulation_model(config, hopp_interface)
+        self.setup_simulation_model(config)
         self.setup_record_keeping()
-        self.edge_error_count = 0
+        if self.save_sysid:
+            self.rts_helper.setup_ctrl_sysid()
 
+        self.edge_error_count = 0
 
     def setup_logging(self, log_config):
 
@@ -84,9 +95,8 @@ class RealTimeSimulation:
             self.logger = log_config["logger"]
 
         else:
-            self.logger = logging.getLogger(
-                f"SIMULATION {log_config['case_description']}"
-            )
+            logger_name = f"SIMULATION {log_config['case_description']}"
+            self.logger = logging.getLogger(logger_name)
             self.logger.setLevel(logging.DEBUG)
 
             queue_handler = handlers.QueueHandler(log_config["queue"])
@@ -95,7 +105,7 @@ class RealTimeSimulation:
 
         self.logger.info("Simulation logger initialized")
 
-    def setup_simulation_model(self, config, hopp_interface):
+    def setup_simulation_model(self, config):
 
         GH_tech_options = [
             "generation",
@@ -272,57 +282,10 @@ class RealTimeSimulation:
 
         return self.G
 
-    def simulate(self, dispatcher: GreenheartDispatch, hopp_results):
-        # Get generation signals
-
-        if self.verbose:
-            self.logger.info(f"{self.case_description}, Simulation started ")
-
-        self.dispatcher = dispatcher
-
-        self.rts_helper.setup_ctrl_sysid()
-
-        gen_profiles = {}
-
-        for hopp_tech in hopp_results["annual_energies"]["technologies"].keys():
-            if hopp_tech in ["pv", "wind"]:
-                gen_profiles.update(
-                    {
-                        hopp_tech: hopp_results["annual_energies"]["technologies"][
-                            hopp_tech
-                        ].generation_profile
-                    }
-                )
-
-        # Is there an existing method to get the hybrid generation profile from the HOPP_result
-
-        hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
-        # hybrid_profile = np.zeros(len(hybrid_profile))
-
-        self.hybrid_profile = hybrid_profile
-
-        assert not np.any(np.isnan(self.hybrid_profile))
-
-        self.forecast_config = self.rts_config.get(
-            "forecast",
-            dict(
-                horizon=self.dispatcher.controller.horizon,
-                method="perfect_method",
-                method_config={},
-            ),
-        )
-
-        self.forecaster = Forecast(self.forecast_config, hybrid_profile, self.config)
-
-        # Loop for everything downstream of generation
-        error_feedback = False
-        t0 = time.time()
-        t_log_last = time.time()
-
+    def get_time_iterable(self, hybrid_profile):
         total = np.min([self.stop_index, 8760]) - np.max([0, self.start_index])
-
         if self.tqdm_progress:
-
+            # Print progress using a tqdm progress bar
             colors = [
                 "#32a852",
                 "#a010b0",
@@ -334,39 +297,72 @@ class RealTimeSimulation:
                 "#c2b1cf",
             ]
             tqdm_color = colors[self.worker_id % len(colors)]
-
             time_iterable = tqdm.tqdm(
                 range(len(hybrid_profile)),
                 desc=self.case_description,
                 position=self.worker_id + 1,
                 leave=False,
                 colour=tqdm_color,
+                total=total,
             )
 
         else:
             time_iterable = range(len(hybrid_profile))
 
+        return time_iterable
+
+    def get_hybrid_profile(self, hopp_results):
+        gen_profiles = {}
+        technologies = hopp_results["annual_energies"]["technologies"]
+
+        for hopp_tech in technologies.keys():
+
+            if hopp_tech in ["pv", "wind"]:
+                tech_profile = technologies[hopp_tech].generation_profile
+                gen_profiles.update({hopp_tech: tech_profile})
+
+        hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
+
+        assert not np.any(
+            np.isnan(hybrid_profile)
+        ), "Nans found in hopp_results hybrid profile"
+
+        return hybrid_profile
+
+    def simulate(self, dispatcher: GreenheartDispatch, hopp_results):
+
+        if self.verbose:
+            self.logger.info(f"{self.case_description}, Simulation started ")
+
+        # Get generation signals
+        hybrid_profile = self.get_hybrid_profile(hopp_results)
+        self.hybrid_profile = hybrid_profile
+
+        self.dispatcher = dispatcher
+        self.forecaster = Forecast(self.forecast_config, hybrid_profile, self.config)
+
+        # For timing
+        t0 = time.time()
+        t_log_last = time.time()
+
+        time_iterable = self.get_time_iterable(hybrid_profile)
         for i in time_iterable:
 
             if i > self.stop_index:
                 print("stopping at realtime simulator stop index")
+                self.logger.info("stopping at realtime simulator stop index")
                 break
 
             if i < self.start_index:
                 continue
 
             try:
-
-                forecast = self.forecaster.get_forecast(
-                    measurement=hybrid_profile[i], step_index=i
-                )
-
+                forecast = self.forecaster.get_forecast(hybrid_profile[i], i)
             except Exception as e:
                 self.logger.error(f"Forecasting calculation error at step: {i}")
                 self.logger.error(traceback.format_exc())
 
             x0 = self.get_state_measurement(step_index=i)
-
             self.G = dispatcher.step(
                 self.G,
                 hybrid_profile[i],
@@ -386,132 +382,33 @@ class RealTimeSimulation:
             )
 
             if (time.time() - t_log_last > 60) or (i == self.stop_index):
-
+                # Print and log progress every 60 seconds
                 prog_step = f"{i}/{len(hybrid_profile)}"
                 prog_percent = f"{(i / len(hybrid_profile)* 100) :.1f}%"
                 prog_elapsed = f"{(time.time() - t0) / 3600:.3f} hours"
                 prog_remaining = f"{((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.3f} hours"
                 prog_str = f"Step = {prog_step}, {prog_percent}, {prog_elapsed} elapsed, {prog_remaining} remaining"
-
-                # prog_str = f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer"
-
                 self.logger.info(prog_str)
-                # self.logger.info(f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer")
                 t_log_last = time.time()
 
             self.record_states(i, self.G, grid_power)
-            # Check on the error
 
             if self.save_sysid:
                 self.rts_helper.save_ctrl_for_sysid(step_index=i)
 
             if self.dispatcher.use_MPC:
-                sim_edges_full = self.system_states[:, i, :]
-                sim_edges = np.zeros(sim_edges_full.shape[0])
-                for j in range(sim_edges_full.shape[0]):
-                    sim_edges[j] = np.sum(sim_edges_full[j, 0:-1])
+                sim_edges = self.get_sim_edges(i)
+                mpc_edges = self.get_mpc_edges(i)
 
-                if not (i % self.dispatcher.update_period) or (i == 0):
-                    mpc_edges = self.dispatcher.controller.ysp_store[
-                        np.where(
-                            np.array(self.dispatcher.controller.step_index_store) == i
-                        )[0][0]
-                    ]
-                else:
-                    mpc_edges = self.dispatcher.controller.ysp_store[
-                        np.where(
-                            np.array(self.dispatcher.controller.step_index_store)
-                            == self.dispatcher.previous_update
-                        )[0][0]
-                    ]
-                mpc_edges = mpc_edges[0:-1, i - self.dispatcher.previous_update]
-
-                mpc_edges_permuted = np.zeros(mpc_edges.shape)
-
-                for k in range(len(self.edge_order)):
-                    index = [
-                        ind
-                        for ind in range(len(self.dispatcher.controller.pco_label))
-                        if (
-                            (
-                                self.dispatcher.controller.pco_label[ind].split(" ")[2]
-                                == self.edge_order[k][0]
-                            )
-                            and (
-                                self.dispatcher.controller.pco_label[ind]
-                                .split(" ")[-1]
-                                .split(")")[0]
-                                == self.edge_order[k][1]
-                            )
-                        )
-                    ]
-                    mpc_edges_permuted[k] = mpc_edges[index]
-
-                mpc_edges = mpc_edges_permuted
-
-                edge_error = sim_edges - mpc_edges
-
-                edge_percent_error = (sim_edges - mpc_edges) / (
-                    0.5 * (sim_edges + mpc_edges)
-                )
-                # tol = 0.15
-                tol = 0.5
-                ignore_tol = 300
-                if np.any(np.abs(edge_percent_error) > tol):
-                    erronious_indices = np.where(np.abs(edge_percent_error) > tol)[0]
-                    erronious_edges = [self.edge_order[i] for i in erronious_indices]
-
-                    if np.all(
-                        np.abs(sim_edges[erronious_indices] < ignore_tol)
-                    ) and np.all(np.abs(mpc_edges[erronious_indices] < ignore_tol)):
-                        pass
-                    else:
-
-                        self.logger.warning(
-                            f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}"
-                        )
-
-                        self.logger.warning(
-                            f"Sim edges: {  {str(self.edge_order[k]): str(sim_edges[k]) for k in erronious_indices}    }"
-                        )
-                        self.logger.warning(
-                            f"MPC edges: {  {str(self.edge_order[k]): str(mpc_edges[k]) for k in erronious_indices}    }"
-                        )
-                        self.logger.warning(
-                            f"Percent differene: {  {str(self.edge_order[k]): str(edge_percent_error[k]*100) for k in erronious_indices}    }"
-                        )
-
-                        # assert self.edge_error_count < 50, f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}"
-                        self.edge_error_count += 1
-                        # raise AssertionError(f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}")
-
-                error_dict = {
-                    str(self.edge_order[k]): edge_error[k]
-                    for k in range(len(self.edge_order))
-                }
-
-                sim_u_curtail = {
-                    node: self.G.nodes[node]["ionode"].u_curtail_store[i]
-                    for node in self.node_order
-                }
-                sim_u_passthrough = {
-                    node: self.G.nodes[node]["ionode"].u_passthrough_store[i]
-                    for node in self.node_order
-                }
-
+                err, sim_curt, sim_pass = self.check_edge_error(sim_edges, mpc_edges, i)
                 self.record_error(
-                    error_dict,
-                    sim_u_curtail,
-                    sim_u_passthrough,
+                    err,
+                    sim_curt,
+                    sim_pass,
                     sim_edges,
                     mpc_edges,
                     step_index=i,
                 )
-
-            y_steel = self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]
-            ref = self.config.greenheart_config["realtime_simulation"]["dispatch"][
-                "mpc"
-            ]["reference"]
 
         t1 = time.time()
         self.simulation_elapsed_time = t1 - t0
@@ -519,7 +416,6 @@ class RealTimeSimulation:
         for node in self.G.nodes:
             if hasattr(self.G.nodes[node]["ionode"].model, "consolidate_sim_outcome"):
                 self.G.nodes[node]["ionode"].model.consolidate_sim_outcome()
-        # print("")
 
         self.models = {
             node: self.G.nodes[node]["ionode"].model for node in self.node_order
@@ -527,56 +423,122 @@ class RealTimeSimulation:
 
         # self.logger.info(f"Simulation took: {self.simulation_elapsed_time/60:.2f} min or {self.simulation_elapsed_time/3600:.2f} hr")
 
+    def get_sim_edges(self, i):
+        sim_edges_full = self.system_states[:, i, :]
+        sim_edges = np.zeros(sim_edges_full.shape[0])
+        for j in range(sim_edges_full.shape[0]):
+            sim_edges[j] = np.sum(sim_edges_full[j, 0:-1])
+        return sim_edges
+
+
+    def get_mpc_edge_permutation(self, mpc_edges):
+        permutation = np.zeros(mpc_edges.shape, dtype=int)
+        for k in range(len(self.edge_order)):
+            index = [
+                ind
+                for ind in range(len(self.dispatcher.controller.pco_label))
+                if (
+                    (
+                        self.dispatcher.controller.pco_label[ind].split(" ")[2]
+                        == self.edge_order[k][0]
+                    )
+                    and (
+                        self.dispatcher.controller.pco_label[ind]
+                        .split(" ")[-1]
+                        .split(")")[0]
+                        == self.edge_order[k][1]
+                    )
+                )
+            ]
+            permutation[k] = index[0]
+        
+        self.mpc_permutation = permutation
+
+    def get_mpc_edges(self, i):
+
+        # Find the most recent mpc solve to query if mpc is not updated every step
+        idx_store = np.array(self.dispatcher.controller.step_index_store)
+        if not (i % self.dispatcher.update_period) or (i == 0):
+            idx = np.where(idx_store == i)[0][0]
+        else:
+            idx = np.where(idx_store == self.dispatcher.previous_update)[0][0]
+
+
+        mpc_edges = self.dispatcher.controller.ysp_store[idx]
+        mpc_edges = mpc_edges[0:-1, i - self.dispatcher.previous_update]
+        
+        if not hasattr(self, "mpc_permutation"):
+            self.get_mpc_edge_permutation(mpc_edges)
+
+        return mpc_edges[self.mpc_permutation]
+
+    def check_edge_error(self, sim_edges, mpc_edges, i):
+
+        edge_error = sim_edges - mpc_edges
+
+        edge_percent_error = (sim_edges - mpc_edges) / (0.5 * (sim_edges + mpc_edges))
+        # tol = 0.15
+        tol = 0.5
+        ignore_tol = 300
+        if np.any(np.abs(edge_percent_error) > tol):
+            erronious_indices = np.where(np.abs(edge_percent_error) > tol)[0]
+            erronious_edges = [self.edge_order[i] for i in erronious_indices]
+
+            if np.all(np.abs(sim_edges[erronious_indices] < ignore_tol)) and np.all(
+                np.abs(mpc_edges[erronious_indices] < ignore_tol)
+            ):
+                pass
+            else:
+
+                self.logger.warning(
+                    f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}"
+                )
+
+                self.logger.warning(
+                    f"Sim edges: {  {str(self.edge_order[k]): str(sim_edges[k]) for k in erronious_indices}    }"
+                )
+                self.logger.warning(
+                    f"MPC edges: {  {str(self.edge_order[k]): str(mpc_edges[k]) for k in erronious_indices}    }"
+                )
+                self.logger.warning(
+                    f"Percent differene: {  {str(self.edge_order[k]): str(edge_percent_error[k]*100) for k in erronious_indices}    }"
+                )
+
+                # assert self.edge_error_count < 50, f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}"
+                self.edge_error_count += 1
+                # raise AssertionError(f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}")
+
+        error_dict = {
+            str(self.edge_order[k]): edge_error[k] for k in range(len(self.edge_order))
+        }
+
+        sim_u_curtail = {
+            node: self.G.nodes[node]["ionode"].u_curtail_store[i]
+            for node in self.node_order
+        }
+        sim_u_passthrough = {
+            node: self.G.nodes[node]["ionode"].u_passthrough_store[i]
+            for node in self.node_order
+        }
+
+        return error_dict, sim_u_curtail, sim_u_passthrough
+
     def get_state_measurement(self, step_index):
-        # x0 = np.zeros(len([node for node in self.node_order if (node in ["battery", "hydrogen_storage", "thermal_energy_storage"])]))
         x0 = []
         for state_node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
             if state_node in self.G:
-                model: Union[HydrogenStorage, ThermalEnergyStorage, Battery] = (
-                    self.G.nodes[state_node]["ionode"].model
-                )
+                model = self.G.nodes[state_node]["ionode"].model
                 if state_node == "battery":
-                    if model.use_hopp_outputs:
-                        if (step_index == 0) or (step_index == self.start_index):
-                            state = [
-                                (
-                                    model.hopp_battery.config.initial_SOC
-                                    / 100
-                                    * model.hopp_battery.config.system_capacity_kwh
-                                )
-                            ]
-                        else:
-                            min_soc_violation = (
-                                model.hopp_battery.outputs.SOC[step_index - 1]
-                                - model.hopp_battery._system_model.ParamsCell.minimum_SOC
-                            )
-                            if min_soc_violation < 0:
-                                # # If the bound is violated by only a little, just use the lower bound instead
-                                # assert (min_soc_violation >= -1e-3), f"Battery minimum SOC violated by {min_soc_violation:.4f} "
-                                # state = (
-                                #     model.hopp_battery._system_model.ParamsCell.minimum_SOC
-                                #     / 100
-                                #     * model.hopp_battery.config.system_capacity_kwh
-                                # )
-                                pass
-                            else:
-                                pass
-                            state = [
-                                (
-                                    model.hopp_battery.outputs.SOC[step_index - 1]
-                                    / 100
-                                    * model.hopp_battery.config.system_capacity_kwh
-                                )
-                            ]
-                    else:
-                        state = [model.storage_state]
+                    first_step = step_index == self.start_index
+                    state = [
+                        model.get_state_measurement(step_index, first_step=first_step)
+                    ]
                 elif state_node == "hydrogen_storage":
-                    state = [model.storage_state]
+                    state = [model.get_state_measurement(step_index)]
                 elif state_node == "thermal_energy_storage":
-                    # state = model._SOC() * model.H_capacity_kWh
-                    state = [model.tank_H("hot"), model.M_hot]
+                    state_H, state_M = model.get_state_measurement(step_index)
+                    state = [state_H, state_M]
                 x0.append(state)
-        # x0 = np.array(x0)
         x0 = np.concatenate(x0)
         return x0
 
@@ -735,102 +697,102 @@ class RealTimeSimulation:
             "y": comp_local_data["y"],
         }
 
-        if make_plot:
-            self.plot_component(component_name, component_data)
+        # if make_plot:
+        #     self.plot_component(component_name, component_data)
 
         return component_data
 
-    def plot_component(self, component_name, component_data):
+    # def plot_component(self, component_name, component_data):
 
-        # TODO make this flexible for components with multi-domain inputs
+    #     # TODO make this flexible for components with multi-domain inputs
 
-        fig, ax = plt.subplots(
-            4, 1, sharex="all", layout="constrained", figsize=(10, 4)
-        )
+    #     fig, ax = plt.subplots(
+    #         4, 1, sharex="all", layout="constrained", figsize=(10, 4)
+    #     )
 
-        fig.suptitle(component_name)
+    #     fig.suptitle(component_name)
 
-        ax[0].plot(component_data["disturbance"], label="d")
-        ax[0].fill_between(
-            np.arange(0, len(component_data["disturbance"]), 1),
-            component_data["disturbance"][:, 0],
-            component_data["disturbance"][:, 0] - component_data["input_curtail"][:, 0],
-            label="input curtail",
-        )
-        ax[0].fill_between(
-            np.arange(0, len(component_data["disturbance"]), 1),
-            component_data["disturbance"][:, 0] - component_data["input_curtail"][:, 0],
-            component_data["disturbance"][:, 0]
-            - component_data["input_curtail"][:, 0]
-            - component_data["passthrough"][:, 0],
-            label="passthrough",
-        )
-        ax[0].fill_between(
-            np.arange(0, len(component_data["disturbance"]), 1),
-            component_data["disturbance"][:, 0]
-            - component_data["input_curtail"][:, 0]
-            - component_data["passthrough"][:, 0],
-            np.zeros(len(component_data["disturbance"])),
-            label="model input",
-        )
+    #     ax[0].plot(component_data["disturbance"], label="d")
+    #     ax[0].fill_between(
+    #         np.arange(0, len(component_data["disturbance"]), 1),
+    #         component_data["disturbance"][:, 0],
+    #         component_data["disturbance"][:, 0] - component_data["input_curtail"][:, 0],
+    #         label="input curtail",
+    #     )
+    #     ax[0].fill_between(
+    #         np.arange(0, len(component_data["disturbance"]), 1),
+    #         component_data["disturbance"][:, 0] - component_data["input_curtail"][:, 0],
+    #         component_data["disturbance"][:, 0]
+    #         - component_data["input_curtail"][:, 0]
+    #         - component_data["passthrough"][:, 0],
+    #         label="passthrough",
+    #     )
+    #     ax[0].fill_between(
+    #         np.arange(0, len(component_data["disturbance"]), 1),
+    #         component_data["disturbance"][:, 0]
+    #         - component_data["input_curtail"][:, 0]
+    #         - component_data["passthrough"][:, 0],
+    #         np.zeros(len(component_data["disturbance"])),
+    #         label="model input",
+    #     )
 
-        # ax[0] plot incoming edges
+    #     # ax[0] plot incoming edges
 
-        ax[0].legend()
+    #     ax[0].legend()
 
-        ax[1].plot(component_data["x"], label="x")
+    #     ax[1].plot(component_data["x"], label="x")
 
-        # ax[2].plot(component_data["y"], label="y")
+    #     # ax[2].plot(component_data["y"], label="y")
 
-        for i in range(len(component_data["out_edges"])):
-            ax[2].plot(
-                component_data["out_data"][i, :],
-                label=str(component_data["out_edges"][i]),
-            )
-        ax[2].fill_between(
-            np.arange(0, len(component_data["disturbance"]), 1),
-            np.zeros(len(component_data["disturbance"])),
-            component_data["split_curtail"],
-            label="split curtail",
-        )
+    #     for i in range(len(component_data["out_edges"])):
+    #         ax[2].plot(
+    #             component_data["out_data"][i, :],
+    #             label=str(component_data["out_edges"][i]),
+    #         )
+    #     ax[2].fill_between(
+    #         np.arange(0, len(component_data["disturbance"]), 1),
+    #         np.zeros(len(component_data["disturbance"])),
+    #         component_data["split_curtail"],
+    #         label="split curtail",
+    #     )
 
-        ax[2].legend()
+    #     ax[2].legend()
 
-        if self.stop_index < 8760:
-            ax[0].set_xlim([0, self.stop_index])
+    #     if self.stop_index < 8760:
+    #         ax[0].set_xlim([0, self.stop_index])
 
-        pass
+    #     pass
 
-    def plot_component_with_control(self, component_name, component_data):
-        pass
+    # def plot_component_with_control(self, component_name, component_data):
+    #     pass
 
-    def unpack_thermal_energy_storage(self):
+    # def unpack_thermal_energy_storage(self):
 
-        generation_local_data = {
-            "uct": [],
-            "x": self.G.nodes["thermal_energy_storage"]["ionode"].model.M_hot_store,
-            "y": [],
-        }
+    #     generation_local_data = {
+    #         "uct": [],
+    #         "x": self.G.nodes["thermal_energy_storage"]["ionode"].model.M_hot_store,
+    #         "y": [],
+    #     }
 
-        return generation_local_data
+    #     return generation_local_data
 
-    def unpack_battery(self):
+    # def unpack_battery(self):
 
-        generation_local_data = {
-            "uct": self.G.nodes["battery"]["ionode"].model.store_charge_power,
-            "x": self.G.nodes["battery"]["ionode"].model.store_storage_state,
-            "y": [],
-        }
+    #     generation_local_data = {
+    #         "uct": self.G.nodes["battery"]["ionode"].model.store_charge_power,
+    #         "x": self.G.nodes["battery"]["ionode"].model.store_storage_state,
+    #         "y": [],
+    #     }
 
-        return generation_local_data
+    #     return generation_local_data
 
-    def unpack_generation(self):
-        uct = []
-        x = []
-        y = []
+    # def unpack_generation(self):
+    #     uct = []
+    #     x = []
+    #     y = []
 
-        generation_local_data = {"uct": uct, "x": x, "y": y}
-        return generation_local_data
+    #     generation_local_data = {"uct": uct, "x": x, "y": y}
+    #     return generation_local_data
 
     def plot_system_graph(self):
         self.rts_helper.plot_system_graph()
