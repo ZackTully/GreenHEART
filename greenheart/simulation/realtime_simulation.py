@@ -24,64 +24,72 @@ from greenheart.simulation.technologies.dispatch.forecast import Forecast
 
 # Greenheart imports
 
-from greenheart.simulation.technologies.ammonia.ammonia import (
-    AmmoniaCapacityModelConfig,
-)
+# from greenheart.simulation.technologies.ammonia.ammonia import (
+#     AmmoniaCapacityModelConfig,
+# )
 
-from greenheart.simulation.technologies.heat.heat_exchange.heat_exchanger import (
-    HeatExchanger,
-)
-from greenheart.simulation.technologies.heat.heat_storage.thermal_energy_storage import (
-    ThermalEnergyStorage,
-)
+# from greenheart.simulation.technologies.heat.heat_exchange.heat_exchanger import (
+#     HeatExchanger,
+# )
+# from greenheart.simulation.technologies.heat.heat_storage.thermal_energy_storage import (
+#     ThermalEnergyStorage,
+# )
 
 
-from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master_STEP import (
-    run_PEM_clusters_step,
-)
+# from greenheart.simulation.technologies.hydrogen.electrolysis.run_PEM_master_STEP import (
+#     run_PEM_clusters_step,
+# )
 
-from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage import (
-    HydrogenStorage,
-)
-from greenheart.simulation.technologies.steel.steel import SteelModel
+# from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage import (
+#     HydrogenStorage,
+# )
+# from greenheart.simulation.technologies.steel.steel import SteelModel
 
-from greenheart.simulation.technologies.electricity.battery import Battery
+# from greenheart.simulation.technologies.electricity.battery import Battery
 
 
 from greenheart.tools.eco.utilities import ceildiv
 from hopp.utilities import load_yaml
-
+from greenheart.simulation.realtime_node import (
+    StandinNode,
+    setup_generation_node,
+    setup_battery_node, 
+    setup_electrolyzer_node,
+    setup_hydrogen_storage_node,
+    setup_thermal_energy_storage_node,
+    setup_heat_exchanger_node,
+    setup_steel_node,
+)
 
 # Simulation model for greenheart components
 
 
 class RealTimeSimulation:
-    def __init__(self, config, hopp_interface, case_description = None):
+    def __init__(self, config, hopp_interface, case_description=None):
 
         self.case_description = case_description
         if self.case_description is not None:
             if "case" in case_description:
-                self.worker_id=int(case_description.split("case_")[1].split(".")[0].split("_")[0])
+                self.worker_id = int(
+                    case_description.split("case_")[1].split(".")[0].split("_")[0]
+                )
             else:
-                self.worker_id=0
+                self.worker_id = 0
 
         elif current_process().name == "MainProcess":
             # Set up logging that writes to the topmost file
             self.worker_id = 0
         else:
-            self.worker_id = current_process()._identity[0]-1
-
+            self.worker_id = current_process()._identity[0] - 1
 
         self.config = config
         self.rts_config = self.config.greenheart_config["realtime_simulation"]
-
 
         options = self.rts_config.get("options", {})
 
         self.tqdm_progress = options.get("tqdm_progress", False)
         self.verbose = options.get("verbose", True)
         self.save_sysid = options.get("save_sysid", False)
-    
 
         self.component_config = load_yaml(self.rts_config["component_config"])
         self.hi = hopp_interface
@@ -95,9 +103,6 @@ class RealTimeSimulation:
             self.start_index = self.rts_config["start_index"]
         else:
             self.start_index = 0
-
-
-
 
         if "logging" in self.rts_config:
             # pprint.pprint(self.rts_config)
@@ -121,7 +126,9 @@ class RealTimeSimulation:
             self.logger = log_config["logger"]
 
         else:
-            self.logger = logging.getLogger(f"SIMULATION {log_config['case_description']}")
+            self.logger = logging.getLogger(
+                f"SIMULATION {log_config['case_description']}"
+            )
             self.logger.setLevel(logging.DEBUG)
 
             queue_handler = handlers.QueueHandler(log_config["queue"])
@@ -178,11 +185,11 @@ class RealTimeSimulation:
         G.add_nodes_from(nodes)
         G.add_edges_from(edges)
 
-        for degree in list(G.out_degree):
-            if degree[1] > 1:
-                G.nodes[degree[0]].update({"split": True})
-            else:
-                G.nodes[degree[0]].update({"split": False})
+        # for degree in list(G.out_degree):
+        #     if degree[1] > 1:
+        #         G.nodes[degree[0]].update({"split": True})
+        #     else:
+        #         G.nodes[degree[0]].update({"split": False})
 
         self.G = G
 
@@ -190,26 +197,28 @@ class RealTimeSimulation:
 
         RT_techs = {}
 
+        subsystem_args = (self.G, self.config, self.hi, self.component_config)
+
         for GH_tech in GH_techs:
 
             if GH_tech == "generation":
-                RT_techs.update(self._setup_generation_node())
-            elif GH_tech == "curtail":
-                RT_techs.update(self._setup_curtail_node())
-            elif GH_tech == "output":
-                RT_techs.update(self._setup_output_node())
+                RT_techs.update(setup_generation_node(*subsystem_args))
+            # elif GH_tech == "curtail":
+            #     RT_techs.update(setup_curtail_node())
+            # elif GH_tech == "output":
+            #     RT_techs.update(setup_output_node())
             elif GH_tech == "battery":
-                RT_techs.update(self._setup_battery_node())
+                RT_techs.update(setup_battery_node(*subsystem_args))
             elif GH_tech == "electrolyzer":
-                RT_techs.update(self._setup_electrolyzer_node())
+                RT_techs.update(setup_electrolyzer_node(*subsystem_args))
             elif GH_tech == "hydrogen_storage":
-                RT_techs.update(self._setup_hydrogen_storage_node())
+                RT_techs.update(setup_hydrogen_storage_node(*subsystem_args))
             elif GH_tech == "thermal_energy_storage":
-                RT_techs.update(self._setup_thermal_energy_storage_node())
+                RT_techs.update(setup_thermal_energy_storage_node(*subsystem_args))
             elif GH_tech == "heat_exchanger":
-                RT_techs.update(self._setup_heat_exchanger_node())
+                RT_techs.update(setup_heat_exchanger_node(*subsystem_args))
             elif GH_tech == "steel":
-                RT_techs.update(self._setup_steel_node())
+                RT_techs.update(setup_steel_node(*subsystem_args))
 
         # Build the connections with a graph network
 
@@ -221,7 +230,7 @@ class RealTimeSimulation:
                 model=RT_techs[node]["model"],
                 expected_inputs=RT_techs[node]["model_inputs"],
                 expected_outputs=RT_techs[node]["model_outputs"],
-                splitting_node=self.G.nodes[node]["split"],
+                # splitting_node=self.G.nodes[node]["split"],
                 in_degree=self.G.in_degree[node],
                 out_degree=self.G.out_degree[node],
             )
@@ -412,17 +421,19 @@ class RealTimeSimulation:
 
         hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
         # hybrid_profile = np.zeros(len(hybrid_profile))
-        
+
         self.hybrid_profile = hybrid_profile
 
         assert not np.any(np.isnan(self.hybrid_profile))
 
-        self.forecast_config = self.rts_config.get("forecast",
-                                            dict(
-                                                horizon = self.dispatcher.controller.horizon,
-                                                method="perfect_method",
-                                                method_config = {}
-                                            ))
+        self.forecast_config = self.rts_config.get(
+            "forecast",
+            dict(
+                horizon=self.dispatcher.controller.horizon,
+                method="perfect_method",
+                method_config={},
+            ),
+        )
 
         self.forecaster = Forecast(self.forecast_config, hybrid_profile, self.config)
 
@@ -460,7 +471,6 @@ class RealTimeSimulation:
 
         for i in time_iterable:
 
-
             if i > self.stop_index:
                 print("stopping at realtime simulator stop index")
                 break
@@ -468,9 +478,11 @@ class RealTimeSimulation:
             if i < self.start_index:
                 continue
 
-            try: 
+            try:
 
-                forecast = self.forecaster.get_forecast(measurement=hybrid_profile[i], step_index=i)
+                forecast = self.forecaster.get_forecast(
+                    measurement=hybrid_profile[i], step_index=i
+                )
 
             except Exception as e:
                 self.logger.error(f"Forecasting calculation error at step: {i}")
@@ -496,7 +508,6 @@ class RealTimeSimulation:
                 self.G, hybrid_profile[i] + grid_power, i
             )
 
-
             if (time.time() - t_log_last > 60) or (i == self.stop_index):
 
                 prog_step = f"{i}/{len(hybrid_profile)}"
@@ -505,11 +516,7 @@ class RealTimeSimulation:
                 prog_remaining = f"{((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.3f} hours"
                 prog_str = f"Step = {prog_step}, {prog_percent}, {prog_elapsed} elapsed, {prog_remaining} remaining"
 
-
                 # prog_str = f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer"
-
-
-
 
                 self.logger.info(prog_str)
                 # self.logger.info(f"{i}/{len(hybrid_profile)}, {(i / len(hybrid_profile)* 100) :.1f} % , {time.time() - t0:.2f} seconds, {((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.4f} hours longer")
@@ -517,7 +524,6 @@ class RealTimeSimulation:
 
             self.record_states(i, self.G, grid_power)
             # Check on the error
-
 
             if self.save_sysid:
                 self.save_ctrl_for_sysid(step_index=i)
@@ -568,7 +574,9 @@ class RealTimeSimulation:
 
                 edge_error = sim_edges - mpc_edges
 
-                edge_percent_error = (sim_edges - mpc_edges) / (0.5 * (sim_edges + mpc_edges))
+                edge_percent_error = (sim_edges - mpc_edges) / (
+                    0.5 * (sim_edges + mpc_edges)
+                )
                 # tol = 0.15
                 tol = 0.5
                 ignore_tol = 300
@@ -576,22 +584,29 @@ class RealTimeSimulation:
                     erronious_indices = np.where(np.abs(edge_percent_error) > tol)[0]
                     erronious_edges = [self.edge_order[i] for i in erronious_indices]
 
-                    if np.all(np.abs(sim_edges[erronious_indices] < ignore_tol )) and np.all(np.abs(mpc_edges[erronious_indices] < ignore_tol )):
+                    if np.all(
+                        np.abs(sim_edges[erronious_indices] < ignore_tol)
+                    ) and np.all(np.abs(mpc_edges[erronious_indices] < ignore_tol)):
                         pass
                     else:
 
-                        self.logger.warning(f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}")
+                        self.logger.warning(
+                            f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}"
+                        )
 
-                        self.logger.warning(f"Sim edges: {  {str(self.edge_order[k]): str(sim_edges[k]) for k in erronious_indices}    }")
-                        self.logger.warning(f"MPC edges: {  {str(self.edge_order[k]): str(mpc_edges[k]) for k in erronious_indices}    }")
-                        self.logger.warning(f"Percent differene: {  {str(self.edge_order[k]): str(edge_percent_error[k]*100) for k in erronious_indices}    }")
-
+                        self.logger.warning(
+                            f"Sim edges: {  {str(self.edge_order[k]): str(sim_edges[k]) for k in erronious_indices}    }"
+                        )
+                        self.logger.warning(
+                            f"MPC edges: {  {str(self.edge_order[k]): str(mpc_edges[k]) for k in erronious_indices}    }"
+                        )
+                        self.logger.warning(
+                            f"Percent differene: {  {str(self.edge_order[k]): str(edge_percent_error[k]*100) for k in erronious_indices}    }"
+                        )
 
                         # assert self.edge_error_count < 50, f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}"
                         self.edge_error_count += 1
                         # raise AssertionError(f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}")
-
-
 
                 error_dict = {
                     str(self.edge_order[k]): edge_error[k]
@@ -638,7 +653,7 @@ class RealTimeSimulation:
     def get_state_measurement(self, step_index):
         # x0 = np.zeros(len([node for node in self.node_order if (node in ["battery", "hydrogen_storage", "thermal_energy_storage"])]))
         x0 = []
-        for state_node in ["battery", "thermal_energy_storage",  "hydrogen_storage"]:
+        for state_node in ["battery", "thermal_energy_storage", "hydrogen_storage"]:
             if state_node in self.G:
                 model: Union[HydrogenStorage, ThermalEnergyStorage, Battery] = (
                     self.G.nodes[state_node]["ionode"].model
@@ -646,11 +661,13 @@ class RealTimeSimulation:
                 if state_node == "battery":
                     if model.use_hopp_outputs:
                         if (step_index == 0) or (step_index == self.start_index):
-                            state = [(
-                                model.hopp_battery.config.initial_SOC
-                                / 100
-                                * model.hopp_battery.config.system_capacity_kwh
-                            )]
+                            state = [
+                                (
+                                    model.hopp_battery.config.initial_SOC
+                                    / 100
+                                    * model.hopp_battery.config.system_capacity_kwh
+                                )
+                            ]
                         else:
                             min_soc_violation = (
                                 model.hopp_battery.outputs.SOC[step_index - 1]
@@ -667,11 +684,13 @@ class RealTimeSimulation:
                                 pass
                             else:
                                 pass
-                            state = [(
-                                model.hopp_battery.outputs.SOC[step_index - 1]
-                                / 100
-                                * model.hopp_battery.config.system_capacity_kwh
-                            )]
+                            state = [
+                                (
+                                    model.hopp_battery.outputs.SOC[step_index - 1]
+                                    / 100
+                                    * model.hopp_battery.config.system_capacity_kwh
+                                )
+                            ]
                     else:
                         state = [model.storage_state]
                 elif state_node == "hydrogen_storage":
@@ -714,8 +733,6 @@ class RealTimeSimulation:
         pass
 
     def save_ctrl_for_sysid(self, step_index=None):
-
- 
 
         # Think about doing this with the un-simplified system model rather than the simplified one with coupling
 
@@ -872,175 +889,175 @@ class RealTimeSimulation:
 
         []
 
-    def _setup_generation_node(self):
-        inputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
-        outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    # def _setup_generation_node(self):
+    #     inputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
+    #     outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
 
-        out_degree = self.G.out_degree["generation"]
+    #     out_degree = self.G.out_degree["generation"]
 
-        component_dict = {
-            "generation": {
-                "model": StandinNode(out_degree),
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
-        return component_dict
+    #     component_dict = {
+    #         "generation": {
+    #             "model": StandinNode(out_degree),
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
+    #     return component_dict
 
-    def _setup_curtail_node(self):
-        inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-        outputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
-        component_dict = {
-            "curtail": {
-                "model": StandinNode(),
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
+    # def _setup_curtail_node(self):
+    #     inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    #     outputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
+    #     component_dict = {
+    #         "curtail": {
+    #             "model": StandinNode(),
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
 
-        return component_dict
+    #     return component_dict
 
-    def _setup_output_node(self):
-        inputs = {"power": True, "Qdot": True, "mdot": True, "T": True}
-        outputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
-        component_dict = {
-            "output": {
-                "model": StandinNode(),
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
+    # def _setup_output_node(self):
+    #     inputs = {"power": True, "Qdot": True, "mdot": True, "T": True}
+    #     outputs = {"power": False, "Qdot": False, "mdot": False, "T": False}
+    #     component_dict = {
+    #         "output": {
+    #             "model": StandinNode(),
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
 
-        return component_dict
+    #     return component_dict
 
-    def _setup_battery_node(self):
-        inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-        outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-        component_dict = {
-            "battery": {
-                "model": Battery(
-                    config=self.config,
-                    battery_config=self.config.hopp_config["technologies"]["battery"],
-                    hopp_interface=self.hi,
-                ),
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
+    # def _setup_battery_node(self):
+    #     inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    #     outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    #     component_dict = {
+    #         "battery": {
+    #             "model": Battery(
+    #                 config=self.config,
+    #                 battery_config=self.config.hopp_config["technologies"]["battery"],
+    #                 hopp_interface=self.hi,
+    #             ),
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
 
-        return component_dict
+    #     return component_dict
 
-    def _setup_electrolyzer_node(self):
+    # def _setup_electrolyzer_node(self):
 
-        electrical_generation_timeseries = np.zeros(8760)
-        electrolyzer_size_mw = self.config.greenheart_config["electrolyzer"]["rating"]
-        n_pem_clusters = int(
-            ceildiv(
-                electrolyzer_size_mw,
-                self.config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
-            )
-        )
-        electrolyzer_capex_kw = self.config.greenheart_config["electrolyzer"][
-            "electrolyzer_capex"
-        ]
-        electrolyzer_direct_cost_kw = electrolyzer_capex_kw
-        useful_life = self.config.greenheart_config["project_parameters"][
-            "project_lifetime"
-        ]
+    #     electrical_generation_timeseries = np.zeros(8760)
+    #     electrolyzer_size_mw = self.config.greenheart_config["electrolyzer"]["rating"]
+    #     n_pem_clusters = int(
+    #         ceildiv(
+    #             electrolyzer_size_mw,
+    #             self.config.greenheart_config["electrolyzer"]["cluster_rating_MW"],
+    #         )
+    #     )
+    #     electrolyzer_capex_kw = self.config.greenheart_config["electrolyzer"][
+    #         "electrolyzer_capex"
+    #     ]
+    #     electrolyzer_direct_cost_kw = electrolyzer_capex_kw
+    #     useful_life = self.config.greenheart_config["project_parameters"][
+    #         "project_lifetime"
+    #     ]
 
-        pem_param_dict = {
-            "eol_eff_percent_loss": self.config.greenheart_config["electrolyzer"][
-                "eol_eff_percent_loss"
-            ],
-            "uptime_hours_until_eol": self.config.greenheart_config["electrolyzer"][
-                "uptime_hours_until_eol"
-            ],
-            "include_degradation_penalty": self.config.greenheart_config[
-                "electrolyzer"
-            ]["include_degradation_penalty"],
-            "turndown_ratio": self.config.greenheart_config["electrolyzer"][
-                "turndown_ratio"
-            ],
-        }
-        user_defined_pem_param_dictionary = pem_param_dict
-        verbose = False
+    #     pem_param_dict = {
+    #         "eol_eff_percent_loss": self.config.greenheart_config["electrolyzer"][
+    #             "eol_eff_percent_loss"
+    #         ],
+    #         "uptime_hours_until_eol": self.config.greenheart_config["electrolyzer"][
+    #             "uptime_hours_until_eol"
+    #         ],
+    #         "include_degradation_penalty": self.config.greenheart_config[
+    #             "electrolyzer"
+    #         ]["include_degradation_penalty"],
+    #         "turndown_ratio": self.config.greenheart_config["electrolyzer"][
+    #             "turndown_ratio"
+    #         ],
+    #     }
+    #     user_defined_pem_param_dictionary = pem_param_dict
+    #     verbose = False
 
-        electrolyzer_model = run_PEM_clusters_step(
-            electrical_generation_timeseries,
-            electrolyzer_size_mw,
-            n_pem_clusters,
-            electrolyzer_direct_cost_kw,
-            useful_life,
-            user_defined_pem_param_dictionary,
-            verbose=verbose,
-            step_model=self.config.realtime_simulation,
-        )
+    #     electrolyzer_model = run_PEM_clusters_step(
+    #         electrical_generation_timeseries,
+    #         electrolyzer_size_mw,
+    #         n_pem_clusters,
+    #         electrolyzer_direct_cost_kw,
+    #         useful_life,
+    #         user_defined_pem_param_dictionary,
+    #         verbose=verbose,
+    #         step_model=self.config.realtime_simulation,
+    #     )
 
-        inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-        outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
-        component_dict = {
-            "electrolyzer": {
-                "model": electrolyzer_model,
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
-        return component_dict
+    #     inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    #     outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
+    #     component_dict = {
+    #         "electrolyzer": {
+    #             "model": electrolyzer_model,
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
+    #     return component_dict
 
-    def _setup_hydrogen_storage_node(self):
-        inputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
-        outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
-        component_dict = {
-            "hydrogen_storage": {
-                "model": HydrogenStorage(self.component_config["hydrogen_storage"]),
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
+    # def _setup_hydrogen_storage_node(self):
+    #     inputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
+    #     outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
+    #     component_dict = {
+    #         "hydrogen_storage": {
+    #             "model": HydrogenStorage(self.component_config["hydrogen_storage"]),
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
 
-        return component_dict
+    #     return component_dict
 
-    def _setup_thermal_energy_storage_node(self):
-        inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
-        outputs = {"power": False, "Qdot": True, "mdot": False, "T": False}
-        component_dict = {
-            "thermal_energy_storage": {
-                "model": ThermalEnergyStorage(),
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
+    # def _setup_thermal_energy_storage_node(self):
+    #     inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    #     outputs = {"power": False, "Qdot": True, "mdot": False, "T": False}
+    #     component_dict = {
+    #         "thermal_energy_storage": {
+    #             "model": ThermalEnergyStorage(),
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
 
-        return component_dict
+    #     return component_dict
 
-    def _setup_heat_exchanger_node(self):
-        inputs = {"power": True, "Qdot": True, "mdot": True, "T": True}
-        outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
-        component_dict = {
-            "heat_exchanger": {
-                "model": HeatExchanger(),
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
+    # def _setup_heat_exchanger_node(self):
+    #     inputs = {"power": True, "Qdot": True, "mdot": True, "T": True}
+    #     outputs = {"power": False, "Qdot": False, "mdot": True, "T": True}
+    #     component_dict = {
+    #         "heat_exchanger": {
+    #             "model": HeatExchanger(),
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
 
-        return component_dict
+    #     return component_dict
 
-    def _setup_steel_node(self):
+    # def _setup_steel_node(self):
 
-        config = self.config.greenheart_config["steel"]["costs"]["feedstocks"]
+    #     config = self.config.greenheart_config["steel"]["costs"]["feedstocks"]
 
-        inputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
-        outputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
-        component_dict = {
-            "steel": {
-                "model": SteelModel(self.config.greenheart_config),
-                "model_inputs": inputs,
-                "model_outputs": outputs,
-            }
-        }
+    #     inputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
+    #     outputs = {"power": True, "Qdot": False, "mdot": True, "T": True}
+    #     component_dict = {
+    #         "steel": {
+    #             "model": SteelModel(self.config.greenheart_config),
+    #             "model_inputs": inputs,
+    #             "model_outputs": outputs,
+    #         }
+    #     }
 
-        return component_dict
+    #     return component_dict
 
     def get_component(self, component_name):
         return self.G.nodes[component_name]["ionode"].model
@@ -1387,7 +1404,7 @@ class RealTimeSimulation:
                         linewidth=0,
                         label=f"curtail",
                         # color=mpl.colormaps[cmaps[j]](cmap_level - 0.15),
-                        color="orange"
+                        color="orange",
                     )
                     start += stop
 
@@ -1539,7 +1556,7 @@ class RealTimeSimulation:
                     ]
                 )
                 ax[i, j].yaxis.tick_right()
-                t = ax[i,j].yaxis.get_offset_text()
+                t = ax[i, j].yaxis.get_offset_text()
                 t.set_x(1.01)
                 # if ax.shape[1] == 1:
                 #     ax[i, j].set_yticks([])
@@ -1572,7 +1589,9 @@ class RealTimeSimulation:
         # else:
         #     ax[0, 0].set_xlim([0, 8760])
 
-        ax[0, 0].set_xlim([np.max([0, self.start_index]), np.min([8760, self.stop_index])])
+        ax[0, 0].set_xlim(
+            [np.max([0, self.start_index]), np.min([8760, self.stop_index])]
+        )
 
         if save:
 
@@ -1581,82 +1600,3 @@ class RealTimeSimulation:
             # fig.savefig(f"{fname}{'_zoom.pdf'}", format="pdf")
 
         []
-
-    def reformat_stored(self):
-        pass
-
-    def plot_edge_error(self):
-        pass
-
-    def plot_input_error(self):
-        # plot curtail or passthrough
-        pass
-
-
-class RealTimeSimulationOutput:
-    def __init__(self):
-        pass
-
-
-class StandinNode:
-    def __init__(self, out_degree=1):
-        self.output = 0
-        self.out_degree = 1
-        # self.out_degree = out_degree
-        self.create_control_model()
-
-    def create_control_model(self):
-        n = 0
-        m = 0
-        p = 1
-        # m = self.out_degree
-        # p = self.out_degree
-        o = 1
-
-        A = np.zeros((n, n))
-        B = np.zeros((n, m))
-        C = np.zeros((p, n))
-        D = np.zeros((p, m))
-        E = np.zeros((n, o))
-        # F = np.zeros((p, o))
-        F = np.array([[1]])
-
-        bounds_dict = {
-            "u_lb": np.array([0] * m),
-            "u_ub": np.array([None] * m),
-            "x_lb": np.array([]),
-            "x_ub": np.array([]),
-            "y_lb": np.array([0] * p),
-            "y_ub": np.array([None] * p),
-        }
-
-        self.control_model = ControlModel(
-            A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict
-        )
-
-        self.control_model.set_disturbance_domain([1, 0, 0])
-        self.control_model.set_output_domain([1, 0, 0])
-
-    def set_output(self, output):
-        self.output = output
-
-    def step(self, input, dispatch=None, step_index=None):
-
-        u_passthrough = 0
-        if dispatch >= -1:
-            dispatch = np.max([0.0, dispatch[0]])
-        assert dispatch >= 0
-        u_curtail = dispatch
-        actual_curtail = min(dispatch, input[0])
-        output = self.output - actual_curtail
-        # output = self.output - u_curtail
-        
-        
-        if output < 0:
-            if output > -1:
-                output = 0.0
-            else:
-                assert False, f"Generation node output was negative: {output:.6f} kW"
-
-
-        return output, u_passthrough, u_curtail
