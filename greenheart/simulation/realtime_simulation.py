@@ -21,6 +21,7 @@ from greenheart.simulation.technologies.dispatch.forecast import Forecast
 from greenheart.simulation.realtime_node import (
     Node,
     setup_generation_node,
+    setup_electricity_output_node,
     setup_battery_node,
     setup_electrolyzer_node,
     setup_hydrogen_storage_node,
@@ -174,6 +175,8 @@ class RealTimeSimulation:
 
             if GH_tech == "generation":
                 RT_techs.update(setup_generation_node(*subsystem_args))
+            elif GH_tech == "electricity_output":
+                RT_techs.update(setup_electricity_output_node(*subsystem_args))
             elif GH_tech == "battery":
                 RT_techs.update(setup_battery_node(*subsystem_args))
             elif GH_tech == "electrolyzer":

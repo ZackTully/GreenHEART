@@ -5,8 +5,8 @@ options:
   verbose: true
   save_sysid: false
 system:
-  system_graph_config: !include ../network_config_tes_constant.yaml
-component_config: !include ../realtime_simulation_subsystems.yaml
+  system_graph_config: !include ../system_graph_config.yaml
+component_config: !include ../subsystem_config.yaml
 forecast:
   horizon: 3
   method: perfect_persistence_interp

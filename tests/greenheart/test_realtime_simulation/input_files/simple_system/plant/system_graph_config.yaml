@@ -1,0 +1,16 @@
+network: 
+    [
+        [generation, battery],
+        [generation, electricity_output],
+        [battery, electricity_output]
+    ]
+traversal_order:
+    [
+        generation,
+        battery,
+        electricity_output
+    ]
+source_node: generation
+sink_node: electricity_output
+
+

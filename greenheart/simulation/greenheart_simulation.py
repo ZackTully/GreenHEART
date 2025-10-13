@@ -32,8 +32,6 @@ from greenheart.simulation.technologies.steel.steel import (
 )
 
 from greenheart.simulation.technologies.dispatch.dispatch import (
-    GreenheartDispatchConfig,
-    GreenheartDispatchOutput,
     GreenheartDispatch,
 )
 

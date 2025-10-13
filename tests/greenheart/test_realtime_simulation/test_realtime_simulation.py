@@ -8,19 +8,29 @@ import greenheart.tools.eco.hopp_mgmt as he_hopp
 from greenheart.simulation.greenheart_simulation import setup_greenheart_simulation
 
 
-def fpaths():
-    config_root = Path(__file__).parent / "input_files"
+def fpaths(system="full"):
+    if system == "full":
+        config_root = Path(__file__).parent / "input_files/full_system"
 
-    return dict(
-        hopp=config_root / "plant/hopp_config_mn.yaml",
-        greenheart=config_root / "plant/greenheart_config_onshore_mn.yaml",
-        turbine=config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml",
-        floris=config_root / "floris/floris_input_lbw_6MW.yaml",
-    )
+        return dict(
+            hopp=config_root / "plant/hopp_config.yaml",
+            greenheart=config_root / "plant/greenheart_config.yaml",
+            turbine=config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml",
+            floris=config_root / "floris/floris_input_lbw_6MW.yaml",
+        )
+    elif system == "simple":
+        config_root = Path(__file__).parent / "input_files/simple_system"
+
+        return dict(
+            hopp=config_root / "plant/hopp_config.yaml",
+            greenheart=config_root / "plant/greenheart_config.yaml",
+            turbine=config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml",
+            floris=config_root / "floris/floris_input_lbw_6MW.yaml",
+        )
 
 
-def make_config():
-    configs = fpaths()
+def make_config(system="full"):
+    configs = fpaths(system)
     config = GreenHeartSimulationConfig(
         str(configs["hopp"]),
         str(configs["greenheart"]),
@@ -39,8 +49,9 @@ def make_config():
     return config
 
 
-def make_realtime_simulator():
-    config = make_config()
+def make_realtime_simulator(system="full"):
+    config = make_config(system)
+
     config, hi, _ = setup_greenheart_simulation(config)
 
     simulator = RealTimeSimulation(config, hi)
@@ -63,13 +74,14 @@ def make_realtime_simulator():
 
 @pytest.fixture(scope="module")
 def full_system_RTS_run():
-    rts, dispatcher, hopp_results = make_realtime_simulator()
+    rts, dispatcher, hopp_results = make_realtime_simulator("full")
     rts.simulate(dispatcher, hopp_results)
     yield rts
 
+
 @pytest.fixture(scope="module")
 def simple_system_RTS_run():
-    rts, dispatcher, hopp_results = make_realtime_simulator()
+    rts, dispatcher, hopp_results = make_realtime_simulator("simple")
     rts.simulate(dispatcher, hopp_results)
     yield rts
 
@@ -80,5 +92,5 @@ def test_RTS_full_system_runs(full_system_RTS_run):
     pass
 
 
-def test_RTS_simple_system():
+def test_RTS_simple_system(simple_system_RTS_run):
     pass

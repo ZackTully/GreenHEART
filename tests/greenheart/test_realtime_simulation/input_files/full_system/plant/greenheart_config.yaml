@@ -94,11 +94,6 @@ h2_storage:
   days: 0 #how many days worth of production we should be able to store (this is ignored if `capacity_from_max_on_turbine_storage` is set to True)
 
 thermal_energy_storage:
-# battery:
-
-
-
-
 
 policy_parameters: # these should be adjusted for inflation prior to application - order of operations: rate in 1992 $,
 #then prevailing wage multiplier if applicable, then inflation

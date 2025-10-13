@@ -198,7 +198,7 @@ class Node:
         u_passthrough: np.ndarray | float,
     ) -> np.ndarray:
         """
-        Format the model outputs translating from the steppable model output to the 
+        Format the model outputs translating from the steppable model output to the
         graph edge format expected by RealTimeSimulator.
 
         Args:
@@ -207,7 +207,7 @@ class Node:
 
         Returns:
             np.ndarray: 4-length array in the format of a graph edge.
-        """    
+        """
         output_passthrough = np.zeros((1, 4))
 
         if self.inputs["T"]:
@@ -217,7 +217,7 @@ class Node:
 
         output_model = np.zeros((1, 4))
         output_model[0, np.where(self.output_list)] = y_model
- 
+
         # Set the appropriate output temperature if relevant.
         if self.name == "electrolyzer":
             output_model[0, 3] = self.T_electrolyzer_output  # degree C
@@ -239,7 +239,9 @@ class Node:
         )
         return model_output
 
-    def splitting(self, model_output:np.ndarray, u_split:np.ndarray, step_index:int) -> tuple[np.ndarray, np.ndarray]:
+    def splitting(
+        self, model_output: np.ndarray, u_split: np.ndarray, step_index: int
+    ) -> tuple[np.ndarray, np.ndarray]:
         """_summary_
 
         Args:
@@ -248,7 +250,7 @@ class Node:
             step_index (int): _description_
 
         Returns:
-            outgoing_edges (np.ndarray): 
+            outgoing_edges (np.ndarray):
             split_curtail (np.ndarray):
         """
         if (u_split < 0).any():
@@ -275,45 +277,83 @@ class Node:
 
 class StandinNode:
     """
-    Standin node to be used as a subsystem model for those subsystems that don't have a 
-    subsystem model. This class is used by the generation node. 
-    """    
-    def __init__(self, out_degree=1):
+    Standin node to be used as a subsystem model for those subsystems that don't have a
+    subsystem model. This class is used by the generation node.
+    """
+
+    def __init__(self, out_degree=1, is_generation=False, is_electricity_output=False):
+
+        self.is_generation = is_generation
+        self.is_electricity_output = is_electricity_output
+
         self.output = 0
         self.out_degree = 1
         self.create_control_model()
 
     def create_control_model(self):
         """
-        Control model state space equation for the generation node. 
-        """        
-        n = 0
-        m = 0
-        p = 1
-        o = 1
+        Control model state space equation.
+        """
 
-        A = np.zeros((n, n))
-        B = np.zeros((n, m))
-        C = np.zeros((p, n))
-        D = np.zeros((p, m))
-        E = np.zeros((n, o))
-        F = np.array([[1]])
+        if self.is_generation:
 
-        bounds_dict = {
-            "u_lb": np.array([0] * m),
-            "u_ub": np.array([None] * m),
-            "x_lb": np.array([]),
-            "x_ub": np.array([]),
-            "y_lb": np.array([0] * p),
-            "y_ub": np.array([None] * p),
-        }
+            n, m, p, o = 0, 0, 1, 1
 
-        self.control_model = ControlModel(
-            A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict
-        )
+            # n = 0
+            # m = 0
+            # p = 1
+            # o = 1
 
-        self.control_model.set_disturbance_domain([1, 0, 0])
-        self.control_model.set_output_domain([1, 0, 0])
+            A = np.zeros((n, n))
+            B = np.zeros((n, m))
+            C = np.zeros((p, n))
+            D = np.zeros((p, m))
+            E = np.zeros((n, o))
+            F = np.array([[1]])
+
+            bounds_dict = {
+                "u_lb": np.array([0] * m),
+                "u_ub": np.array([None] * m),
+                "x_lb": np.array([]),
+                "x_ub": np.array([]),
+                "y_lb": np.array([0] * p),
+                "y_ub": np.array([None] * p),
+            }
+
+            self.control_model = ControlModel(
+                A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict
+            )
+
+            self.control_model.set_disturbance_domain([1, 0, 0])
+            self.control_model.set_output_domain([1, 0, 0])
+        elif self.is_electricity_output:
+
+            n, m, p, o = 0, 0, 1, 1
+
+            A = np.zeros((n, n))
+            B = np.zeros((n, m))
+            C = np.zeros((p, n))
+            D = np.zeros((p, m))
+            E = np.zeros((n, o))
+            F = np.array([[1]])
+
+            bounds_dict = {
+                "u_lb": np.array([0] * m),
+                "u_ub": np.array([None] * m),
+                "x_lb": np.array([]),
+                "x_ub": np.array([]),
+                "y_lb": np.array([0] * p),
+                "y_ub": np.array([None] * p),
+            }
+
+            self.control_model = ControlModel(
+                A=A, B=B, C=C, D=D, E=E, F=F, bounds=bounds_dict
+            )
+
+            self.control_model.set_disturbance_domain([1, 0, 0])
+            # self.control_model.set_output_domain([1, 0, 0])
+            self.control_model.set_disturbance_reshape([1, 0 ,0])
+
 
     def set_output(self, output):
         self.output = output
@@ -354,7 +394,23 @@ def setup_generation_node(G, config, hi, component_config):
 
     component_dict = {
         "generation": {
-            "model": StandinNode(out_degree),
+            "model": StandinNode(out_degree, is_generation=True),
+            "model_inputs": inputs,
+            "model_outputs": outputs,
+        }
+    }
+    return component_dict
+
+
+def setup_electricity_output_node(G, config, hi, component_config):
+    inputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+    outputs = {"power": True, "Qdot": False, "mdot": False, "T": False}
+
+    out_degree = G.out_degree["electricity_output"]
+
+    component_dict = {
+        "electricity_output": {
+            "model": StandinNode(out_degree, is_electricity_output=True),
             "model_inputs": inputs,
             "model_outputs": outputs,
         }
@@ -486,4 +542,3 @@ def setup_steel_node(G, config, hi, component_config):
     }
 
     return component_dict
-
