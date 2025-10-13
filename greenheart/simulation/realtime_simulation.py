@@ -17,11 +17,10 @@ from typing import Union
 import time
 
 from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
-from greenheart.simulation.realtime_node import Node
 from greenheart.simulation.technologies.dispatch.forecast import Forecast
 
-# Greenheart imports
 from greenheart.simulation.realtime_node import (
+    Node,
     setup_generation_node,
     setup_battery_node,
     setup_electrolyzer_node,
@@ -32,20 +31,11 @@ from greenheart.simulation.realtime_node import (
 )
 from greenheart.tools.simulation.realtime_helper import RealTimeSimulationHelper
 
-# Simulation model for greenheart components
-
-
 class RealTimeSimulation:
     def __init__(self, config, hopp_interface, case_description=None):
 
         self.case_description = case_description
 
-        self.worker_id = 0
-        if (self.case_description is not None) and ("case" in case_description):
-            case_num = case_description.split("case_")[1].split(".")[0].split("_")[0]
-            self.worker_id = int(case_num)
-        elif current_process().name != "MainProcess":
-            self.worker_id = current_process()._identity[0] - 1
 
         self.config = config
         self.rts_config = self.config.greenheart_config["realtime_simulation"]
@@ -63,11 +53,18 @@ class RealTimeSimulation:
             open(self.rts_config["component_config"], "r")
         )
         self.hi = hopp_interface
+        
+        self.rts_helper = RealTimeSimulationHelper(self)
+
+        # For setting the line height of the progress bar when running in parallel
+        self.worker_id = 0
+        if (self.case_description is not None) and ("case" in case_description):
+            case_num = case_description.split("case_")[1].split(".")[0].split("_")[0]
+            self.worker_id = int(case_num)
+        elif current_process().name != "MainProcess":
+            self.worker_id = current_process()._identity[0] - 1
 
         if "logging" in self.rts_config:
-            # pprint.pprint(self.rts_config)
-            # print("logging dict")
-            # pprint.pprint(self.rts_config["logging"])
             self.setup_logging(self.rts_config.pop("logging"))
         else:
             self.logger = logging.getLogger()
@@ -80,7 +77,6 @@ class RealTimeSimulation:
         self.setup_record_keeping()
         self.edge_error_count = 0
 
-        self.rts_helper = RealTimeSimulationHelper(self)
 
     def setup_logging(self, log_config):
 
