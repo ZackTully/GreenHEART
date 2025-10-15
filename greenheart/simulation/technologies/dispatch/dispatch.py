@@ -143,8 +143,8 @@ class GreenheartDispatch:
         # for edge in list(G_dispatch.edges):
         #     G_dispatch.edges[edge].update({"dispatch": 0})
 
-        G.nodes["generation"].update({"dispatch_ctrl": curtail_mpc})
-        G.nodes["generation"].update({"grid_purchase": grid_mpc})
+        G.nodes["generation"].update({"dispatch_ctrl": [curtail_mpc]})
+        G.nodes["generation"].update({"grid_purchase": [grid_mpc]})
 
         for node in self.controller.uct_order.keys():
             if len(self.controller.uct_order[node]) > 0:

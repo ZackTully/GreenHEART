@@ -612,20 +612,12 @@ class RealTimeSimulation:
         # self.passthrough_store[:, step_index] = np.concatenate(list(node_passthrough.values()))
 
     def record_states(self, time_step, simulated_IO, grid_power):
-        self.grid_power_store[0, time_step] = grid_power
+        self.grid_power_store[0, time_step] = grid_power[0]
 
         values = nx.get_edge_attributes(simulated_IO, "simulated")
         for key in values.keys():
             self.system_states[self.index_dict[key], time_step, :] = values[key]
 
-        # for i, node in enumerate(list(simulated_IO.nodes)):
-        #     # self.node_waste[i, time_step, :] = simulated_IO.nodes[node]["wasted_output"]
-        #     # TODO come back to this it is messy
-        #     self.node_waste[i, time_step, :] = np.sum(
-        #         simulated_IO.nodes[node]["wasted_output"], axis=1
-        #     )
-
-        []
 
     def get_component(self, component_name):
         return self.G.nodes[component_name]["ionode"].model
