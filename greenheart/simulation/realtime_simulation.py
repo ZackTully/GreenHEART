@@ -317,6 +317,7 @@ class RealTimeSimulation:
                 leave=False,
                 colour=tqdm_color,
                 total=total,
+                bar_format="{l_bar}{bar:40}{r_bar}"
             )
 
         else:
@@ -405,6 +406,10 @@ class RealTimeSimulation:
                 t_log_last = time.time()
 
             self.record_states(i, self.G, grid_power)
+
+            if self.tqdm_progress:
+                time_iterable.set_postfix({"yex" : f'{self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]:.2f}'})
+                # time_iterable.set_postfix(f'yex: {self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]:.2f}')
 
             if self.save_sysid:
                 self.rts_helper.save_ctrl_for_sysid(step_index=i)

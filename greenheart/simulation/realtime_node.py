@@ -112,10 +112,12 @@ class Node:
 
         node_input = np.sum(incoming_edges, axis=0)
         # Temperature = mass-weighted sum of incoming temperatures
-        node_input[3] = np.nan_to_num(
-            np.dot(incoming_edges[:, 2], incoming_edges[:, 3])
-            / np.sum(incoming_edges[:, 2])
-        )
+
+        if np.any(incoming_edges[:, 2] != 0):
+            node_input[3] = np.nan_to_num(
+                np.dot(incoming_edges[:, 2], incoming_edges[:, 3])
+                / np.sum(incoming_edges[:, 2])
+            )
 
         return node_input
 
@@ -230,13 +232,14 @@ class Node:
             output_passthrough[0, 3] = self.model.Tout_desired
 
         model_output = output_model + output_passthrough
-        model_output[0, 3] = np.nan_to_num(
-            (
-                output_model[0, 2] * output_model[0, 3]
-                + output_passthrough[0, 2] * output_passthrough[0, 3]
+        if np.any(model_output[:, 2] != 0):
+            model_output[0, 3] = np.nan_to_num(
+                (
+                    output_model[0, 2] * output_model[0, 3]
+                    + output_passthrough[0, 2] * output_passthrough[0, 3]
+                )
+                / (output_model[0, 2] + output_passthrough[0, 2])
             )
-            / (output_model[0, 2] + output_passthrough[0, 2])
-        )
         return model_output
 
     def splitting(

@@ -18,9 +18,7 @@ class Objective:
         self.mpc = mpc
 
         self.horizon = horizon
-
         self.active_terms = active_terms
-
         self.weights = weights
 
         self.steel_ref = references["steel"]
@@ -36,6 +34,7 @@ class Objective:
         self.x_bes_max = capacities["x_bes_max"]
         self.x_tes_max = capacities["x_tes_max"]
         self.x_h2s_max = capacities["x_h2s_max"]
+        
         self.x_bes_min = capacities["x_bes_min"]
         self.x_tes_min = capacities["x_tes_min"]
         self.x_h2s_min = capacities["x_h2s_min"]
@@ -422,7 +421,7 @@ class Objective:
                 f"f1_uw", list(self.opt_vars.values()), [obj_terms_uw1[term]]
             )
             F2_uw = ca.Function(
-                f"f2_uw", list(self.opt_vars.values()), [obj_terms_uw1[term]]
+                f"f2_uw", list(self.opt_vars.values()), [obj_terms_uw2[term]]
             )
 
             f_equal = np.float64(F1(*list(ov.values()))) == np.float64(

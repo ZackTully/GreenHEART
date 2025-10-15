@@ -481,7 +481,7 @@ class PEM_H2_Clusters:
     def system_efficiency(self,P_sys,I):
         #
         system_h2_prod_rate=self.h2_production_rate(I,self.n_stacks_op)
-        eff_kWh_pr_kg = P_sys/system_h2_prod_rate #kWh/kg
+        eff_kWh_pr_kg = np.nan_to_num(P_sys/system_h2_prod_rate) #kWh/kg
         system_eff= self.eta_h2_hhv/eff_kWh_pr_kg #[%-HHV]
         
         return system_eff #[%]
