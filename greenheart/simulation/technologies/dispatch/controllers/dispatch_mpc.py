@@ -166,7 +166,9 @@ class DispatchModelPredictiveController:
             # var_inds=self.objective_manager.get_objective_var_inds()
         )
 
+        self.logger.info("Objective helper initialized")
         self.setup_optimization()
+        self.logger.info("Optimization has been set up")
         self.gradient_helper.get_mpc_attrs()
 
         if self.horizon == 1:
@@ -557,6 +559,10 @@ class DispatchModelPredictiveController:
         # ==                                                                         ==
         # =============================================================================
 
+        if step_index == 0:
+            self.logger.info("first trajectory computation started")
+
+
         def get_sol_value(prob: ca.Opti, var):
             val = prob.value(var)
             val = np.reshape(val, var.shape)
@@ -617,6 +623,9 @@ class DispatchModelPredictiveController:
 
                 # self.gradient_helper.check_initial_values(self.opti)
 
+        if step_index == 0:
+            self.logger.info("Entering first optimization solve")
+
         try:
             stderr_buffer = io.StringIO()
             # Use this workaround to capture casadi NaN detected errors
@@ -648,6 +657,9 @@ class DispatchModelPredictiveController:
 
             sol = self.opti.debug
             successful_optimization = False
+
+        if step_index == 0:
+            self.logger.info("First optimization solve complete")
 
         self.prev_sol = sol
 

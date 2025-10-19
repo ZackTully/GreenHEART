@@ -248,6 +248,9 @@ class RealTimeSimulation:
 
         for node in node_order:
 
+            if step_index == self.start_index:
+                self.logger.info(f"Step: {step_index}, simulating node: {node}")
+
             if node == "generation":
                 this_node_input = generation_available
                 # self.G.nodes[node]["model"].set_output(generation_available)
@@ -355,6 +358,10 @@ class RealTimeSimulation:
         self.dispatcher = dispatcher
         self.forecaster = Forecast(self.forecast_config, hybrid_profile, self.config)
 
+        if self.verbose:
+            self.logger.info("Forecaster initialized")
+
+
         # For timing
         t0 = time.time()
         t_log_last = time.time()
@@ -370,13 +377,24 @@ class RealTimeSimulation:
             if i < self.start_index:
                 continue
 
+            if self.verbose and i == self.start_index:
+                self.logger.info("First time step")
+
             try:
                 forecast = self.forecaster.get_forecast(hybrid_profile[i], i)
             except Exception as e:
                 self.logger.error(f"Forecasting calculation error at step: {i}")
                 self.logger.error(traceback.format_exc())
+            
+            if self.verbose and i == self.start_index:
+                self.logger.info("First time step, ran forecast")
 
             x0 = self.get_state_measurement(step_index=i)
+
+            if self.verbose and i == self.start_index:
+                self.logger.info("First time step, got state measurement")
+
+
             self.G = dispatcher.step(
                 self.G,
                 hybrid_profile[i],
@@ -384,6 +402,9 @@ class RealTimeSimulation:
                 x_measured=x0,
                 step_index=i,
             )
+
+            if self.verbose and i == self.start_index:
+                self.logger.info("First time step, got dispatch input")
 
             if "generation" in self.G.nodes:
                 if "grid_purchase" in self.G.nodes["generation"]:
@@ -394,6 +415,9 @@ class RealTimeSimulation:
             self.G = self.step_system_state_function(
                 self.G, hybrid_profile[i] + grid_power, i
             )
+
+            if self.verbose and i == self.start_index:
+                self.logger.info("First time step, simulated simulation graph")
 
             if (time.time() - t_log_last > 60) or (i == self.stop_index):
                 # Print and log progress every 60 seconds
