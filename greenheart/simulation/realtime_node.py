@@ -269,7 +269,7 @@ class Node:
 
 
         if self.splitting_method == "fractional":
-            if np.sum(u_split) <= 1e-3:
+            if np.sum(u_split) <= 0.5:
                 split = np.zeros(u_split.shape)
             else:
                 split = np.nan_to_num(u_split / np.sum(u_split))

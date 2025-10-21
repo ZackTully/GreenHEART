@@ -48,11 +48,12 @@ class DispatchModelPredictiveController:
         edge_order: list = None,
         mpc_config: dict = None,
         p_opts: dict = {"print_time": False, "verbose": False, "record_time": True},
-        s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5},
+        s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "tol": 1e-6, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6},
+        # s_opts: dict = {"print_level": 0, "compl_inf_tol": 5e-3, "max_iter": 1e5, "tol": 1e-3, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6},
+        # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5},
         debug_mode: bool = False,
     ):
-        """_summary_
-
+        """
         Args:
             config (GreenHeartSimulationConfig): _description_
             simulation_graph (nx.Graph): nx.Graph instance from RealtimeSimulator containing subsystem models
@@ -437,10 +438,6 @@ class DispatchModelPredictiveController:
         # Initial conditions
         opti.subject_to(x_var[:, 0] == x0_param)
 
-        # if not self.use_objective_class:
-        #     objective = 0
-        #     objective_terms = []
-
         # Loop through time steps in the horizon, apply dynamics constraint and calculate objective at each step
         for k in range(self.horizon):
 
@@ -466,28 +463,6 @@ class DispatchModelPredictiveController:
             if self.pet > 0:
                 opti.subject_to(yet == np.zeros((self.pet, 1)))
 
-            # if not self.use_objective_class:
-            #     step_obj, step_obj_terms = self.objective_step(
-            #         x_var[:, k],
-            #         uct_var[:, k],
-            #         usp_var[:, k],
-            #         yco_var[:,k],
-            #         yex_var[:, k],
-            #         gridcurtail=gridcurtail[:, k],
-            #         var_inds=self.objective_manager.var_inds,
-            #     )
-            #     # step_obj, step_obj_terms = self.objective_step(
-            #     #     x_var[:, k],
-            #     #     uct_var[:, k],
-            #     #     usp_var[:, k],
-            #     #     yco,
-            #     #     yexk,
-            #     #     gridcurtail=gridcurtail[:, k],
-            #     #     var_inds=objective_var_inds,
-            #     # )
-
-            #     objective += step_obj
-            #     objective_terms.append(step_obj_terms)
 
         if self.use_objective_class:
             objective = self.objective_manager.construct_objective(
@@ -497,34 +472,6 @@ class DispatchModelPredictiveController:
             self.obj_terms_uw = self.objective_manager.obj_terms_uw
         else:
             pass
-
-            # terminal_obj, terminal_terms = self.terminal_objective(xkp1)
-
-            # if self.terminal_cost:
-            #     objective += terminal_obj
-
-            # self.obj_terms = {}
-            # self.obj_terms_uw = {}
-
-            # for term in objective_terms[0].keys():
-            #     obj_term = 0
-            #     obj_term_uw = 0
-            #     for i in range(self.horizon):
-            #         weight_i = objective_terms[i][term]["w"]
-            #         expr_i = objective_terms[i][term]["expr"]
-
-            #         obj_term += weight_i * expr_i
-            #         obj_term_uw += expr_i
-
-            #     self.obj_terms.update({term: obj_term})
-            #     self.obj_terms_uw.update({term: obj_term_uw})
-
-            # for term in terminal_terms.keys():
-            #     expr = terminal_terms[term]["expr"]
-            #     w = terminal_terms[term]["w"]
-
-            #     self.obj_terms.update({term: w * expr})
-            #     self.obj_terms_uw.update({term: expr})
 
         # Set objective to objective expression
         opti.minimize(objective)
@@ -539,14 +486,6 @@ class DispatchModelPredictiveController:
         self.opt_params = {"dex": dex_param, "x0": x0_param}
         self.opt_vars.update({"gridcurtail": gridcurtail})
 
-        # self.compare_objective_implementations(
-        #     obj1=objective,
-        #     obj_terms1=self.obj_terms,
-        #     obj_terms_uw1=self.obj_terms_uw,
-        #     obj2=objective_man,
-        #     obj_terms2=self.obj_terms_man,
-        #     obj_terms_uw2=self.obj_terms_uw_man,
-        # )
 
     def update_optimization_parameters(self, x0, src_forecast):
         self.opti.set_value(self.opt_params["dex"], src_forecast)
