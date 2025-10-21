@@ -433,7 +433,7 @@ class RealTimeSimulation:
 
             if self.tqdm_progress:
                 time_iterable.set_postfix({"yex" : f'{self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]:.2f}'})
-                # time_iterable.set_postfix(f'yex: {self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]:.2f}')
+                # time_iterable.set_postfix({"x_bes" : f'{self.G.nodes["battery"]["ionode"].model.hopp_battery._system_model.StatePack.SOC:.2f}'})
 
             if self.save_sysid:
                 self.rts_helper.save_ctrl_for_sysid(step_index=i)

@@ -260,8 +260,19 @@ class Node:
             assert np.min(u_split) >= -1, f"{u_split = }"
             u_split = np.where(u_split < 0, 0.0, u_split)
 
+
+        if np.any(model_output > 1.1 * np.sum(u_split)):
+            if self.name == "battery":
+                bes_output = model_output
+                # model_output = np.array([[np.sum(u_split), 0, 0, 0]]) 
+            pass
+
+
         if self.splitting_method == "fractional":
-            split = np.nan_to_num(u_split / np.sum(u_split))
+            if np.sum(u_split) <= 1e-3:
+                split = np.zeros(u_split.shape)
+            else:
+                split = np.nan_to_num(u_split / np.sum(u_split))
         elif self.splitting_method == "absolute":
             split = u_split
         else:
