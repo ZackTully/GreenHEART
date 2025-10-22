@@ -20,6 +20,7 @@ class ControlModel:
         # Always initialize the control model system as a single output system
         # Then split it by duplicating rows/columns of D or F and add the appropriate constraints
 
+        # State space matrices
         self.A = A
         self.B = B
         self.C = C
@@ -27,11 +28,13 @@ class ControlModel:
         self.E = E
         self.F = F
 
+        # System dimensions
         self.m = self.B.shape[1]
         self.n = self.A.shape[0]
         self.p = self.C.shape[0]
         self.o = self.E.shape[1]
 
+        # For any elements of the state space that get replaced by nonlinear function
         self.x_linear = [True] * self.n
         self.u_linear = [True] * self.m
         self.y_linear = [True] * self.p
@@ -49,6 +52,8 @@ class ControlModel:
         self.d_li = np.arange(self.o)
         self.d_nl = np.arange(0)
 
+
+        # Bounds
         self.u_lb = np.array([None] * self.m)
         self.u_ub = np.array([None] * self.m)
         self.x_lb = np.array([None] * self.n)
@@ -137,12 +142,22 @@ class ControlModel:
         self.y_ub = np.delete(self.y_ub, y_position)
 
     def set_disturbance_domain(self, domain_list):
+        # Domain should be a (1,3) shape array of 1s if there is a disturbance in that 
+        # domain and 0 if not. This array is used as a mask to zero out erronious inputs 
+        # from the wrong domain.
+        # disturbance_domain = [electricity, heat energy, inputs]
+
         self.disturbance_domain = np.array(domain_list)
 
     def set_disturbance_reshape(self, reshape_mat):
+        # This permutation matrix should be (o, 3) shape array to reshape the length 3
+        # disturbance edge vector into the length o disturbance vector expected by the 
+        # control model state space. 
         self.disturbance_permutation = np.array(reshape_mat)
 
     def set_output_domain(self, domain_list):
+        # Similar to disturbance domain
+        # output_domain = [electricity, heat energy, inputs]
         self.output_domain = np.array(domain_list)
 
 
