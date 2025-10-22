@@ -583,6 +583,8 @@ class DispatchModelPredictiveController:
             sol_stats = sol.stats()
             self.store_solve_stats(sol_stats, step_index)
             successful_optimization = True
+            if step_index == 0 or step_index == 10:
+                assert False
             []
         except Exception as e:
             self.logger.debug(f"{step_index = }")
@@ -596,31 +598,6 @@ class DispatchModelPredictiveController:
             self.logger.debug(violation_desc)
 
             self.debug_helper.write_solver_output_for_debug(step_index=step_index)
-
-
-
-            # debug_s_opts = copy.deepcopy(self.s_opts)
-            # debug_p_opts = copy.deepcopy(self.p_opts)
-
-            # debug_s_opts["print_level"] = 5
-
-            # self.opti.solver("ipopt", debug_p_opts, debug_s_opts)
-
-            # try:
-            #     self.opti.solve()
-            # except:
-            #     pass
-
-            # self.opti.solver("ipopt", self.p_opts, self.s_opts)
-
-
-
-
-
-
-
-
-
 
 
 

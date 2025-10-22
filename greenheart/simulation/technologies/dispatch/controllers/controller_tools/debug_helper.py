@@ -260,16 +260,19 @@ class DebugHelper:
 
         debug_s_opts["print_level"] = 5
 
-        self.mpc.opti.solver("ipopt", debug_p_opts, debug_s_opts)
+        opti_copy = self.mpc.opti.copy()
+        # opti_copy = copy.deepcopy(self.mpc.opti)
+
+        opti_copy.solver("ipopt", debug_p_opts, debug_s_opts)
 
         with Capturing() as output:
 
             try:
-                self.mpc.opti.solve()
+                opti_copy.solve()
             except:
                 pass
 
-        self.mpc.opti.solver("ipopt", self.mpc.p_opts, self.mpc.s_opts)
+        # self.mpc.opti.solver("ipopt", self.mpc.p_opts, self.mpc.s_opts)
 
         datetime_string = datetime.datetime.now().strftime("%Y_%m_%d--%H_%M_%S-%s")
 
