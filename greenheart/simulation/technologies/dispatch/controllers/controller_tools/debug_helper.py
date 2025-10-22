@@ -295,8 +295,33 @@ class DebugHelper:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
         fpath = f"{dir}.txt"
 
+
+
         with open(fpath, "w") as f:
             f.write("\n".join(output))
+
+
+            # for attr in self.mpc.__dir__():
+            #     if attr.endswith("_label"):
+            #         getattr(self.mpc, attr)
+
+
+            for k,v in self.mpc.opt_vars.items():
+                f.write(f"\n\n{k}\n")
+                f.write(str(opti_copy.debug.value(v)))
+            
+            for k,v in self.mpc.opt_params.items():
+                f.write(f"\n\n{k}\n")
+                f.write(str(opti_copy.debug.value(v)))
+
+
+
+
+            with Capturing() as infeas: 
+                opti_copy.debug.show_infeasibilities(1e-9)
+            f.write("\n".join(infeas))
+
+
 
         pass
 

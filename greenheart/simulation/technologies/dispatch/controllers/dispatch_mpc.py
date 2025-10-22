@@ -583,8 +583,8 @@ class DispatchModelPredictiveController:
             sol_stats = sol.stats()
             self.store_solve_stats(sol_stats, step_index)
             successful_optimization = True
-            if step_index == 0 or step_index == 10:
-                assert False
+            # if step_index == 0 or step_index == 10:
+            #     assert False
             []
         except Exception as e:
             self.logger.debug(f"{step_index = }")
