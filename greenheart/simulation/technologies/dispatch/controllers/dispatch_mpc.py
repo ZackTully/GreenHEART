@@ -12,6 +12,7 @@ from logging import handlers
 import traceback
 import contextlib
 import io
+import copy
 
 import time
 
@@ -33,7 +34,7 @@ from greenheart.simulation.technologies.dispatch.controllers.controller_tools.ob
     Objective,
 )
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.debug_helper import (
-    DebugHelper,
+    DebugHelper, Capturing
 )
 
 
@@ -78,9 +79,11 @@ class DispatchModelPredictiveController:
         if "logging" in self.mpc_config:
             self.logging_config = self.mpc_config.pop("logging")
             self.setup_logging(self.logging_config)
+            self.case_description = self.logging_config["case_description"]
         else:
             self.logging_config = {}
             self.logger = logging.getLogger()
+            self.case_description = "mpc"
 
         self.plotter = MPCPlotter(mpc=self)
         self.debug_helper = DebugHelper(mpc=self)
@@ -582,6 +585,7 @@ class DispatchModelPredictiveController:
             successful_optimization = True
             []
         except Exception as e:
+            self.logger.debug(f"{step_index = }")
             self.logger.debug(e)
             # self.logger.debug(traceback.format_exc())
 
@@ -590,6 +594,35 @@ class DispatchModelPredictiveController:
                 step_index=step_index, forecast=forecast, x0=x0
             )
             self.logger.debug(violation_desc)
+
+            self.debug_helper.write_solver_output_for_debug(step_index=step_index)
+
+
+
+            # debug_s_opts = copy.deepcopy(self.s_opts)
+            # debug_p_opts = copy.deepcopy(self.p_opts)
+
+            # debug_s_opts["print_level"] = 5
+
+            # self.opti.solver("ipopt", debug_p_opts, debug_s_opts)
+
+            # try:
+            #     self.opti.solve()
+            # except:
+            #     pass
+
+            # self.opti.solver("ipopt", self.p_opts, self.s_opts)
+
+
+
+
+
+
+
+
+
+
+
 
             # Think about adding more debug information to the logger here
             # Gradients
@@ -857,16 +890,16 @@ class DispatchModelPredictiveController:
         []
 
 
-class Capturing(list):
-    def __enter__(self):
-        self._stdout = sys.stdout
-        sys.stdout = self._stringio = StringIO()
-        return self
+# class Capturing(list):
+#     def __enter__(self):
+#         self._stdout = sys.stdout
+#         sys.stdout = self._stringio = StringIO()
+#         return self
 
-    def __exit__(self, *args):
-        self.extend(self._stringio.getvalue().splitlines())
-        del self._stringio  # free up some memory
-        sys.stdout = self._stdout
+#     def __exit__(self, *args):
+#         self.extend(self._stringio.getvalue().splitlines())
+#         del self._stringio  # free up some memory
+#         sys.stdout = self._stdout
 
 
 # if __name__ == "__main__":
