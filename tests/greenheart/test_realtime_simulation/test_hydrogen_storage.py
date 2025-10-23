@@ -5,7 +5,7 @@ from greenheart.simulation.technologies.hydrogen.h2_storage.hydrogen_storage imp
 )
 
 
-np.set_printoptions(legacy="1.25")
+# np.set_printoptions(legacy="1.25")
 
 
 def config():

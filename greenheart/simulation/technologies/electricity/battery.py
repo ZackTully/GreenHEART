@@ -9,7 +9,7 @@ from hopp.simulation.technologies.dispatch.power_storage import (
 from greenheart.simulation.technologies.dispatch.control_model import ControlModel
 
 # For debugging printouts
-np.set_printoptions(legacy="1.25")
+# np.set_printoptions(legacy="1.25")
 
 
 class Battery:
