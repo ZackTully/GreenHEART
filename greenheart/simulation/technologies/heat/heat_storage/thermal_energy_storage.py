@@ -272,7 +272,8 @@ class ThermalEnergyStorage:
 
         Q_out_kWh = -self.delta_H(self.T_hot, self.T_buffer_target) * m_discharge
 
-        self.Q_out_kWh = Q_out_kWh[0]
+        # self.Q_out_kWh = Q_out_kWh[0]
+        self.Q_out_kWh = Q_out_kWh
 
         self.M_hot += delta_M_hot
         self.M_buffer += delta_M_buffer
