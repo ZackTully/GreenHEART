@@ -49,7 +49,11 @@ class DispatchModelPredictiveController:
         edge_order: list = None,
         mpc_config: dict = None,
         p_opts: dict = {"print_time": False, "verbose": False, "record_time": True},
-        s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "tol": 1e-6, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6},
+        s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "constr_viol_tol": 1e-3, "tol": 1e-8, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6, "resto_failure_feasibility_threshold": 1e-7},
+        # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "constr_viol_tol": 5e-4, "tol": 1e-8, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6, }, # This one works pretty well
+        # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "constr_viol_tol": 5e-4, "tol": 1e-8, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6, "nlp_scaling_method": "none", "expect_infeasible_problem": "yes"},
+        # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "constr_viol_tol": 5e-4, "tol": 1e-8, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6},
+        # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "tol": 1e-8, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6},
         # s_opts: dict = {"print_level": 0, "compl_inf_tol": 5e-3, "max_iter": 1e5, "tol": 1e-3, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6},
         # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5},
         debug_mode: bool = False,

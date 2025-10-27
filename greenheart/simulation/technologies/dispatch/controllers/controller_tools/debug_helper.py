@@ -258,12 +258,21 @@ class DebugHelper:
         debug_s_opts = copy.deepcopy(self.mpc.s_opts)
         debug_p_opts = copy.deepcopy(self.mpc.p_opts)
 
-        debug_s_opts["print_level"] = 5
+        # debug_s_opts["tol"] = 1e-11
+        # debug_s_opts["compl_inf_tol"] = 1e+5
+        # debug_s_opts["dual_inf_tol"] = 1e-3
+        # debug_s_opts["constr_viol_tol"] = 5e-4
+        # debug_s_opts["print_options_mode"] = "latex"
+
+        debug_s_opts["print_level"] = 7
+        # debug_s_opts["print_level"] = 5
 
         opti_copy = self.mpc.opti.copy()
         # opti_copy = copy.deepcopy(self.mpc.opti)
 
         opti_copy.solver("ipopt", debug_p_opts, debug_s_opts)
+
+        # opti_copy.solve()
 
         with Capturing() as output:
 
@@ -298,7 +307,14 @@ class DebugHelper:
 
 
         with open(fpath, "w") as f:
-            f.write("\n".join(output))
+
+            if len(output) > 1000:
+                f.write("\n".join(output[0:100]))
+                f.write("="*100)
+                f.write("="*100)
+                f.write("\n".join(output[-500:]))
+            else:
+                f.write("\n".join(output))
 
 
             # for attr in self.mpc.__dir__():
@@ -314,11 +330,11 @@ class DebugHelper:
                 f.write(f"\n\n{k}\n")
                 f.write(str(opti_copy.debug.value(v)))
 
-
+            f.write("\n\n")
 
 
             with Capturing() as infeas: 
-                opti_copy.debug.show_infeasibilities(1e-9)
+                opti_copy.debug.show_infeasibilities(1e-10)
             f.write("\n".join(infeas))
 
 
