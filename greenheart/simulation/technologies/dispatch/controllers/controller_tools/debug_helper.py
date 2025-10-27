@@ -255,6 +255,9 @@ class DebugHelper:
         []
 
     def write_solver_output_for_debug(self, step_index):
+        # TODO if self.mpc.opti.return_status = "maximum_iterations_exceeded": 
+        # then don't solve it again, just skip this part.
+
         debug_s_opts = copy.deepcopy(self.mpc.s_opts)
         debug_p_opts = copy.deepcopy(self.mpc.p_opts)
 
