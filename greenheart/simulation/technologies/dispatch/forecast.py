@@ -200,6 +200,15 @@ def plot_interp_options():
 
 if __name__ == "__main__":
 
+    plt.rcParams.update(
+        {
+            "text.usetex": True,
+            "font.family": "serif",
+            # "font.family": "sans-serif",
+            # "font.sans-serif": "Helvetica",
+            "font.sans-serif": "computer modern",
+        }
+    )
     from pathlib import Path
 
     # plot_interp_options()
@@ -224,7 +233,7 @@ if __name__ == "__main__":
         w_cutoff=2 * np.pi / (12 * 3600),
     )
 
-    horizon = 24
+    horizon = 12
 
     config1 = dict(
         horizon=horizon,
@@ -255,10 +264,43 @@ if __name__ == "__main__":
     configs = [
         # config1,
         # config2,
-        # config3,
+        config3,
         # config4,
-        config5,
+        # config5,
     ]
+
+    conf1 = dict(
+        horizon=horizon,
+        method="perfect_persistence_interp",
+        method_config={"perfect_fraction": 0},
+    )
+    conf2 = dict(
+        horizon=horizon,
+        method="perfect_persistence_interp",
+        method_config={"perfect_fraction": 0.25},
+    )
+    conf3 = dict(
+        horizon=horizon,
+        method="perfect_persistence_interp",
+        method_config={"perfect_fraction": 0.5},
+    )
+    conf4 = dict(
+        horizon=horizon,
+        method="perfect_persistence_interp",
+        method_config={"perfect_fraction": 0.75},
+    )
+    conf5 = dict(
+        horizon=horizon,
+        method="perfect_persistence_interp",
+        method_config={"perfect_fraction": 1},
+    )
+    # conf4 = dict(
+    #     horizon=horizon,
+    #     method="perfect_persistence_interp",
+    #     method_config={"perfect_fraction": 0},
+    # )
+
+    configs = [conf1, conf2, conf3, conf4, conf5]
 
     t = np.arange(0, 8760, 1)
     # t = np.arange(0, 8769, 1)
@@ -309,31 +351,69 @@ if __name__ == "__main__":
 
     hybrid_profile = wind_generation["generation"] + solar_generation["generation"]
 
-    def plot_forecaster(forecaster, ax):
-        ax.plot(t, hybrid_profile, alpha=0.75, color="black", linewidth=2, label="Data")
-        sim_length = 100
-        ax.set_xlim([0, sim_length + forecaster.forecast_horizon])
+    def plot_forecaster(forecaster, ax, line_kw={}, plot_disturbance=False):
+        if plot_disturbance:
+            ax.fill_between(t, hybrid_profile, alpha=0.125, color="black", edgecolor="none", linewidth=2, label="Disturbance")
+            # ax.plot(t, hybrid_profile, alpha=0.75, color="black", linewidth=2, label="Data")
+        t_start = 7
+        sim_length = 1
+
+        # sim_length = 12
+        ax.set_xlim(
+            [0 + t_start - 1, sim_length + forecaster.forecast_horizon + t_start]
+        )
 
         for i in range(sim_length):
-            if i % 12:
-                continue
+            # if i % 12:
+            #     continue
 
-            prediction = forecaster.get_forecast(hybrid_profile[i], step_index=i)
-            t_forecast = np.arange(i, i + forecaster.forecast_horizon, 1)
+            prediction = forecaster.get_forecast(
+                hybrid_profile[i + t_start], step_index=i + t_start
+            )
+            t_forecast = np.arange(
+                i + t_start, i + t_start + forecaster.forecast_horizon, 1
+            )
 
-            ax.plot(t_forecast, prediction, linewidth=1.25, color="orange")
+            ax.plot(
+                t_forecast,
+                prediction,
+                linewidth=2,
+                # color="orange",
+                **line_kw,
+            )
 
         ax.set_ylabel(forecaster.forecast_method)
 
     # forecaster = Forecast(config, hybrid_profile)
     # prediction = forecaster.get_forecast(hybrid_profile[0], step_index=0)
 
-    fig, ax = plt.subplots(len(configs), 1, layout="constrained", sharex="all")
+    fig, ax = plt.subplots(1, 1, layout="constrained", sharex="all", figsize=(4, 3))
+    # fig, ax = plt.subplots(len(configs), 1, layout="constrained", sharex="all")
 
     ax = np.atleast_1d(ax)
 
+    labels=[
+        "$\\delta, \\alpha=0.0$",
+        "$\\delta, \\alpha=0.25$",
+        "$\\delta, \\alpha=0.5$",
+        "$\\delta, \\alpha=0.75$",
+        "$\\delta, \\alpha=1.0$",
+    ]
+
+    kw_list = [
+        {"label": labels[i], "color": plt.colormaps["plasma"]((i / len(configs)) * 0.5 + 0.3)}
+        for i in range(len(configs))
+    ]
+
     for i in range(len(configs)):
         forecaster = Forecast(configs[i], hybrid_profile)
-        plot_forecaster(forecaster, ax[i])
+        # plot_forecaster(forecaster, ax[i])
+        plot_forecaster(forecaster, ax[0], line_kw=kw_list[i], plot_disturbance=(i==0))
+
+    ax[0].legend()
+    ax[0].legend().set_draggable(True)
+    ax[0].set_xlabel("Time [h]")
+    ax[0].set_ylabel("Wind/solar generation [kWh]")
+    ax[0].set_ylim([0, 1e6])
 
     []

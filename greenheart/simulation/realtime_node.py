@@ -161,7 +161,7 @@ class Node:
         model_disturbance = self.format_model_input(node_input)
 
         if self.name == "generation":
-            model_disturbance = self.model.output
+            model_disturbance = np.atleast_1d(self.model.output)
 
         # Step subsystem model
         y_model, u_passthrough, u_curtail = self.model.step(
@@ -521,7 +521,7 @@ def setup_thermal_energy_storage_node(G, config, hi, component_config):
     outputs = {"power": False, "Qdot": True, "mdot": False, "T": False}
     component_dict = {
         "thermal_energy_storage": {
-            "model": ThermalEnergyStorage(),
+            "model": ThermalEnergyStorage(**component_config["thermal_energy_storage"]),
             "model_inputs": inputs,
             "model_outputs": outputs,
         }

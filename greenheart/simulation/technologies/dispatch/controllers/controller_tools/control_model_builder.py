@@ -1239,3 +1239,54 @@ class ControlModelBuilder:
             print(print_str)
 
         []
+
+    def print_bounds(self):
+
+        import pandas as pd
+
+        self.bounds
+        self.bounds_verbose
+
+        labels = [self.mct_label, self.n_label, self.p_label]
+
+        lower_keys = ["u_lb", "x_lb", "y_lb"]
+        upper_keys = ["u_ub", "x_ub", "y_ub"]
+
+        upper_dict = {}
+        lower_dict = {}
+
+        for i, lk in enumerate(lower_keys):
+            for j, lb in enumerate(self.bounds[lk]):
+                lower_dict.update({f"{labels[i][j]}": lb})
+
+        for i, uk in enumerate(upper_keys):
+            for j, ub in enumerate(self.bounds[uk]):
+                upper_dict.update({f"{labels[i][j]}": ub})
+
+        upper_series = pd.Series(upper_dict)
+        lower_series = pd.Series(lower_dict)
+
+        key_map = {
+            "uct 0 battery" : "$u^{c,b+}$",
+            "uct 1 battery" : "$u^{c,b-}$",
+            "uct 0 thermal_energy_storage" : "$u^{c,q+}$",
+            "uct 1 thermal_energy_storage" : "$u^{c,q-}$",
+            "uct 0 hydrogen_storage" : "$u^{c,h+}$",
+            "uct 1 hydrogen_storage" : "$u^{c,h-}$",
+            "x 0 battery linear" : "$x^{b}$",
+            "x 0 thermal_energy_storage linear" : "$x^{q1}$",
+            "x 1 thermal_energy_storage linear" : "$x^{q2}$",
+            "x 0 hydrogen_storage linear" : "$x^{h}$",
+            "yco 0 generation (to battery)" : "",
+            "yco 1 generation (to thermal_energy_storage)" : "",
+            "yco 2 generation (to electrolyzer)" : "",
+            "yco 3 generation (to steel)" : "",
+            "yco 0 battery (to thermal_energy_storage)" : "",
+            "yco 1 battery (to electrolyzer)" : "",
+            "yco 2 battery (to steel)" : "",
+        }
+
+        df = pd.concat([lower_series, upper_series], axis=1)
+        df.columns = ["Lower", "Upper"]
+
+        pass

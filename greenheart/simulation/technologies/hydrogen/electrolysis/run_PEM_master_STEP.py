@@ -115,6 +115,8 @@ class run_PEM_clusters_step(run_PEM_clusters):
     def step(self, input_power, dispatch, step_index):
 
 
+        graph_input = input_power
+
 
         if isinstance(input_power, (np.ndarray, list)):
             input_power = input_power[0]

@@ -47,15 +47,15 @@ class Objective:
             "bes_simultaneous",
             "tes_simultaneous",
             "h2s_simultaneous",
-            "bes_state",
-            "tes_state",
-            "h2s_state",
+            # "bes_state",
+            # "tes_state",
+            # "h2s_state",
             "bes_soc_state",
             "tes_soc_state",
             "h2s_soc_state",
-            "bes_terminal",
-            "tes_terminal",
-            "h2s_terminal",
+            # "bes_terminal",
+            # "tes_terminal",
+            # "h2s_terminal",
             # "storage_state_LQ>'
         ]
 
@@ -152,7 +152,7 @@ class Objective:
         obj = 0
         pv_cap = 800000  # kW
         wind_cap = 155 * 6000  # kW
-        gen_cap = pv_cap + wind_cap
+        gen_cap = 0.3 * (pv_cap + wind_cap)
         scaling = 1 / gen_cap**2
         obj_traj = []
         for k in range(self.horizon):
@@ -314,7 +314,7 @@ class Objective:
         scaling = 1 / ( (self.x_bes_max - self.x_bes_min) ** 2)
         term_obj = 0
         obj_traj = []
-        for k in range(self.horizon):
+        for k in range(self.horizon+1):
 
             # obj_k = scaling * (self.x_bes_max - x_var[self.var_inds["x_bes"], k]) ** 2
 
@@ -332,7 +332,7 @@ class Objective:
         scaling = 1 / ((self.x_tes_max - self.x_tes_min) ** 2)
         term_obj = 0
         obj_traj = []
-        for k in range(self.horizon):
+        for k in range(self.horizon+1):
             # obj_k = scaling * (self.x_tes_max - x_var[self.var_inds["x_tes"], k]) ** 2
             obj_k = (self.soc_tes_ref - x_var[self.var_inds["x_tes"], k]/ self.x_tes_max)**2
 
@@ -347,7 +347,7 @@ class Objective:
         scaling = 1 / ( (self.x_h2s_max - self.x_h2s_min) ** 2)
         term_obj = 0
         obj_traj = []
-        for k in range(self.horizon):
+        for k in range(self.horizon+1):
             # obj_k = scaling * (self.x_h2s_max - x_var[self.var_inds["x_h2s"], k]) ** 2
             obj_k = (self.soc_h2s_ref - x_var[self.var_inds["x_h2s"], k] / self.x_h2s_max)
 

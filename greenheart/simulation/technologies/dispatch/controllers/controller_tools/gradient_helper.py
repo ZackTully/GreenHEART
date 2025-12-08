@@ -4,10 +4,14 @@ import casadi as ca
 import scipy
 from colorama import Fore, Style
 
+# np.set_printoptions(formatter={'float_kind': '{:15,.3f} '.format}, floatmode="fixed")
+# np.set_printoptions(linewidth=200, suppress=True, precision=4)
+
 class GradientHelper:
     def __init__(self, mpc):
         self.mpc = mpc
-        np.set_printoptions(linewidth=200, suppress=True, precision=4)
+        # np.set_printoptions(formatter={'float_kind': '{:15,.3f} '.format}, floatmode="fixed")
+        np.set_printoptions(formatter={'float_kind': '{:12.4e} '.format}, floatmode="fixed")
 
 
 
@@ -88,7 +92,7 @@ class GradientHelper:
         if format is None:
             arr_rows = arr.__str__().split("\n")
         elif format == "objective":
-            arr_rows = [f"{v:.9f}".rjust(30) for v in arr[:, 0]]
+            arr_rows = [f"{v:.6e}".rjust(30) for v in arr[:, 0]]
 
         for i, lab, in enumerate(labels):
             arr_rows[i] = labels[i].ljust(max_label+2, " ") + Fore.BLUE + arr_rows[i] + Style.RESET_ALL
@@ -168,13 +172,15 @@ class GradientHelper:
                 self.print_with_labels(jac_f(sol, self.opt_vars["yex"], self.obj_terms_uw[obj_key]), self.pex_label)
 
      
+        []
+
 
 
     def check_gradients(self, sol):
 
         self.print_opt_var_values(sol)
         self.print_objective_values(sol)
-        self.print_objective_jacobian(sol)
+        # self.print_objective_jacobian(sol)
 
 
 

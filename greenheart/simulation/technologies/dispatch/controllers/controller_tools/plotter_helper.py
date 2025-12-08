@@ -2,6 +2,25 @@ import numpy as np
 import matplotlib.pyplot as plt
 import casadi as ca
 
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.size": 10,
+        "legend.fontsize": 8,
+        "figure.titlesize": 12,
+        "axes.titlesize": 12,
+        "axes.labelsize": 10,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "legend.borderpad": 0.2,
+        "legend.labelspacing": 0.3,
+        "legend.handlelength": 1.25,
+        "legend.handletextpad": 0.3,
+        "legend.columnspacing": 1.0,
+        "axes.axisbelow": True,
+    }
+)
+
 
 class MPCPlotter:
     def __init__(self, mpc):
@@ -25,7 +44,7 @@ class MPCPlotter:
         n_lab = self.mpc.n_label
         p_lab = self.mpc.p_label
 
-        bound_kwargs = dict(linewidth=.75, color="black")
+        bound_kwargs = dict(linewidth=0.75, color="black")
 
         for i, node in enumerate(self.mpc.node_order):
 
@@ -44,7 +63,6 @@ class MPCPlotter:
                     j_range = range(n_traj)
                 else:
                     j_range = range(n_traj - n, n_traj)
-
 
                 for j in j_range:
                     t = np.arange(
@@ -65,8 +83,13 @@ class MPCPlotter:
             plot_one(ax[i, 1], self.mpc.uct_store, uct_inds)
             # Add in state bounds
             if len(self.mpc.bounds_verbose[node]["x_lb"]) > 0:
-                ax[i, 2].axhline(self.mpc.bounds_verbose[node]["x_lb"], **bound_kwargs)
-                ax[i, 2].axhline(self.mpc.bounds_verbose[node]["x_ub"], **bound_kwargs)
+                for j in range(len(self.mpc.bounds_verbose[node]["x_lb"])):
+                    ax[i, 2].axhline(
+                        self.mpc.bounds_verbose[node]["x_lb"][j], **bound_kwargs
+                    )
+                    ax[i, 2].axhline(
+                        self.mpc.bounds_verbose[node]["x_ub"][j], **bound_kwargs
+                    )
 
             plot_one(
                 ax[i, 2],
@@ -97,6 +120,211 @@ class MPCPlotter:
                 plot_one(ax[i, 0], forecast_curtail_grid, np.array([0, 1, 2]))
 
             fig.align_ylabels()
+
+        pass
+
+    def plot_saved_trajectories_paper(self, save_figure=False, save_data=True):
+
+        n_rows = 5
+        n_cols = 1
+        fig, ax = plt.subplots(
+            n_rows, n_cols, sharex="all", layout="constrained", figsize=(4, 5)
+        )
+        ax = np.atleast_2d(ax).T
+
+        traj_kw = dict(alpha=0.25, linewidth=0.75)
+        if self.mpc.horizon == 48:
+            scat_kw = dict(marker="D", s=5, label="action")
+            # scat_kw = dict(marker="D", s=11, label="action")
+        elif self.mpc.horizon == 6:
+            # scat_kw = dict(marker="s", s=11, label="action")
+            scat_kw = dict(marker="s", s=5, label="action")
+        else:
+            scat_kw = dict(marker=".", label="action")
+
+        d_kw = dict(color="gray")
+        cur_kw = dict(color="orange")
+        xb_kw = dict(color="black")
+        xq_kw = dict(color="red")
+        xh_kw = dict(color="blue")
+        y_kw = dict(color="green")
+
+        def get_node_inds(node):
+            o_lab = self.mpc.oco_label
+            mct_lab = self.mpc.mct_label
+            n_lab = self.mpc.n_label
+            p_lab = self.mpc.p_label
+            dco_inds = [i for i in range(len(o_lab)) if node in o_lab[i].split(" ")[2]]
+            uct_inds = [i for i in range(len(mct_lab)) if node in mct_lab[i]]
+            x_inds = [i for i in range(len(n_lab)) if node in n_lab[i]]
+            y_inds = [i for i in range(len(p_lab)) if node in p_lab[i].split(" ")[2]]
+
+            return dco_inds, uct_inds, x_inds, y_inds
+
+        def draw_bounds(ax, lb, ub, factor=1, omit=""):
+            kw = dict(color="black", linewidth=0.5, linestyle="dashed")
+            for i in range(len(lb)):
+                if not omit == "lower":
+                    ax.axhline(lb[i] / factor, **kw)
+                if not omit == "upper":
+                    ax.axhline(ub[i] / factor, **kw)
+
+        def plot_timeseries(ax, t, y_data, kw={}):
+            ax.fill_between(t, y_data, edgecolor="none", **kw)
+
+        def plot_actions(ax, t, y_data, factor=1, kw={}):
+            yd = np.array([y[0, 0] for y in y_data])
+            ax.scatter(t, yd / factor, **kw)
+
+        def plot_trajectories(ax, t, y_data, factor=1, kw={}):
+            # TODO make the trajectory go beyond the last step (like zero order hold behavior)
+            for i in range(len(y_data)):
+                if i == 0:
+                    label = "trajectory"
+                else:
+                    label = None
+                ti = np.arange(t[i], t[i] + y_data[i].shape[1], 1)
+                ax.plot(ti, y_data[i][0, :] / factor, **kw, label=label)
+
+        t = np.arange(0, len(self.mpc.de_store), 1)
+
+        disturbance = np.array([de[0, 0] for de in self.mpc.de_store])
+
+        # Disturbance
+        plot_timeseries(ax[0, 0], t, disturbance, kw=(d_kw | dict(alpha=0.25)))
+
+        # Forecasted disturbance
+        plot_trajectories(ax[0, 0], t, self.mpc.forecast_store, kw=(d_kw | traj_kw))
+
+        # Measured disturbance
+        plot_actions(ax[0, 0], t, self.mpc.forecast_store, kw=(d_kw | scat_kw))
+
+        plot_trajectories(ax[0, 0], t, self.mpc.curtail_store, kw = (cur_kw | traj_kw))
+        plot_actions(ax[0, 0], t, self.mpc.curtail_store, kw=(cur_kw | traj_kw))
+
+
+        # Battery state
+        dbes, ubes, xbes, ybes = get_node_inds("battery")
+        ydat_bes = [xs[xbes, :] for xs in self.mpc.x_store]
+
+        bds_bes = self.mpc.bounds_verbose["battery"]
+        draw_bounds(
+            ax[1, 0],
+            bds_bes["x_lb"],
+            bds_bes["x_ub"],
+            factor=bds_bes["x_ub"],
+            omit="upper",
+        )
+        plot_trajectories(
+            ax[1, 0], t, ydat_bes, factor=bds_bes["x_ub"], kw=(xb_kw | traj_kw)
+        )
+        plot_actions(
+            ax[1, 0], t, ydat_bes, factor=bds_bes["x_ub"], kw=(xb_kw | scat_kw)
+        )
+
+        # Thermal energy storage state
+        dtes, utes, xtes, ytes = get_node_inds("thermal_energy_storage")
+        ydat_tes = [xs[xtes, :] for xs in self.mpc.x_store]
+
+        bds_tes = self.mpc.bounds_verbose["thermal_energy_storage"]
+        draw_bounds(
+            ax[2, 0],
+            [bds_tes["x_lb"][0]],
+            [bds_tes["x_ub"][1]],
+            factor=bds_tes["x_ub"][0],
+            omit="upper",
+        )
+        plot_trajectories(
+            ax[2, 0], t, ydat_tes, factor=bds_tes["x_ub"][0], kw=(xq_kw | traj_kw)
+        )
+        plot_actions(
+            ax[2, 0], t, ydat_tes, factor=bds_tes["x_ub"][0], kw=(xq_kw | scat_kw)
+        )
+
+        # Hydrogen storage state
+        dh2s, uh2s, xh2s, yh2s = get_node_inds("hydrogen_storage")
+        ydat_h2s = [xs[xh2s, :] for xs in self.mpc.x_store]
+
+        bds_h2s = self.mpc.bounds_verbose["hydrogen_storage"]
+        draw_bounds(
+            ax[3, 0],
+            bds_h2s["x_lb"],
+            bds_h2s["x_ub"],
+            factor=bds_h2s["x_ub"],
+            omit="upper",
+        )
+        plot_trajectories(
+            ax[3, 0], t, ydat_h2s, factor=bds_h2s["x_ub"], kw=(xh_kw | traj_kw)
+        )
+        plot_actions(
+            ax[3, 0], t, ydat_h2s, factor=bds_h2s["x_ub"], kw=(xh_kw | scat_kw)
+        )
+
+        # Output
+        yex_dat = self.mpc.yex_store
+        draw_bounds(ax[4, 0], lb=[0], ub=[self.mpc.reference], omit="lower")
+        plot_trajectories(ax[4, 0], t, yex_dat, kw=(y_kw | traj_kw))
+        plot_actions(ax[4, 0], t, yex_dat, kw=(y_kw | scat_kw))
+
+        ax[-1, 0].set_xlabel("Time [h]")
+
+        ax[0, 0].set_ylabel("Disturbance\n[kWh]")
+        ax[1, 0].set_ylabel("BES SOC")
+        ax[2, 0].set_ylabel("TES SOC")
+        ax[3, 0].set_ylabel("H2S SOC")
+        # ax[1, 0].set_ylabel("BES state\n[kWh]")
+        # ax[2, 0].set_ylabel("TES state 1\n[kWh]")
+        # ax[3, 0].set_ylabel("H2S state\n[kg]")
+        ax[4, 0].set_ylabel("Output\n[tonne]")
+
+        ax[0, 0].set_xlim([-5, 105])
+
+        ax[0, 0].ticklabel_format(style="sci", axis="y", scilimits=(0, 0))
+        ax[0, 0].set_ylim([0, ax[0, 0].get_ylim()[1]])
+
+        ax[1, 0].set_ylim([-0.05, 1.05])
+        ax[2, 0].set_ylim([-0.05, 0.5])
+        ax[3, 0].set_ylim([-0.025, 0.25])
+        ax[4, 0].set_ylim([0, 130])
+
+        for i in range(ax.shape[0]):
+            for j in range(ax.shape[1]):
+                ax[i, j].legend()
+
+        fig.align_labels()
+
+        yex = np.array([y[0, 0] for y in yex_dat])
+        mpc_RMSE = np.sqrt(np.mean((self.mpc.reference - yex) ** 3))
+
+        fig.suptitle(f"Horizon: {self.mpc.horizon}, RMSE: {mpc_RMSE:.2f}")
+
+        preamble = ""
+        if "gridcurtail" in self.mpc.term_keys:
+            preamble += "curtailment_"
+        if "bes_soc_state" in self.mpc.term_keys:
+            preamble += "storage_state_"
+
+        fname = f'syn_data_{preamble}ry{str(self.mpc.reference).replace(".", "p")}_H{self.mpc.horizon}_alpha{str(self.mpc.config.greenheart_config["realtime_simulation"]["forecast"]["method_config"]["perfect_fraction"]).replace(".", "p")}.pdf'
+        if save_figure:
+            fig.savefig(
+                f"/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/plots/synthetic_disturbance/{fname}",
+                format="pdf",
+            )
+
+        data_dict = dict(
+            de_store=self.mpc.de_store,
+            curtail_store=self.mpc.curtail_store,
+            forecast_store=self.mpc.forecast_store,
+            x_store=self.mpc.x_store,
+            yex_store=self.mpc.yex_store,
+            objective_store = self.mpc.objective_store,
+            obj_terms = list(self.mpc.obj_terms.keys()),
+        )
+        if save_data:
+            np.savez(
+                f"/Users/ztully/Documents/hybrids_code/GH_scripts/greenheart_scripts/minnesota_reference_design/configs/synthetic_generation_profile/weather/synthetic/plot_data/{fname.rstrip('.pdf')}",
+                **data_dict,
+            )
 
         pass
 

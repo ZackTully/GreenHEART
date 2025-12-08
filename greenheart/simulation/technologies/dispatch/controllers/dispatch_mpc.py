@@ -34,7 +34,8 @@ from greenheart.simulation.technologies.dispatch.controllers.controller_tools.ob
     Objective,
 )
 from greenheart.simulation.technologies.dispatch.controllers.controller_tools.debug_helper import (
-    DebugHelper, Capturing
+    DebugHelper,
+    Capturing,
 )
 
 
@@ -50,6 +51,7 @@ class DispatchModelPredictiveController:
         mpc_config: dict = None,
         p_opts: dict = {"print_time": False, "verbose": False, "record_time": True},
         s_opts: dict = {"print_level": 0},
+        # s_opts: dict = {"print_level": 5},
         # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "constr_viol_tol": 1e-3, "tol": 1e-8, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6, "resto_failure_feasibility_threshold": 1e-7},
         # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "constr_viol_tol": 5e-4, "tol": 1e-8, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6, }, # This one works pretty well
         # s_opts: dict = {"print_level": 0, "compl_inf_tol": 1e-3, "max_iter": 1e5, "constr_viol_tol": 5e-4, "tol": 1e-8, "acceptable_tol":1e-6, "warm_start_init_point": "yes", "mu_init":1e-6, "nlp_scaling_method": "none", "expect_infeasible_problem": "yes"},
@@ -182,6 +184,8 @@ class DispatchModelPredictiveController:
 
         if self.horizon == 1:
             self.warm_start_with_previous_solution = False
+
+        self.control_model.print_bounds()
 
         self.prev_sol = None
 
@@ -471,7 +475,6 @@ class DispatchModelPredictiveController:
             if self.pet > 0:
                 opti.subject_to(yet == np.zeros((self.pet, 1)))
 
-
         if self.use_objective_class:
             objective = self.objective_manager.construct_objective(
                 uct_var, usp_var, x_var, yex_var, yco_var, gridcurtail
@@ -494,7 +497,6 @@ class DispatchModelPredictiveController:
         self.opt_params = {"dex": dex_param, "x0": x0_param}
         self.opt_vars.update({"gridcurtail": gridcurtail})
 
-
     def update_optimization_parameters(self, x0, src_forecast):
         self.opti.set_value(self.opt_params["dex"], src_forecast)
         self.opti.set_value(self.opt_params["x0"], x0)
@@ -509,6 +511,8 @@ class DispatchModelPredictiveController:
         if step_index == 0:
             self.logger.info("first trajectory computation started")
 
+        # if step_index == 500:
+        #     self.compute_start_energy()
 
         def get_sol_value(prob: ca.Opti, var):
             val = prob.value(var)
@@ -604,8 +608,6 @@ class DispatchModelPredictiveController:
 
             self.debug_helper.write_solver_output_for_debug(step_index=step_index)
 
-
-
             # Think about adding more debug information to the logger here
             # Gradients
 
@@ -687,13 +689,13 @@ class DispatchModelPredictiveController:
             if k in self.term_keys
         }
 
-        if np.any(
-            [sol.value(v) > 1.0001 for vals in active_obj_uw.values() for v in vals]
-        ):
-            self.gradient_helper.print_objective_trajectory_values(
-                sol, terms=self.term_keys, weighted=False
-            )
-            pass
+        # if np.any(
+        #     [sol.value(v) > 1.0001 for vals in active_obj_uw.values() for v in vals]
+        # ):
+        #     self.gradient_helper.print_objective_trajectory_values(
+        #         sol, terms=self.term_keys, weighted=False
+        #     )
+        # pass
 
         # self.gradient_helper.print_objective_values(sol, terms=self.term_keys)
         if (yex < 0.99 * self.reference).any():
@@ -709,6 +711,25 @@ class DispatchModelPredictiveController:
         #     self.plotter.plot_saved_trajectories()
 
         # self.gradient_helper.check_gradients(sol)
+
+        # if np.any(yex < 0.99 * self.reference):
+        #     if np.any(curtail[0, np.where(yex < 0.99 * self.reference)[1]] > 4000):
+        #     # or (
+        #     #     step_index > 10 and np.any(curtail > 100)
+        #     # ):
+
+        #         # self.gradient_helper.check_gradients(sol)
+        #         # self.gradient_helper.print_objective_jacobian(sol, terms=self.term_keys)
+        #         # self.gradient_helper.print_objective_trajectory_values(
+        #         #     sol, terms=self.term_keys
+        #         # )
+
+        #         np.set_printoptions(formatter={'float_kind': '{:10,.3f} '.format}, floatmode="fixed")
+
+        #         []
+
+        #         np.set_printoptions()
+        #         pass
 
         if ret_obj:
             return uct, usp, curtail, grid, obj_values_uw
@@ -871,6 +892,38 @@ class DispatchModelPredictiveController:
 
         []
 
+    def compute_start_energy(self):
+
+        self.reference
+
+        p_ptls = 550.2
+        eta_el = 53
+        h_ptls = 65.96
+        q_ptls = 65.96 * 3.8462
+
+        E_rp = self.horizon * self.reference * p_ptls
+        E_rq = self.horizon * self.reference * q_ptls
+        E_rh = self.horizon * self.reference * h_ptls
+        E_r = self.reference * self.horizon
+
+        E_r_sum = (E_rp + E_rq + E_rh * eta_el)
+
+        E_xb0 = np.array([x[0, 0] for x in self.x0_store])
+        E_xt0 = np.array([x[0, 1] for x in self.x0_store])
+        E_xh0 = np.array([x[0, 3] for x in self.x0_store])
+        E_f = np.array([np.sum(f) for f in self.forecast_store])
+
+        # Can it be supported with forecasted energy only?
+        # Ratio of available energy in forecast over needed
+        R_forecast = E_f / E_r_sum
+        tfrac_forecast_only = len(np.where(R_forecast >= 1)[0]) / len(R_forecast)
+
+        R_forecast_bes = (E_f + E_xb0) / E_r_sum
+        tfrac_forecast_bes = len(np.where(R_forecast_bes >= 1)[0]) / len(R_forecast_bes)
+
+
+        pass
+
 
 # class Capturing(list):
 #     def __enter__(self):
@@ -882,65 +935,3 @@ class DispatchModelPredictiveController:
 #         self.extend(self._stringio.getvalue().splitlines())
 #         del self._stringio  # free up some memory
 #         sys.stdout = self._stdout
-
-
-# if __name__ == "__main__":
-
-#     from pathlib import Path
-#     from greenheart.simulation.greenheart_simulation import GreenHeartSimulationConfig
-#     from hopp.simulation.technologies.sites.site_info import SiteInfo
-#     from greenheart.simulation.realtime_simulation import RealTimeSimulation
-
-#     class HOPPSystem:
-#         def __init__(self, site):
-#             self.site = site
-
-#     class HOPPInterface:
-#         def __init__(self, site):
-#             self.system = HOPPSystem(site)
-
-#     # config_root = Path(__file__).parents[0] / "dispatch_inputs"
-#     config_root = Path(__file__).parents[5]/ "tests" / "greenheart" / "test_dispatch" / "dispatch_inputs"
-
-#     fname_hopp_config = str(config_root / "plant/hopp_config_mn.yaml")
-#     fname_greenheart_config = str(config_root / "plant/greenheart_config_onshore_mn.yaml")
-#     fname_turbine_config = str(
-#         config_root / "turbines/ATB2024_6MW_170RD_floris_turbine.yaml"
-#     )
-#     fname_floris_config = str(config_root / "floris/floris_input_lbw_6MW.yaml")
-
-
-#     config = GreenHeartSimulationConfig(
-#         fname_hopp_config,
-#         fname_greenheart_config,
-#         fname_turbine_config,
-#         fname_floris_config,
-#         verbose=False,
-#         show_plots=False,
-#         save_plots=False,
-#         use_profast=True,
-#         post_processing=True,
-#         incentive_option=1,
-#         plant_design_scenario=1,
-#         output_level=8,
-#     )
-
-#     config.realtime_simulation = True
-
-#     hopp_site = SiteInfo(**config.hopp_config["site"])
-#     hi = HOPPInterface(hopp_site)
-#     simulator = RealTimeSimulation(config, hi)
-
-
-#     mpc_config = config.greenheart_config["realtime_simulation"]["dispatch"]["mpc"]
-
-#     # Minimal required attributes for instantiation
-#     ctrl = DispatchModelPredictiveController(
-#         config=config,
-#         simulation_graph=simulator.G,
-#         node_order=simulator.node_order,
-#         edge_order=simulator.edge_order,
-#         mpc_config=mpc_config,
-#     )
-
-#     []

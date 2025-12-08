@@ -329,20 +329,32 @@ class RealTimeSimulation:
         return time_iterable
 
     def get_hybrid_profile(self, hopp_results):
-        gen_profiles = {}
-        technologies = hopp_results["annual_energies"]["technologies"]
 
-        for hopp_tech in technologies.keys():
+        # Check if a path to load a generation profile was given in the config file
+        gen_profile_path = self.rts_config.get("generation_profile", False)
 
-            if hopp_tech in ["pv", "wind"]:
-                tech_profile = technologies[hopp_tech].generation_profile
-                gen_profiles.update({hopp_tech: tech_profile})
+        
+        if gen_profile_path:
 
-        hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
+            hybrid_profile = np.load(gen_profile_path)
 
-        assert not np.any(
-            np.isnan(hybrid_profile)
-        ), "Nans found in hopp_results hybrid profile"
+            pass
+        else:
+            # If no path to load profile or path is not specified in config, check hopp
+            gen_profiles = {}
+            technologies = hopp_results["annual_energies"]["technologies"]
+
+            for hopp_tech in technologies.keys():
+
+                if hopp_tech in ["pv", "wind"]:
+                    tech_profile = technologies[hopp_tech].generation_profile
+                    gen_profiles.update({hopp_tech: tech_profile})
+
+            hybrid_profile = np.array(gen_profiles["pv"]) + np.array(gen_profiles["wind"])
+
+            assert not np.any(
+                np.isnan(hybrid_profile)
+            ), "Nans found in hopp_results hybrid profile"
 
         return hybrid_profile
 
@@ -410,7 +422,7 @@ class RealTimeSimulation:
                 if "grid_purchase" in self.G.nodes["generation"]:
                     grid_power = self.G.nodes["generation"]["grid_purchase"]
                 else:
-                    grid_power = 0
+                    grid_power = np.array([0])
 
             self.G = self.step_system_state_function(
                 self.G, hybrid_profile[i] + grid_power, i
@@ -433,7 +445,7 @@ class RealTimeSimulation:
 
             if self.tqdm_progress:
                 if "steel" in self.G.nodes:
-                    time_iterable.set_postfix({"yex" : f'{self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]:.2f}'})
+                    time_iterable.set_postfix({"yex" : f'{self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]:7.2f}'})
                 # time_iterable.set_postfix({"x_bes" : f'{self.G.nodes["battery"]["ionode"].model.hopp_battery._system_model.StatePack.SOC:.2f}'})
 
             if self.save_sysid:
@@ -452,6 +464,20 @@ class RealTimeSimulation:
                     mpc_edges,
                     step_index=i,
                 )
+            else:
+                sim_edges = self.get_sim_edges(i)
+                heu_edges = self.get_heuristic_edges(i)
+
+                err, sim_curt, sim_pass = self.check_edge_error(sim_edges, heu_edges, i)
+                self.record_error(
+                    err,
+                    sim_curt,
+                    sim_pass,
+                    sim_edges,
+                    heu_edges,
+                    step_index=i,
+                )
+
 
         t1 = time.time()
         self.simulation_elapsed_time = t1 - t0
@@ -463,6 +489,13 @@ class RealTimeSimulation:
         self.models = {
             node: self.G.nodes[node]["ionode"].model for node in self.node_order
         }
+
+        if self.rts_config.get("generation_profile", False) and self.dispatcher.use_MPC:
+            self.dispatcher.controller.plotter.plot_saved_trajectories(n=self.stop_index)
+            self.dispatcher.controller.plotter.plot_saved_trajectories_paper()
+            # And maybe save too?
+            []
+
 
         # self.logger.info(f"Simulation took: {self.simulation_elapsed_time/60:.2f} min or {self.simulation_elapsed_time/3600:.2f} hr")
 
@@ -512,6 +545,10 @@ class RealTimeSimulation:
             self.get_mpc_edge_permutation(mpc_edges)
 
         return mpc_edges[self.mpc_permutation]
+    
+    def get_heuristic_edges(self, i):
+        return self.dispatcher.controller.yco_ctrl
+
 
     def check_edge_error(self, sim_edges, mpc_edges, i):
 
@@ -542,7 +579,7 @@ class RealTimeSimulation:
                     f"MPC edges: {  {str(self.edge_order[k]): str(mpc_edges[k]) for k in erronious_indices}    }"
                 )
                 self.logger.warning(
-                    f"Percent differene: {  {str(self.edge_order[k]): str(edge_percent_error[k]*100) for k in erronious_indices}    }"
+                    f"Percent difference: {  {str(self.edge_order[k]): str(edge_percent_error[k]*100) for k in erronious_indices}    }"
                 )
 
                 # assert self.edge_error_count < 50, f"Step {i}, MPC/sim. edge difference greater than tolerance ({tol * 100}%). Erronious edges: {erronious_edges}"
