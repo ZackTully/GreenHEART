@@ -1,6 +1,7 @@
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
+import yaml
 
 from hopp.utilities import load_yaml
 
@@ -12,7 +13,9 @@ from logging import handlers
 
 import time
 
-
+from greenheart.simulation.realtime_simulation import RealTimeSimulation as RTS
+from greenheart.simulation.technologies.dispatch.forecast import Forecast
+from greenheart.simulation.technologies.dispatch.dispatch import GreenheartDispatch
 from greenheart.simulation.realtime_node import (
     Node,
     setup_generation_node,
@@ -27,7 +30,6 @@ from greenheart.simulation.realtime_node import (
 
 class SubSystem(om.ExplicitComponent):
     name: str
-
 
     def initialize(self):
         self.options.declare("ionode")
@@ -60,40 +62,33 @@ class SubSystem(om.ExplicitComponent):
                     disturbance_inputs.append(np.array([0, 0, inp[1]["val"][0], 900]))
 
                 elif origin in ["thermal_energy_storage"]:
-                    disturbance_inputs.append(np.array([0, inp[1]["val"][0],0, 0]))
-
-
+                    disturbance_inputs.append(np.array([0, inp[1]["val"][0], 0, 0]))
 
             elif inp[0].startswith("uc"):
                 control_inputs.append(inp[1]["val"][0])
             elif inp[0].startswith("us"):
                 splitting_inputs.append(inp[1]["val"][0])
 
-
         disturbance_inputs = np.stack(disturbance_inputs)
         control_inputs = np.array(control_inputs)
         splitting_inputs = np.array(splitting_inputs)
-        if len( splitting_inputs) == 0:
+        if len(splitting_inputs) == 0:
             splitting_inputs = np.array([1])
 
         return disturbance_inputs, control_inputs, splitting_inputs
 
     def pack_outputs(self, node_outputs, outputs):
 
+        for i, outp in enumerate(outputs):
 
-        for i, outp in enumerate( outputs):
-            
             if self.name in ["generation", "battery", "external"]:
                 outputs[outp] = node_outputs[0, i]
-
 
             elif self.name in ["electrolyzer", "hydrogen_storage"]:
                 outputs[outp] = node_outputs[2, i]
 
-
             elif self.name in ["heat_exchanger"]:
                 outputs[outp] = node_outputs[2, i]
-
 
             elif self.name in ["thermal_energy_storage"]:
                 outputs[outp] = node_outputs[1, i]
@@ -102,7 +97,6 @@ class SubSystem(om.ExplicitComponent):
 
     def compute(self, inputs, outputs):
         step_index = int(inputs["step_index"][0])
-
 
         if self.name == "generation":
             self.options["ionode"].model.output = inputs["d_external"]
@@ -115,30 +109,49 @@ class SubSystem(om.ExplicitComponent):
         outputs = self.pack_outputs(node_outputs, outputs)
 
 
-
-
 class System(om.Group):
     pass
 
 
-class RealTimeSimulation:
+class RealTimeSimulation(RTS):
     def __init__(
         self,
         config,
         hopp_interface=None,
-        hybrid_profile=None,
+        case_description=None
     ):
 
-        self.greenheart_config = config
-        self.config = config.greenheart_config["realtime_simulation"]
-        self.subsystem_config = load_yaml(self.config["component_config"])
-        self.graph_config = self.config["system"]["system_graph_config"]
+        self.case_description = case_description
+
+        self.config = config
+        self.rts_config = self.config.greenheart_config["realtime_simulation"]
+
+        self.forecast_config = self.rts_config.get(
+            "forecast",
+            None,
+        )
+
+        self.save_error=False
+
+
+        if isinstance(self.rts_config["component_config"], str):
+            self.component_config = yaml.safe_load(
+                open(self.rts_config["component_config"], "r")
+            )
+        else:
+            self.component_config = self.rts_config["component_config"]
+
+
+        # self.greenheart_config = config
+        # self.config = config.greenheart_config["realtime_simulation"]
+        # self.subsystem_config = load_yaml(self.config["component_config"])
+        self.graph_config = self.rts_config["system"]["system_graph_config"]
 
         self.hopp_interface = hopp_interface
-        self.hybrid_profile = hybrid_profile
+        # self.hybrid_profile = hybrid_profile
 
-        self.start_index = self.config.get("start_index", 0)
-        self.stop_index = self.config.get("stop_index", 8760)
+        self.start_index = self.rts_config.get("start_index", 0)
+        self.stop_index = self.rts_config.get("stop_index", 8760)
 
         self.verbose = True
         self.save_ctrl = False
@@ -198,16 +211,16 @@ class RealTimeSimulation:
         for node in self.G.nodes:
             subsystem_dict = setup_method_map[node](
                 self.G,
-                self.greenheart_config,
+                self.config,
                 self.hopp_interface,
-                self.subsystem_config,
+                self.component_config,
             )[node]
             ionode = Node(
                 name=node,
                 model=subsystem_dict["model"],
                 expected_inputs=subsystem_dict["model_inputs"],
                 expected_outputs=subsystem_dict["model_outputs"],
-                splitting_node=(True if self.G.out_degree[node] > 1 else False),
+                # splitting_node=(True if self.G.out_degree[node] > 1 else False),
                 in_degree=self.G.in_degree[node],
                 out_degree=self.G.out_degree[node],
             )
@@ -220,10 +233,7 @@ class RealTimeSimulation:
 
     def _setup_openmdao_system(self):
 
-
         controllable_nodes = ["battery", "thermal_energy_storage", "hydrogen_storage"]
-
-
 
         promoted_inputs = {}
         promoted_outputs = {}
@@ -237,9 +247,8 @@ class RealTimeSimulation:
 
             om_subsys.name = node
 
-
-            promoted_inputs.update({node:["step_index", "step_index"]})
-            promoted_outputs.update({node:[]})
+            promoted_inputs.update({node: ["step_index", "step_index"]})
+            promoted_outputs.update({node: []})
 
             for edge in self.edge_order:
                 # If node is at the destination end
@@ -249,17 +258,19 @@ class RealTimeSimulation:
                 # If node is at the origin end
                 if edge[0] == node:
                     om_subsys.add_output(f"y_{edge[1]}")
-                
-                    if self.G.nodes[node]["ionode"].splitting_node:
+
+                    # if self.G.nodes[node]["ionode"].splitting_node:
+                    if self.G.nodes[node]["ionode"].out_degree > 1:
 
                         om_subsys.add_input(f"us_{edge[1]}")
-                        promoted_inputs[node].append((f"us_{edge[1]}", f"us_{edge[0]}_{edge[1]}"))
+                        promoted_inputs[node].append(
+                            (f"us_{edge[1]}", f"us_{edge[0]}_{edge[1]}")
+                        )
 
                 connection = (f"{edge[0]}.y_{edge[1]}", f"{edge[1]}.d_{edge[0]}")
                 if connection not in connections:
                     connections.append(connection)
 
-            
             if node == "generation":
                 om_subsys.add_input(f"uc_curtail")
                 promoted_inputs[node].append((f"uc_curtail", "uc_curtail"))
@@ -268,9 +279,9 @@ class RealTimeSimulation:
                 om_subsys.add_input(f"uc_{node}_charge")
                 om_subsys.add_input(f"uc_{node}_discharge")
                 promoted_inputs[node].append((f"uc_{node}_charge", f"uc_{node}_charge"))
-                promoted_inputs[node].append((f"uc_{node}_discharge", f"uc_{node}_discharge"))
-
-
+                promoted_inputs[node].append(
+                    (f"uc_{node}_discharge", f"uc_{node}_discharge")
+                )
 
             if self.G.nodes[node]["is_source"]:
                 om_subsys.add_input("d_external")
@@ -312,7 +323,7 @@ class RealTimeSimulation:
     def record_states(self):
         pass
 
-    def step_system(self):
+    def step_system(self, G, gen_avail, step_index):
         if self.use_networkx_model:
             self._step_networkx_system()
         else:
@@ -323,24 +334,36 @@ class RealTimeSimulation:
 
     def _step_openmdao_system(self):
 
-        for inp in self.om_inputs:
-            self.problem.set_val(inp)
+
+
+
+        # for inp in self.om_inputs:
+        #     self.problem.set_val(inp, )
 
         self.problem.run_model()
 
         pass
 
-    def simulate(self):
+    def simulate(self, dispatcher: GreenheartDispatch, hopp_results):
         # ==============================================================================
         #                                Simulation loop
         # ==============================================================================
+
+        # Inherited from RTS (non-openmdao realtime simulator)
+        hybrid_profile = self.get_hybrid_profile(hopp_results)
+        self.hybrid_profile = hybrid_profile
+
+        self.dispatcher = dispatcher
+        self.forecaster = Forecast(self.forecast_config, hybrid_profile, self.config)
+
 
         time_steps = np.arange(self.start_index, self.stop_index, 1)
 
         for step_index in time_steps:
 
-            forecast = self.forecaster.get_forecast()
-            state_measurement = self._get_state_measurement()
+            forecast = self.forecaster.get_forecast(hybrid_profile[step_index], step_index)
+            state_measurement = self.get_state_measurement(step_index=step_index)
+            # state_measurement = self._get_state_measurement(step_index=step_index)
 
             # Update control signals in the graph
             self.G = self.dispatcher.step(
@@ -381,8 +404,8 @@ class RealTimeSimulation:
             if hasattr(self.G.nodes[node]["ionode"].model, "consolidate_sim_outcome"):
                 self.G.nodes[node]["ionode"].model.consolidate_sim_outcome()
 
-    def _get_state_measurement(self):
-        pass
+    # def _get_state_measurement(self):
+    #     pass
 
     def unpack_subsystem(self):
         # Was unpack_component

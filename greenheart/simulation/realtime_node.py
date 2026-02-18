@@ -384,6 +384,7 @@ class StandinNode:
         Returns:
             _type_: _description_
         """
+        dispatch = np.atleast_2d(dispatch)
         u_passthrough = 0
         if dispatch >= -1:
             dispatch = np.max([0.0, dispatch[0,0]])

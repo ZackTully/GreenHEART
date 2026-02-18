@@ -37,6 +37,7 @@ from greenheart.simulation.technologies.dispatch.dispatch import (
 
 import greenheart.tools.thermal.thermal_mgmt as therm_man
 from greenheart.simulation.realtime_simulation import RealTimeSimulation
+# from greenheart.simulation.realtime_simulation_OM import RealTimeSimulation
 
 # visualization imports
 import matplotlib.pyplot as plt
