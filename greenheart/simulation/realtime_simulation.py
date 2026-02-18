@@ -320,7 +320,8 @@ class RealTimeSimulation:
                 leave=False,
                 colour=tqdm_color,
                 total=total,
-                bar_format="{l_bar}{bar:40}{r_bar}"
+                bar_format="{l_bar}{bar:40}|{postfix}"
+                # bar_format="{l_bar}{bar:40}{r_bar}"
             )
 
         else:
@@ -431,13 +432,19 @@ class RealTimeSimulation:
             if self.verbose and i == self.start_index:
                 self.logger.info("First time step, simulated simulation graph")
 
+
+            stop_idx = np.min([self.stop_index, len(hybrid_profile)])
+
+
+            prog_step = f"{i}".rjust(4) + f"/{stop_idx}".rjust(5)
+            prog_percent = f"{(i / (stop_idx)* 100) :.1f}%".rjust(6)
+            el_sec = time.time() - t0
+            prog_elapsed = f"{np.floor(el_sec/3600):.0f}".zfill(2) + ":" + f"{(np.floor(el_sec/60))%60:.0f}".zfill(2) + ":" + f"{el_sec%60:.0f}".zfill(2)
+            rem_sec = ((1 - i/stop_idx) * (time.time() - t0) / ((i+1) / stop_idx))
+            prog_remaining = f"{np.floor(rem_sec/3600):.0f}".zfill(2) + ":" + f"{(np.floor(rem_sec/60))%60:.0f}".zfill(2) + ":" + f"{rem_sec%60:.0f}".zfill(2)
+            prog_str = f" {prog_step}, {prog_percent}, ela.: {prog_elapsed}, rem.: {prog_remaining}"
             if (time.time() - t_log_last > 60) or (i == self.stop_index):
                 # Print and log progress every 60 seconds
-                prog_step = f"{i}/{len(hybrid_profile)}"
-                prog_percent = f"{(i / len(hybrid_profile)* 100) :.1f}%"
-                prog_elapsed = f"{(time.time() - t0) / 3600:.3f} hours"
-                prog_remaining = f"{((1 - i/len(hybrid_profile)) * (time.time() - t0) / ((i+1) / len(hybrid_profile)))/3600 :.3f} hours"
-                prog_str = f"Step = {prog_step}, {prog_percent}, {prog_elapsed} elapsed, {prog_remaining} remaining"
                 self.logger.info(prog_str)
                 t_log_last = time.time()
 
@@ -445,7 +452,7 @@ class RealTimeSimulation:
 
             if self.tqdm_progress:
                 if "steel" in self.G.nodes:
-                    time_iterable.set_postfix({"yex" : f'{self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]:7.2f}'})
+                    time_iterable.set_postfix({"Prog" : prog_str, "yex" : f'{self.G.nodes["steel"]["ionode"].model.steel_store_tonne[i]:7.2f}'})
                 # time_iterable.set_postfix({"x_bes" : f'{self.G.nodes["battery"]["ionode"].model.hopp_battery._system_model.StatePack.SOC:.2f}'})
 
             if self.save_sysid:

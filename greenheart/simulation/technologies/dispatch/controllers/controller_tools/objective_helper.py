@@ -53,9 +53,9 @@ class Objective:
             "bes_soc_state",
             "tes_soc_state",
             "h2s_soc_state",
-            # "bes_terminal",
-            # "tes_terminal",
-            # "h2s_terminal",
+            "bes_terminal",
+            "tes_terminal",
+            "h2s_terminal",
             # "storage_state_LQ>'
         ]
 
@@ -255,11 +255,20 @@ class Objective:
         # Absolute state reference terminal
         # obj = (x_var[self.var_inds["x_bes"], self.horizon] - self.x_bes_ref)**2
 
+        scaling = 1 / ( (self.x_bes_max - self.x_bes_min) ** 2)
+
+
+
+
         # Relative or SOC reference
-        obj = (
-            x_var[self.var_inds["x_bes"], self.horizon] / self.x_bes_max
-            - self.soc_bes_ref
-        ) ** 2
+        # obj = (
+        #     x_var[self.var_inds["x_bes"], self.horizon] / self.x_bes_max
+        #     - self.soc_bes_ref
+        # ) ** 2
+
+        obj = (self.soc_bes_ref - x_var[self.var_inds["x_bes"], self.horizon] / self.x_bes_max)**2
+
+
 
         return obj, None
 
@@ -268,11 +277,16 @@ class Objective:
         # Absolute reference
         # obj = (x_var[self.var_inds["x_tes"], self.horizon] - self.x_tes_ref)**2
 
+        scaling = 1 / ((self.x_tes_max - self.x_tes_min) ** 2)
+
         # Relative reference
-        obj = (
-            x_var[self.var_inds["x_tes"], self.horizon] / self.x_tes_max
-            - self.soc_tes_ref
-        ) ** 2
+        # obj = (
+        #     x_var[self.var_inds["x_tes"], self.horizon] / self.x_tes_max
+        #     - self.soc_tes_ref
+        # ) ** 2
+
+        obj = (self.soc_tes_ref - x_var[self.var_inds["x_tes"], self.horizon]/ self.x_tes_max)**2
+
 
         return obj, None
 
@@ -281,11 +295,16 @@ class Objective:
         # Absolute reference
         # obj = (x_var[self.var_inds["x_h2s"], self.horizon] - self.x_h2s_ref)**2
 
+        scaling = 1 / ( (self.x_h2s_max - self.x_h2s_min) ** 2)
+
         # Relative SOC reference
-        obj = (
-            x_var[self.var_inds["x_h2s"], self.horizon] / self.x_h2s_max
-            - self.soc_h2s_ref
-        ) ** 2
+        # obj = (
+        #     x_var[self.var_inds["x_h2s"], self.horizon] / self.x_h2s_max
+        #     - self.soc_h2s_ref
+        # ) ** 2
+
+        obj = (self.soc_h2s_ref - x_var[self.var_inds["x_h2s"], self.horizon] / self.x_h2s_max)
+
 
         return obj, None
 
